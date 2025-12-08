@@ -275,6 +275,46 @@ class AuditLog(Base):
         }
 
 
+class OAuth(Base):
+    """OAuth token storage for Replit Auth sessions."""
+    
+    __tablename__ = "oauth_tokens"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    provider = Column(String(50), nullable=False, default="replit")
+    
+    browser_session_key = Column(String(255), nullable=False, index=True)
+    
+    access_token = Column(Text, nullable=True)
+    
+    refresh_token = Column(Text, nullable=True)
+    
+    token_type = Column(String(50), nullable=True)
+    
+    expires_at = Column(DateTime, nullable=True)
+    
+    id_token = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    user = relationship("User", backref="oauth_tokens")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "provider": self.provider,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class StagedExtraction(Base):
     """Model for storing staged credit agreement extractions (legacy support)."""
     

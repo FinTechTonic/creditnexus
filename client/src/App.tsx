@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { DocuDigitizer } from '@/apps/docu-digitizer/DocuDigitizer';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2 } from 'lucide-react';
+import { useAuth } from './context/AuthContext';
 
 type AppView = 'docu-digitizer' | 'trade-blotter' | 'green-lens';
 
@@ -30,6 +31,7 @@ const apps: { id: AppView; name: string; icon: React.ReactNode; description: str
 function App() {
   const [activeApp, setActiveApp] = useState<AppView>('docu-digitizer');
   const [hasBroadcast, setHasBroadcast] = useState(false);
+  const { user, isLoading, isAuthenticated, login, logout } = useAuth();
 
   const handleBroadcast = () => {
     setHasBroadcast(true);
@@ -72,9 +74,53 @@ function App() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <Radio className="h-4 w-4 text-emerald-500" />
-            <span className="hidden sm:inline">FDC3 Enabled</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Radio className="h-4 w-4 text-emerald-500" />
+              <span className="hidden sm:inline">FDC3</span>
+            </div>
+            
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            ) : isAuthenticated && user ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  {user.profile_image ? (
+                    <img
+                      src={user.profile_image}
+                      alt={user.display_name}
+                      className="w-8 h-8 rounded-full object-cover border-2 border-emerald-500"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center border-2 border-emerald-500">
+                      <User className="h-4 w-4 text-slate-300" />
+                    </div>
+                  )}
+                  <div className="hidden md:block">
+                    <p className="text-sm font-medium text-slate-100">{user.display_name}</p>
+                    <p className="text-xs text-slate-400 capitalize">{user.role}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors"
+                  title="Log out"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="hidden lg:inline">Log out</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={login}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                <LogIn className="h-4 w-4" />
+                <span>Log in</span>
+              </button>
+            )}
           </div>
         </div>
       </header>

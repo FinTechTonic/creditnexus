@@ -8,8 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routes import router
+from app.auth.routes import auth_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,6 +39,25 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+session_secret = os.environ.get("SESSION_SECRET")
+is_production = os.environ.get("REPLIT_DEPLOYMENT") == "1"
+
+if not session_secret:
+    if is_production:
+        raise RuntimeError("SESSION_SECRET must be set in production")
+    logger.warning("SESSION_SECRET not set, generating temporary secret (not suitable for production)")
+    import secrets
+    session_secret = secrets.token_hex(32)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=session_secret,
+    session_cookie="creditnexus_session",
+    max_age=86400 * 7,
+    same_site="lax",
+    https_only=is_production,
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -46,6 +67,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(auth_router, prefix="/api")
 
 static_dir = Path(__file__).parent / "client" / "dist"
 if static_dir.exists():
