@@ -18,33 +18,56 @@ interface CreditAgreement {
 
 function App() {
   const [documentText, setDocumentText] = useState('');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extractedData, setExtractedData] = useState<CreditAgreement | undefined>();
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
+  const isPdfFile = (file: File) => {
+    return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const text = await file.text();
-    setDocumentText(text);
     setExtractedData(undefined);
     setError(null);
+
+    if (isPdfFile(file)) {
+      setUploadedFile(file);
+      setDocumentText(`[PDF File: ${file.name}]`);
+    } else {
+      const text = await file.text();
+      setDocumentText(text);
+      setUploadedFile(null);
+    }
   };
 
   const handleExtract = async () => {
-    if (!documentText.trim()) return;
+    if (!documentText.trim() && !uploadedFile) return;
 
     setIsExtracting(true);
     setError(null);
     setWarningMessage(null);
     try {
-      const response = await fetch('/api/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: documentText }),
-      });
+      let response: Response;
+      
+      if (uploadedFile) {
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+        response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        response = await fetch('/api/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: documentText }),
+        });
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -67,6 +90,10 @@ function App() {
       }
       
       if (result.agreement) {
+        if (result.extracted_text && uploadedFile) {
+          setDocumentText(result.extracted_text);
+          setUploadedFile(null);
+        }
         setExtractedData({
           ...result.agreement,
           extraction_status: result.status,
@@ -97,6 +124,7 @@ function App() {
 
   const handleReset = () => {
     setDocumentText('');
+    setUploadedFile(null);
     setExtractedData(undefined);
     setError(null);
     setWarningMessage(null);
@@ -187,7 +215,7 @@ function App() {
                     <label className="group cursor-pointer">
                       <input
                         type="file"
-                        accept=".pdf,.txt,.doc,.docx"
+                        accept=".pdf,.txt"
                         onChange={handleFileUpload}
                         className="hidden"
                       />
@@ -196,32 +224,40 @@ function App() {
                           <Upload className="h-8 w-8 text-muted-foreground group-hover:text-primary transition-colors" />
                         </div>
                         <p className="font-medium mb-1">Drop file here or click to upload</p>
-                        <p className="text-sm text-muted-foreground">Supports PDF, TXT, DOC, DOCX</p>
+                        <p className="text-sm text-muted-foreground">Supports PDF and TXT files</p>
                       </div>
                     </label>
 
                     <div className="space-y-3">
                       <textarea
                         placeholder="Or paste your credit agreement text here..."
-                        value={documentText}
+                        value={uploadedFile ? '' : documentText}
                         onChange={(e) => {
                           setDocumentText(e.target.value);
+                          setUploadedFile(null);
                           setError(null);
                         }}
-                        className="w-full h-[180px] px-4 py-3 text-sm border rounded-xl bg-muted/50 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                        disabled={!!uploadedFile}
+                        className="w-full h-[180px] px-4 py-3 text-sm border rounded-xl bg-muted/50 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
 
-                  {documentText && (
+                  {(documentText || uploadedFile) && (
                     <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                           <FileText className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                          <p className="font-medium">Document Ready</p>
-                          <p className="text-sm text-muted-foreground">{documentText.length.toLocaleString()} characters</p>
+                          <p className="font-medium">
+                            {uploadedFile ? uploadedFile.name : 'Document Ready'}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {uploadedFile 
+                              ? `PDF file - ${(uploadedFile.size / 1024).toFixed(1)} KB` 
+                              : `${documentText.length.toLocaleString()} characters`}
+                          </p>
                         </div>
                       </div>
                       <Button
