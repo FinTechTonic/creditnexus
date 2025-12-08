@@ -350,7 +350,27 @@ async def logout(request: Request, db: Session = Depends(get_db)):
 
 @auth_router.get("/me")
 async def get_current_user_info(request: Request, db: Session = Depends(get_db)):
-    """Get the current authenticated user's information."""
+    """Get the current authenticated user's information.
+    
+    Supports both session-based auth (Replit OAuth) and JWT Bearer token auth.
+    """
+    user = None
+    
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        from app.auth.jwt_auth import decode_access_token
+        payload = decode_access_token(token)
+        if payload:
+            user_id = payload.get("sub")
+            if user_id:
+                user = db.query(User).filter(User.id == int(user_id)).first()
+                if user and user.is_active:
+                    return {
+                        "authenticated": True,
+                        "user": user.to_dict()
+                    }
+    
     user_id = request.session.get("user_id")
     
     if not user_id:
