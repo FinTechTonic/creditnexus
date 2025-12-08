@@ -87,12 +87,17 @@ The backend automatically detects the presence of built static files and serves 
 │   ├── api/              # FastAPI routes and API layer
 │   ├── chains/           # LangChain extraction logic
 │   ├── core/             # Configuration and settings
+│   ├── db/               # Database models and session management
 │   └── models/           # Pydantic models (CDM implementation)
 ├── client/               # React frontend
 │   ├── src/
 │   │   ├── components/   # UI components
 │   │   └── App.tsx       # Main application
 │   └── dist/             # Built static files (production)
+├── openfin/              # OpenFin deployment configuration
+│   ├── app.json          # Application manifest
+│   ├── fdc3-intents.json # FDC3 intent declarations
+│   └── provider.json     # Service provider config
 └── server.py             # FastAPI application entry point
 ```
 
@@ -116,6 +121,38 @@ API Endpoint: `GET /api/documents/{id}/export?format=json|csv|excel`
 - Replit OAuth2 PKCE flow for secure authentication
 - Role-based access control (Viewer, Analyst, Reviewer, Admin)
 - Session management with secure cookies
+
+## OpenFin Deployment
+
+CreditNexus is fully compatible with OpenFin platform deployment and supports FDC3 2.0 interoperability.
+
+### Configuration Files
+Located in the `openfin/` directory:
+- **`app.json`**: Main OpenFin application manifest with platform settings
+- **`fdc3-intents.json`**: FDC3 app directory entry with intent declarations
+- **`provider.json`**: Service provider configuration for channels and intents
+- **`README.md`**: Detailed deployment instructions
+
+### Supported FDC3 Intents
+
+| Intent | Description |
+|--------|-------------|
+| `ViewLoanAgreement` | View credit agreement details |
+| `ApproveLoanAgreement` | Approve or reject agreements |
+| `ViewESGAnalytics` | View ESG scores and metrics |
+| `ExtractCreditAgreement` | Extract data from documents |
+| `ViewPortfolio` | View portfolio overview |
+
+### Custom Context Types
+- `finos.creditnexus.agreement` - Credit agreement context
+- `finos.creditnexus.document` - Document for extraction
+- `finos.creditnexus.portfolio` - Portfolio context
+- `finos.creditnexus.approvalResult` - Approval workflow result
+- `finos.creditnexus.esgData` - ESG analytics data
+
+### App Channels
+- `creditnexus.workflow` - Workflow state updates
+- `creditnexus.extraction` - Document extraction events
 
 ## Recent Changes (December 2024)
 - Created FastAPI backend with extraction endpoints

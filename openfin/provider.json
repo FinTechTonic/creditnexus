@@ -1,0 +1,86 @@
+{
+  "$schema": "https://openfin.co/schemas/app.schema.json",
+  "startup_app": {
+    "uuid": "creditnexus-provider",
+    "name": "CreditNexus FDC3 Provider",
+    "url": "${APP_URL}/fdc3-provider.html",
+    "autoShow": false,
+    "defaultWidth": 1,
+    "defaultHeight": 1
+  },
+  "runtime": {
+    "version": "35.127.81.16",
+    "arguments": "--enable-mesh --security-realm=creditnexus"
+  },
+  "services": [
+    {
+      "name": "fdc3",
+      "manifestUrl": "https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json"
+    }
+  ],
+  "provider": {
+    "name": "CreditNexus Provider",
+    "version": "1.0.0",
+    "capabilities": {
+      "intents": true,
+      "channels": true,
+      "appDirectory": true
+    },
+    "appDirectory": {
+      "url": "${APP_URL}/api/fdc3/apps",
+      "applications": [
+        {
+          "appId": "creditnexus",
+          "manifestUrl": "./app.json"
+        }
+      ]
+    },
+    "channels": {
+      "default": "red",
+      "systemChannels": [
+        {
+          "id": "red",
+          "displayMetadata": {
+            "name": "Red",
+            "color": "#FF0000"
+          }
+        },
+        {
+          "id": "orange",
+          "displayMetadata": {
+            "name": "Orange",
+            "color": "#FF8C00"
+          }
+        },
+        {
+          "id": "yellow",
+          "displayMetadata": {
+            "name": "Yellow",
+            "color": "#FFD700"
+          }
+        },
+        {
+          "id": "green",
+          "displayMetadata": {
+            "name": "Green",
+            "color": "#00FF00"
+          }
+        },
+        {
+          "id": "blue",
+          "displayMetadata": {
+            "name": "Blue",
+            "color": "#0000FF"
+          }
+        },
+        {
+          "id": "purple",
+          "displayMetadata": {
+            "name": "Purple",
+            "color": "#800080"
+          }
+        }
+      ]
+    }
+  }
+}

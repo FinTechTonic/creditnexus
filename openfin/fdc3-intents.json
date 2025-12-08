@@ -1,0 +1,337 @@
+{
+  "$schema": "https://fdc3.finos.org/schemas/2.0/app-directory/app.schema.json",
+  "applications": [
+    {
+      "appId": "creditnexus",
+      "name": "CreditNexus",
+      "title": "CreditNexus - Credit Agreement Extraction",
+      "description": "FINOS-Compliant Financial AI Agent for extracting structured credit agreement data from unstructured legal documents using AI",
+      "version": "1.0.0",
+      "publisher": "CreditNexus",
+      "categories": [
+        "Analytics",
+        "Credit",
+        "Lending",
+        "AI",
+        "Document Processing"
+      ],
+      "icons": [
+        {
+          "src": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+          "size": "256x256",
+          "type": "image/png"
+        }
+      ],
+      "screenshots": [],
+      "type": "web",
+      "details": {
+        "url": "${APP_URL}"
+      },
+      "interop": {
+        "intents": {
+          "listensFor": {
+            "ViewLoanAgreement": {
+              "displayName": "View Loan Agreement",
+              "contexts": [
+                "finos.creditnexus.agreement",
+                "fdc3.instrument"
+              ],
+              "resultType": "finos.creditnexus.agreement"
+            },
+            "ApproveLoanAgreement": {
+              "displayName": "Approve Loan Agreement",
+              "contexts": [
+                "finos.creditnexus.agreement"
+              ],
+              "resultType": "finos.creditnexus.approvalResult"
+            },
+            "ViewESGAnalytics": {
+              "displayName": "View ESG Analytics",
+              "contexts": [
+                "finos.creditnexus.portfolio",
+                "finos.creditnexus.agreement"
+              ],
+              "resultType": "finos.creditnexus.esgData"
+            },
+            "ExtractCreditAgreement": {
+              "displayName": "Extract Credit Agreement",
+              "contexts": [
+                "finos.creditnexus.document"
+              ],
+              "resultType": "finos.creditnexus.agreement"
+            },
+            "ViewPortfolio": {
+              "displayName": "View Portfolio",
+              "contexts": [
+                "fdc3.portfolio",
+                "finos.creditnexus.portfolio"
+              ],
+              "resultType": "finos.creditnexus.portfolio"
+            }
+          },
+          "raises": {
+            "ViewChart": {
+              "contexts": [
+                "fdc3.timeRange"
+              ]
+            },
+            "ViewInstrument": {
+              "contexts": [
+                "fdc3.instrument"
+              ]
+            }
+          }
+        },
+        "userChannels": {
+          "broadcasts": [
+            "finos.creditnexus.agreement",
+            "finos.creditnexus.approvalResult",
+            "finos.creditnexus.portfolio"
+          ],
+          "listensFor": [
+            "fdc3.instrument",
+            "fdc3.portfolio",
+            "finos.creditnexus.document"
+          ]
+        },
+        "appChannels": [
+          {
+            "name": "creditnexus.workflow",
+            "description": "Channel for workflow state updates and approvals",
+            "broadcasts": [
+              "finos.creditnexus.agreement",
+              "finos.creditnexus.approvalResult"
+            ],
+            "listensFor": [
+              "finos.creditnexus.approvalResult"
+            ]
+          },
+          {
+            "name": "creditnexus.extraction",
+            "description": "Channel for document extraction events",
+            "broadcasts": [
+              "finos.creditnexus.agreement"
+            ],
+            "listensFor": [
+              "finos.creditnexus.document"
+            ]
+          }
+        ]
+      },
+      "hostManifests": {
+        "OpenFin": {
+          "type": "manifest",
+          "details": "${APP_URL}/openfin/app.json"
+        }
+      },
+      "localizedVersions": {},
+      "customConfig": {
+        "contextTypes": {
+          "finos.creditnexus.agreement": {
+            "description": "Credit agreement context containing agreement details",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "finos.creditnexus.agreement"
+                },
+                "id": {
+                  "type": "object",
+                  "properties": {
+                    "agreementId": {
+                      "type": "string",
+                      "description": "Unique identifier for the credit agreement"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "description": "Version number of the agreement"
+                    }
+                  },
+                  "required": ["agreementId"]
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Display name of the agreement"
+                },
+                "borrower": {
+                  "type": "string",
+                  "description": "Name of the borrowing party"
+                },
+                "agreementDate": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "Date of the credit agreement"
+                },
+                "totalCommitment": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "workflowStatus": {
+                  "type": "string",
+                  "enum": ["draft", "under_review", "approved", "published"]
+                },
+                "facilities": {
+                  "type": "array",
+                  "description": "Loan facilities in the agreement"
+                },
+                "parties": {
+                  "type": "array",
+                  "description": "Parties to the agreement"
+                }
+              },
+              "required": ["type", "id"]
+            }
+          },
+          "finos.creditnexus.document": {
+            "description": "Document context for extraction",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "finos.creditnexus.document"
+                },
+                "id": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "name": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Raw text content of the document"
+                },
+                "mimeType": {
+                  "type": "string"
+                }
+              },
+              "required": ["type", "content"]
+            }
+          },
+          "finos.creditnexus.portfolio": {
+            "description": "Portfolio context",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "finos.creditnexus.portfolio"
+                },
+                "id": {
+                  "type": "object",
+                  "properties": {
+                    "portfolioId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "name": {
+                  "type": "string"
+                },
+                "agreementIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "totalCommitment": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "agreementCount": {
+                  "type": "integer"
+                }
+              },
+              "required": ["type"]
+            }
+          },
+          "finos.creditnexus.approvalResult": {
+            "description": "Approval workflow result",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "finos.creditnexus.approvalResult"
+                },
+                "agreementId": {
+                  "type": "string"
+                },
+                "approved": {
+                  "type": "boolean"
+                },
+                "approver": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "comments": {
+                  "type": "string"
+                },
+                "newStatus": {
+                  "type": "string",
+                  "enum": ["draft", "under_review", "approved", "published", "rejected"]
+                }
+              },
+              "required": ["type", "agreementId", "approved"]
+            }
+          },
+          "finos.creditnexus.esgData": {
+            "description": "ESG analytics data",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "finos.creditnexus.esgData"
+                },
+                "agreementId": {
+                  "type": "string"
+                },
+                "environmentalScore": {
+                  "type": "number"
+                },
+                "socialScore": {
+                  "type": "number"
+                },
+                "governanceScore": {
+                  "type": "number"
+                },
+                "overallScore": {
+                  "type": "number"
+                },
+                "greenLoanIndicators": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "sustainabilityLinkedTerms": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["type"]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

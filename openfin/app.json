@@ -1,0 +1,68 @@
+{
+  "$schema": "https://openfin.co/schemas/app.schema.json",
+  "platform": {
+    "uuid": "creditnexus-platform",
+    "applicationIcon": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+    "autoShow": true,
+    "defaultWindowOptions": {
+      "cornerRounding": {
+        "height": 10,
+        "width": 10
+      }
+    }
+  },
+  "shortcut": {
+    "company": "CreditNexus",
+    "description": "FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
+    "icon": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+    "name": "CreditNexus"
+  },
+  "splashScreenImage": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+  "supportInformation": {
+    "company": "CreditNexus",
+    "email": "support@creditnexus.com",
+    "product": "CreditNexus Enterprise"
+  },
+  "snapshot": {
+    "windows": [
+      {
+        "defaultLeft": 100,
+        "defaultTop": 100,
+        "defaultWidth": 1400,
+        "defaultHeight": 900,
+        "saveWindowState": true,
+        "backgroundThrottling": true,
+        "layout": {
+          "content": [
+            {
+              "type": "stack",
+              "content": [
+                {
+                  "type": "component",
+                  "componentName": "view",
+                  "componentState": {
+                    "name": "creditnexus-main",
+                    "url": "${APP_URL}",
+                    "processAffinity": "main"
+                  },
+                  "title": "CreditNexus"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "runtime": {
+    "version": "35.127.81.16",
+    "arguments": "--enable-mesh --security-realm=creditnexus"
+  },
+  "appAssets": [],
+  "services": [
+    {
+      "name": "fdc3",
+      "manifestUrl": "https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json"
+    }
+  ]
+}
