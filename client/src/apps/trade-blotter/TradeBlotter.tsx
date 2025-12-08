@@ -41,22 +41,28 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
 
   useEffect(() => {
     if (context?.loan) {
-      const today = new Date();
-      const settlement = addBusinessDays(today, 5);
+      const isNewLoan = !loanData || 
+        loanData.deal_id !== context.loan.deal_id ||
+        loanData.agreement_date !== context.loan.agreement_date;
       
-      const totalCommitment = context.loan.facilities?.reduce(
-        (sum: number, f: Facility) => sum + (f.commitment_amount?.amount || 0), 0
-      ) || 0;
-      
-      setState(prev => ({
-        ...prev,
-        loanData: context.loan,
-        tradeStatus: 'pending',
-        settlementDate: formatDate(settlement),
-        tradeAmount: totalCommitment.toString(),
-      }));
+      if (isNewLoan) {
+        const today = new Date();
+        const settlement = addBusinessDays(today, 5);
+        
+        const totalCommitment = context.loan.facilities?.reduce(
+          (sum: number, f: Facility) => sum + (f.commitment_amount?.amount || 0), 0
+        ) || 0;
+        
+        setState(prev => ({
+          ...prev,
+          loanData: context.loan,
+          tradeStatus: 'pending',
+          settlementDate: formatDate(settlement),
+          tradeAmount: totalCommitment.toString(),
+        }));
+      }
     }
-  }, [context, setState]);
+  }, [context, setState, loanData]);
 
   const handleConfirmTrade = () => {
     setState(prev => ({ ...prev, tradeStatus: 'confirmed' }));
