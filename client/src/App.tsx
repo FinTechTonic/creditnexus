@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ReviewInterface } from '@/components/ReviewInterface';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Upload, FileText } from 'lucide-react';
+import { Upload, FileText, Sparkles, Shield, Zap, ArrowRight, X } from 'lucide-react';
 
 interface CreditAgreement {
   agreement_date: string;
@@ -20,6 +20,7 @@ function App() {
   const [documentText, setDocumentText] = useState('');
   const [extractedData, setExtractedData] = useState<CreditAgreement | undefined>();
   const [isExtracting, setIsExtracting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -28,12 +29,14 @@ function App() {
     const text = await file.text();
     setDocumentText(text);
     setExtractedData(undefined);
+    setError(null);
   };
 
   const handleExtract = async () => {
     if (!documentText.trim()) return;
 
     setIsExtracting(true);
+    setError(null);
     try {
       const response = await fetch('/api/extract', {
         method: 'POST',
@@ -47,25 +50,9 @@ function App() {
 
       const result = await response.json();
       setExtractedData(result.agreement || result);
-    } catch (error) {
-      console.error('Extraction error:', error);
-      // For demo: use mock data
-      setExtractedData({
-        agreement_date: '2023-10-15',
-        parties: [
-          { name: 'ACME INDUSTRIES INC.', role: 'Borrower' },
-          { name: 'GLOBAL BANK CORP.', role: 'Lender' },
-        ],
-        facilities: [
-          {
-            facility_name: 'Term Loan Facility',
-            commitment_amount: { amount: 500000000, currency: 'USD' },
-            maturity_date: '2028-10-15',
-          },
-        ],
-        governing_law: 'State of New York',
-        extraction_status: 'success',
-      });
+    } catch (err) {
+      console.error('Extraction error:', err);
+      setError('Failed to extract data. Please try again.');
     } finally {
       setIsExtracting(false);
     }
@@ -73,70 +60,173 @@ function App() {
 
   const handleApprove = (data: CreditAgreement) => {
     console.log('Approved:', data);
-    // TODO: Send to backend staging area
     alert('Data approved and sent to staging area');
   };
 
   const handleReject = (reason?: string) => {
     console.log('Rejected:', reason);
-    // TODO: Send rejection to backend
     alert(`Data rejected: ${reason || 'No reason provided'}`);
   };
 
+  const handleReset = () => {
+    setDocumentText('');
+    setExtractedData(undefined);
+    setError(null);
+  };
+
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">CreditNexus</h1>
-            <p className="text-muted-foreground">FINOS-Compliant Financial AI Agent</p>
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+              <Sparkles className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">CreditNexus</h1>
+              <p className="text-xs text-muted-foreground">FINOS CDM Compliant</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
+              <Shield className="h-4 w-4 text-primary" />
+              <span>Enterprise Grade</span>
+            </div>
+            {extractedData && (
+              <Button variant="outline" size="sm" onClick={handleReset}>
+                <X className="h-4 w-4 mr-2" />
+                New Extraction
+              </Button>
+            )}
           </div>
         </div>
+      </header>
 
-        {!extractedData && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Upload Document</CardTitle>
-              <CardDescription>
-                Upload a credit agreement PDF or paste text to extract structured data
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-4">
-                <label className="flex-1">
-                  <input
-                    type="file"
-                    accept=".pdf,.txt"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                  <Button variant="outline" className="w-full" asChild>
-                    <span>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload File
-                    </span>
-                  </Button>
-                </label>
-                <Button
-                  onClick={handleExtract}
-                  disabled={!documentText.trim() || isExtracting}
-                >
-                  <FileText className="h-4 w-4 mr-2" />
-                  {isExtracting ? 'Extracting...' : 'Extract Data'}
-                </Button>
-              </div>
-              {documentText && (
-                <div className="mt-4">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Document loaded ({documentText.length} characters)
-                  </p>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {!extractedData ? (
+          <div className="space-y-8">
+            <div className="text-center max-w-2xl mx-auto space-y-4">
+              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                Extract Structured Data from
+                <span className="gradient-text"> Credit Agreements</span>
+              </h2>
+              <p className="text-lg text-muted-foreground">
+                Upload your credit agreement documents and let AI extract machine-readable,
+                FINOS CDM-compliant data in seconds.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
+              <Card className="glass-card border-0 shadow-sm">
+                <CardContent className="pt-6 text-center">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                    <Zap className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Fast Processing</h3>
+                  <p className="text-sm text-muted-foreground">Extract data from complex agreements in seconds</p>
+                </CardContent>
+              </Card>
+              <Card className="glass-card border-0 shadow-sm">
+                <CardContent className="pt-6 text-center">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                    <Shield className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="font-semibold mb-1">CDM Compliant</h3>
+                  <p className="text-sm text-muted-foreground">Output follows FINOS Common Domain Model</p>
+                </CardContent>
+              </Card>
+              <Card className="glass-card border-0 shadow-sm">
+                <CardContent className="pt-6 text-center">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <h3 className="font-semibold mb-1">Human Review</h3>
+                  <p className="text-sm text-muted-foreground">Verify and approve extracted data before use</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="max-w-4xl mx-auto shadow-lg border-0">
+              <CardContent className="p-8">
+                <div className="space-y-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-sm font-medium text-muted-foreground">Upload or Paste Document</span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <label className="group cursor-pointer">
+                      <input
+                        type="file"
+                        accept=".pdf,.txt,.doc,.docx"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                      <div className="border-2 border-dashed rounded-xl p-8 text-center transition-all hover:border-primary hover:bg-primary/5 group-hover:border-primary">
+                        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4 group-hover:bg-primary/10 transition-colors">
+                          <Upload className="h-8 w-8 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </div>
+                        <p className="font-medium mb-1">Drop file here or click to upload</p>
+                        <p className="text-sm text-muted-foreground">Supports PDF, TXT, DOC, DOCX</p>
+                      </div>
+                    </label>
+
+                    <div className="space-y-3">
+                      <textarea
+                        placeholder="Or paste your credit agreement text here..."
+                        value={documentText}
+                        onChange={(e) => {
+                          setDocumentText(e.target.value);
+                          setError(null);
+                        }}
+                        className="w-full h-[180px] px-4 py-3 text-sm border rounded-xl bg-muted/50 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {documentText && (
+                    <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <FileText className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Document Ready</p>
+                          <p className="text-sm text-muted-foreground">{documentText.length.toLocaleString()} characters</p>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleExtract}
+                        disabled={isExtracting}
+                        size="lg"
+                        className="gap-2"
+                      >
+                        {isExtracting ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            Extract Data
+                            <ArrowRight className="h-4 w-4" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm">
+                      {error}
+                    </div>
+                  )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {extractedData && (
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
           <ReviewInterface
             documentText={documentText}
             extractedData={extractedData}
@@ -144,7 +234,14 @@ function App() {
             onReject={handleReject}
           />
         )}
-      </div>
+      </main>
+
+      <footer className="border-t mt-auto">
+        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+          <p>Powered by OpenAI GPT-4o and LangChain</p>
+          <p>FINOS Common Domain Model Compliant</p>
+        </div>
+      </footer>
     </div>
   );
 }

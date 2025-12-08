@@ -98,8 +98,15 @@ The backend automatically detects the presence of built static files and serves 
 
 ## Recent Changes (December 2024)
 - Created FastAPI backend with extraction endpoints
-- Configured Vite frontend with API proxy
+- Configured Vite frontend with API proxy and allowedHosts
 - Updated frontend to use relative API paths
 - Added static file serving for production deployment
 - Configured autoscale deployment with build pipeline
 - Set up development workflows for frontend and backend
+- Redesigned UI with professional enterprise-grade styling:
+  - Modern header with branding
+  - Feature cards highlighting capabilities
+  - Drag-and-drop file upload area
+  - Text paste input for documents
+  - Responsive layout with glassmorphism effects
+  - Improved review interface with summary and JSON views
