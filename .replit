@@ -1,6 +1,7 @@
-modules = ["nodejs-20", "web", "python-3.11"]
+modules = ["nodejs-20", "web", "python-3.11", "postgresql-16"]
 [agent]
 expertMode = true
+integrations = ["python_database:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
@@ -54,10 +55,6 @@ externalPort = 80
 localPort = 8000
 externalPort = 8000
 exposeLocalhost = true
-
-[[ports]]
-localPort = 42103
-externalPort = 3000
 
 [deployment]
 deploymentTarget = "autoscale"

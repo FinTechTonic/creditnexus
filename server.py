@@ -2,6 +2,7 @@
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,10 +14,27 @@ from app.api.routes import router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup/shutdown events."""
+    if os.environ.get("DATABASE_URL"):
+        try:
+            from app.db import init_db
+            init_db()
+            logger.info("Database tables initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+    else:
+        logger.warning("DATABASE_URL not set, skipping database initialization")
+    yield
+
+
 app = FastAPI(
     title="CreditNexus API",
     description="FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
