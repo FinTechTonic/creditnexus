@@ -57,7 +57,7 @@ externalPort = 8000
 exposeLocalhost = true
 
 [[ports]]
-localPort = 36443
+localPort = 40505
 externalPort = 3000
 
 [deployment]
