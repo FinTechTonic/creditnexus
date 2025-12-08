@@ -125,10 +125,9 @@ class CreditAgreement(BaseModel):
     )
 
     @model_validator(mode='after')
-    def require_core_fields_when_successful(self) -> 'CreditAgreement':
-        """Require core fields unless extraction_status indicates failure."""
+    def check_core_fields_completeness(self) -> 'CreditAgreement':
+        """Check core fields and adjust extraction status if needed."""
         if self.extraction_status == ExtractionStatus.FAILURE:
-            # In failure/irrelevant_document case, allow missing core fields
             return self
 
         missing = []
@@ -141,8 +140,8 @@ class CreditAgreement(BaseModel):
         if not self.governing_law:
             missing.append("governing_law")
 
-        if missing:
-            raise ValueError(f"Missing required fields for successful extraction: {', '.join(missing)}")
+        if missing and self.extraction_status == ExtractionStatus.SUCCESS:
+            object.__setattr__(self, 'extraction_status', ExtractionStatus.PARTIAL)
 
         return self
     
@@ -160,20 +159,20 @@ class CreditAgreement(BaseModel):
     
     @model_validator(mode='after')
     def validate_facilities(self) -> 'CreditAgreement':
-        """Ensure at least one facility exists."""
-        if self.extraction_status == ExtractionStatus.FAILURE:
+        """Ensure at least one facility exists for successful extractions."""
+        if self.extraction_status != ExtractionStatus.SUCCESS:
             return self
         if not self.facilities:
-            raise ValueError("At least one facility must be defined in the credit agreement")
+            object.__setattr__(self, 'extraction_status', ExtractionStatus.PARTIAL)
         return self
     
     @model_validator(mode='after')
     def validate_parties(self) -> 'CreditAgreement':
-        """Ensure at least one party exists."""
-        if self.extraction_status == ExtractionStatus.FAILURE:
+        """Ensure at least one party exists for successful extractions."""
+        if self.extraction_status != ExtractionStatus.SUCCESS:
             return self
         if not self.parties:
-            raise ValueError("At least one party must be defined in the credit agreement")
+            object.__setattr__(self, 'extraction_status', ExtractionStatus.PARTIAL)
         return self
 
     @model_validator(mode='after')
@@ -211,14 +210,14 @@ class CreditAgreement(BaseModel):
 
     @model_validator(mode='after')
     def validate_party_reconciliation(self) -> 'CreditAgreement':
-        """Ensure at least one Borrower exists among parties."""
+        """Check if at least one Borrower exists among parties."""
         if self.extraction_status == ExtractionStatus.FAILURE:
             return self
         if not self.parties:
             return self
         borrower_parties = [p for p in self.parties if "borrower" in p.role.lower()]
-        if not borrower_parties:
-            raise ValueError("At least one party with role 'Borrower' must exist in the parties list")
+        if not borrower_parties and self.extraction_status == ExtractionStatus.SUCCESS:
+            object.__setattr__(self, 'extraction_status', ExtractionStatus.PARTIAL)
         return self
 
 
@@ -244,9 +243,13 @@ class ExtractionResult(BaseModel):
 
     @model_validator(mode='after')
     def validate_status_consistency(self) -> 'ExtractionResult':
-        """Ensure agreement is present when status is success/partial."""
-        if self.status in {ExtractionStatus.SUCCESS, ExtractionStatus.PARTIAL}:
-            if self.agreement is None:
-                raise ValueError("agreement must be provided when status is success or partial_data_missing")
+        """Adjust status if agreement is missing or incomplete."""
+        if self.status == ExtractionStatus.FAILURE:
+            return self
+        if self.agreement is None:
+            object.__setattr__(self, 'status', ExtractionStatus.FAILURE)
+            object.__setattr__(self, 'message', "Could not extract data from this document")
+        elif self.agreement.extraction_status != ExtractionStatus.SUCCESS:
+            object.__setattr__(self, 'status', self.agreement.extraction_status)
         return self
 

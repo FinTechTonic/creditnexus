@@ -198,8 +198,11 @@ def extract_data_map_reduce(text: str) -> ExtractionResult:
         reducer_chain = create_reducer_prompt() | create_reducer_chain()
         result = reducer_chain.invoke({"partial_extractions": partial_extractions_json})
         
-        logger.info("REDUCE phase complete: merged into complete CreditAgreement")
-        logger.info(f"Final result: {len(result.parties)} parties, {len(result.facilities)} facilities")
+        logger.info("REDUCE phase complete: merged into complete ExtractionResult")
+        if result.agreement:
+            parties_count = len(result.agreement.parties) if result.agreement.parties else 0
+            facilities_count = len(result.agreement.facilities) if result.agreement.facilities else 0
+            logger.info(f"Final result: {parties_count} parties, {facilities_count} facilities")
         
         return result
         

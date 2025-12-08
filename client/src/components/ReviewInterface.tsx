@@ -12,7 +12,8 @@ import {
   Building2, 
   Scale,
   DollarSign,
-  Clock
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { useFDC3 } from '@/hooks/useFDC3';
 
@@ -31,6 +32,7 @@ interface CreditAgreement {
 interface ReviewInterfaceProps {
   documentText?: string;
   extractedData?: CreditAgreement;
+  warningMessage?: string;
   onApprove: (data: CreditAgreement) => void;
   onReject: (reason?: string) => void;
 }
@@ -38,6 +40,7 @@ interface ReviewInterfaceProps {
 export function ReviewInterface({
   documentText = '',
   extractedData,
+  warningMessage,
   onApprove,
   onReject,
 }: ReviewInterfaceProps) {
@@ -79,6 +82,7 @@ export function ReviewInterface({
   }
 
   const isSuccess = extractedData.extraction_status === 'success' || !extractedData.extraction_status;
+  const isPartial = extractedData.extraction_status === 'partial_data_missing';
   const isFailure = extractedData.extraction_status === 'irrelevant_document';
 
   const formatCurrency = (amount: number, currency: string) => {
@@ -121,7 +125,17 @@ export function ReviewInterface({
         </div>
       )}
 
-      {isSuccess && (
+      {isPartial && (
+        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+          <div>
+            <p className="font-medium text-amber-600 dark:text-amber-400">Partial Extraction</p>
+            <p className="text-sm text-muted-foreground">{warningMessage || 'Some data may be incomplete. Please review carefully before approving.'}</p>
+          </div>
+        </div>
+      )}
+
+      {isSuccess && !isPartial && (
         <div className="p-4 bg-[oklch(55%_0.15_145_/_0.1)] border border-[oklch(55%_0.15_145_/_0.2)] rounded-xl flex items-center gap-3">
           <CheckCircle2 className="h-5 w-5 text-[oklch(55%_0.15_145)] flex-shrink-0" />
           <div>
@@ -300,7 +314,7 @@ export function ReviewInterface({
               <Button
                 size="lg"
                 onClick={handleApprove}
-                disabled={!extractedData || !isSuccess}
+                disabled={!extractedData || isFailure}
                 className="gap-2"
               >
                 <CheckCircle2 className="h-4 w-4" />

@@ -148,7 +148,7 @@ Original Contract Text:
             raise ValueError(f"Extraction failed: {e}") from e
 
 
-def extract_data_smart(text: str, force_map_reduce: bool = False, max_retries: int = 3) -> CreditAgreement:
+def extract_data_smart(text: str, force_map_reduce: bool = False, max_retries: int = 3) -> ExtractionResult:
     """Extract structured data with automatic strategy selection.
     
     Automatically chooses between simple extraction (for short documents)
@@ -160,7 +160,7 @@ def extract_data_smart(text: str, force_map_reduce: bool = False, max_retries: i
         max_retries: Maximum number of validation retries for simple extraction.
         
     Returns:
-        A CreditAgreement Pydantic model instance.
+        An ExtractionResult Pydantic model instance containing the extracted data.
     """
     text_length = len(text)
     

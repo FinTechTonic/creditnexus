@@ -21,6 +21,7 @@ function App() {
   const [extractedData, setExtractedData] = useState<CreditAgreement | undefined>();
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -37,6 +38,7 @@ function App() {
 
     setIsExtracting(true);
     setError(null);
+    setWarningMessage(null);
     try {
       const response = await fetch('/api/extract', {
         method: 'POST',
@@ -45,14 +47,39 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Extraction failed');
+        const errorData = await response.json().catch(() => ({}));
+        const detail = errorData.detail;
+        if (typeof detail === 'object' && detail.message) {
+          setError(detail.message);
+        } else if (typeof detail === 'string') {
+          setError(detail);
+        } else {
+          setError(`Extraction failed with status ${response.status}`);
+        }
+        return;
       }
 
       const result = await response.json();
-      setExtractedData(result.agreement || result);
+      
+      if (result.status === 'irrelevant_document') {
+        setError(result.message || 'This document does not appear to be a credit agreement.');
+        return;
+      }
+      
+      if (result.agreement) {
+        setExtractedData({
+          ...result.agreement,
+          extraction_status: result.status,
+        });
+        if (result.status === 'partial_data_missing' && result.message) {
+          setWarningMessage(result.message);
+        }
+      } else {
+        setError('No data could be extracted from this document.');
+      }
     } catch (err) {
       console.error('Extraction error:', err);
-      setError('Failed to extract data. Please try again.');
+      setError('Failed to connect to extraction service. Please try again.');
     } finally {
       setIsExtracting(false);
     }
@@ -72,6 +99,7 @@ function App() {
     setDocumentText('');
     setExtractedData(undefined);
     setError(null);
+    setWarningMessage(null);
   };
 
   return (
@@ -230,6 +258,7 @@ function App() {
           <ReviewInterface
             documentText={documentText}
             extractedData={extractedData}
+            warningMessage={warningMessage || undefined}
             onApprove={handleApprove}
             onReject={handleReject}
           />
