@@ -48,6 +48,14 @@ const sidebarApps: { id: AppView; name: string; icon: React.ReactNode; descripti
   },
 ];
 
+interface TradeBlotterState {
+  loanData: CreditAgreementData | null;
+  tradeStatus: 'pending' | 'confirmed' | 'settled';
+  settlementDate: string;
+  tradePrice: string;
+  tradeAmount: string;
+}
+
 function App() {
   const [activeApp, setActiveApp] = useState<AppView>('docu-digitizer');
   const [hasBroadcast, setHasBroadcast] = useState(false);
@@ -55,6 +63,13 @@ function App() {
   const [extractionContent, setExtractionContent] = useState<string | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [tradeBlotterState, setTradeBlotterState] = useState<TradeBlotterState>({
+    loanData: null,
+    tradeStatus: 'pending',
+    settlementDate: '',
+    tradePrice: '100.00',
+    tradeAmount: '',
+  });
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const { isAvailable, pendingIntent, clearPendingIntent, onIntentReceived } = useFDC3();
 
@@ -291,7 +306,12 @@ function App() {
           {activeApp === 'library' && (
             <DocumentHistory onViewData={handleViewData} />
           )}
-          {activeApp === 'trade-blotter' && <TradeBlotter />}
+          {activeApp === 'trade-blotter' && (
+            <TradeBlotter 
+              state={tradeBlotterState}
+              setState={setTradeBlotterState}
+            />
+          )}
           {activeApp === 'green-lens' && <GreenLens />}
         </main>
       </div>

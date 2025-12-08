@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
@@ -22,42 +22,65 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-export function TradeBlotter() {
+interface TradeBlotterState {
+  loanData: CreditAgreementData | null;
+  tradeStatus: 'pending' | 'confirmed' | 'settled';
+  settlementDate: string;
+  tradePrice: string;
+  tradeAmount: string;
+}
+
+interface TradeBlotterProps {
+  state: TradeBlotterState;
+  setState: React.Dispatch<React.SetStateAction<TradeBlotterState>>;
+}
+
+export function TradeBlotter({ state, setState }: TradeBlotterProps) {
   const { context, clearContext } = useFDC3();
-  const [loanData, setLoanData] = useState<CreditAgreementData | null>(null);
-  const [tradeStatus, setTradeStatus] = useState<'pending' | 'confirmed' | 'settled'>('pending');
-  const [settlementDate, setSettlementDate] = useState<string>('');
-  const [tradePrice, setTradePrice] = useState<string>('100.00');
-  const [tradeAmount, setTradeAmount] = useState<string>('');
+  const { loanData, tradeStatus, settlementDate, tradePrice, tradeAmount } = state;
 
   useEffect(() => {
     if (context?.loan) {
-      setLoanData(context.loan);
-      setTradeStatus('pending');
-      
       const today = new Date();
       const settlement = addBusinessDays(today, 5);
-      setSettlementDate(formatDate(settlement));
       
       const totalCommitment = context.loan.facilities?.reduce(
         (sum: number, f: Facility) => sum + (f.commitment_amount?.amount || 0), 0
       ) || 0;
-      setTradeAmount(totalCommitment.toString());
+      
+      setState(prev => ({
+        ...prev,
+        loanData: context.loan,
+        tradeStatus: 'pending',
+        settlementDate: formatDate(settlement),
+        tradeAmount: totalCommitment.toString(),
+      }));
     }
-  }, [context]);
+  }, [context, setState]);
 
   const handleConfirmTrade = () => {
-    setTradeStatus('confirmed');
+    setState(prev => ({ ...prev, tradeStatus: 'confirmed' }));
   };
 
   const handleSettleTrade = () => {
-    setTradeStatus('settled');
+    setState(prev => ({ ...prev, tradeStatus: 'settled' }));
   };
 
   const handleClearTrade = () => {
-    setLoanData(null);
-    setTradeStatus('pending');
+    setState(prev => ({
+      ...prev,
+      loanData: null,
+      tradeStatus: 'pending',
+    }));
     clearContext();
+  };
+
+  const setTradeAmount = (value: string) => {
+    setState(prev => ({ ...prev, tradeAmount: value }));
+  };
+
+  const setTradePrice = (value: string) => {
+    setState(prev => ({ ...prev, tradePrice: value }));
   };
 
   const borrower = loanData?.parties?.find(p => p.role.toLowerCase().includes('borrower'));
