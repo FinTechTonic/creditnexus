@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { DocuDigitizer } from '@/apps/docu-digitizer/DocuDigitizer';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { Dashboard } from '@/components/Dashboard';
 import { LoginForm } from '@/components/LoginForm';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
@@ -153,6 +155,22 @@ function App() {
     setExtractionContent(null);
   };
 
+  const breadcrumbItems = useMemo(() => {
+    const currentApp = [...mainApps, ...sidebarApps].find(app => app.id === activeApp);
+    if (!currentApp) return [];
+    
+    return [
+      { 
+        label: currentApp.name,
+        icon: currentApp.icon
+      }
+    ];
+  }, [activeApp]);
+
+  const handleBreadcrumbHome = () => {
+    setActiveApp('dashboard');
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       <header className="sticky top-0 z-50 border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
@@ -191,6 +209,8 @@ function App() {
           </nav>
 
           <div className="flex items-center gap-4">
+            <ThemeToggle />
+            
             <div className="flex items-center gap-2 text-sm text-slate-400" title={isAvailable ? 'FDC3 Desktop Agent Connected' : 'FDC3 Mock Mode (No Desktop Agent)'}>
               <Radio className={`h-4 w-4 ${isAvailable ? 'text-emerald-500' : 'text-slate-500'}`} />
               <span className="hidden sm:inline">FDC3</span>
@@ -295,6 +315,13 @@ function App() {
         </aside>
         
         <main className="flex-1 max-w-6xl mx-auto px-6 py-8">
+          <BreadcrumbContainer>
+            <Breadcrumb 
+              items={breadcrumbItems}
+              onHomeClick={handleBreadcrumbHome}
+            />
+          </BreadcrumbContainer>
+          
           {activeApp === 'dashboard' && <Dashboard />}
           {activeApp === 'docu-digitizer' && (
             <DocuDigitizer 
