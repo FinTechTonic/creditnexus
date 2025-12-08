@@ -3,13 +3,20 @@ import { DocuDigitizer } from '@/apps/docu-digitizer/DocuDigitizer';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentHistory } from '@/components/DocumentHistory';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen } from 'lucide-react';
+import { Dashboard } from '@/components/Dashboard';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import type { CreditAgreementData } from '@/context/FDC3Context';
 
-type AppView = 'docu-digitizer' | 'trade-blotter' | 'green-lens' | 'library';
+type AppView = 'dashboard' | 'docu-digitizer' | 'trade-blotter' | 'green-lens' | 'library';
 
 const apps: { id: AppView; name: string; icon: React.ReactNode; description: string }[] = [
+  {
+    id: 'dashboard',
+    name: 'Dashboard',
+    icon: <LayoutDashboard className="h-5 w-5" />,
+    description: 'Portfolio overview & analytics',
+  },
   {
     id: 'docu-digitizer',
     name: 'Docu-Digitizer',
@@ -144,6 +151,7 @@ function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+        {activeApp === 'dashboard' && <Dashboard />}
         {activeApp === 'docu-digitizer' && (
           <DocuDigitizer 
             onBroadcast={handleBroadcast} 

@@ -846,3 +846,129 @@ async def delete_document(
             status_code=500,
             detail={"status": "error", "message": f"Failed to delete document: {str(e)}"}
         )
+
+
+@router.get("/analytics/portfolio")
+async def get_portfolio_analytics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_optional_user)
+):
+    """Get portfolio-level analytics aggregating all documents.
+    
+    Returns:
+        Portfolio analytics including total commitments, ESG breakdown,
+        workflow distribution, and maturity timeline.
+    """
+    from sqlalchemy import func
+    from collections import defaultdict
+    
+    try:
+        total_documents = db.query(Document).count()
+        
+        commitment_result = db.query(
+            func.sum(Document.total_commitment).label("total"),
+            Document.currency
+        ).filter(
+            Document.total_commitment.isnot(None)
+        ).group_by(Document.currency).all()
+        
+        commitments_by_currency = {}
+        total_commitment_usd = Decimal("0")
+        for row in commitment_result:
+            if row.currency:
+                amount = float(row.total) if row.total else 0
+                commitments_by_currency[row.currency] = amount
+                if row.currency == "USD":
+                    total_commitment_usd += Decimal(str(amount))
+        
+        sustainability_count = db.query(Document).filter(
+            Document.sustainability_linked == True
+        ).count()
+        sustainability_percentage = (sustainability_count / total_documents * 100) if total_documents > 0 else 0
+        
+        workflow_states = db.query(
+            Workflow.state,
+            func.count(Workflow.id).label("count")
+        ).group_by(Workflow.state).all()
+        
+        workflow_distribution = {row.state: row.count for row in workflow_states}
+        
+        maturity_data = []
+        documents_with_dates = db.query(
+            Document.id,
+            Document.title,
+            Document.borrower_name,
+            Document.agreement_date,
+            Document.total_commitment,
+            Document.currency,
+            Document.sustainability_linked
+        ).filter(
+            Document.agreement_date.isnot(None)
+        ).order_by(Document.agreement_date.desc()).limit(50).all()
+        
+        for doc in documents_with_dates:
+            maturity_data.append({
+                "id": doc.id,
+                "title": doc.title,
+                "borrower_name": doc.borrower_name,
+                "agreement_date": doc.agreement_date.isoformat() if doc.agreement_date else None,
+                "total_commitment": float(doc.total_commitment) if doc.total_commitment else None,
+                "currency": doc.currency,
+                "sustainability_linked": doc.sustainability_linked
+            })
+        
+        esg_breakdown = {
+            "sustainability_linked": sustainability_count,
+            "non_sustainability": total_documents - sustainability_count,
+            "esg_score_distribution": {}
+        }
+        
+        docs_with_esg = db.query(Document).filter(
+            Document.esg_metadata.isnot(None)
+        ).all()
+        
+        for doc in docs_with_esg:
+            if doc.esg_metadata:
+                kpis = doc.esg_metadata.get("kpis", [])
+                for kpi in kpis:
+                    category = kpi.get("category", "Other")
+                    if category not in esg_breakdown["esg_score_distribution"]:
+                        esg_breakdown["esg_score_distribution"][category] = 0
+                    esg_breakdown["esg_score_distribution"][category] += 1
+        
+        recent_activity = db.query(Document).options(
+            joinedload(Document.workflow)
+        ).order_by(Document.updated_at.desc()).limit(5).all()
+        
+        recent_docs = []
+        for doc in recent_activity:
+            recent_docs.append({
+                "id": doc.id,
+                "title": doc.title,
+                "borrower_name": doc.borrower_name,
+                "workflow_state": doc.workflow.state if doc.workflow else None,
+                "updated_at": doc.updated_at.isoformat() if doc.updated_at else None
+            })
+        
+        return {
+            "status": "success",
+            "analytics": {
+                "summary": {
+                    "total_documents": total_documents,
+                    "total_commitment_usd": float(total_commitment_usd),
+                    "commitments_by_currency": commitments_by_currency,
+                    "sustainability_linked_count": sustainability_count,
+                    "sustainability_percentage": round(sustainability_percentage, 1)
+                },
+                "workflow_distribution": workflow_distribution,
+                "esg_breakdown": esg_breakdown,
+                "maturity_timeline": maturity_data,
+                "recent_activity": recent_docs
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching portfolio analytics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to fetch analytics: {str(e)}"}
+        )
