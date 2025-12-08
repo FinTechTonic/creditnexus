@@ -1,0 +1,537 @@
+25-12-08 13:51:35.547 | 33440:28632 | INFO | Initialized rvm.log
+25-12-08 13:51:35.547 | 33440:28632 | INFO | LOG_MANAGER | Testing RVM log.
+25-12-08 13:51:35.547 | 33440:28632 | INFO | LOG_MANAGER | -----------------------New RVM Instance-----------------------
+25-12-08 13:51:35.547 | 33440:28632 | INFO | GENERAL | Starting OpenFin RVM - Version 18.0.0.81 - Architecture x86 - Os win 10.0.26200
+25-12-08 13:51:35.549 | 33440:28632 | INFO | GENERAL | [RVM Directory] - C:\Users\odolb\AppData\Local\OpenFin
+25-12-08 13:51:35.549 | 33440:28632 | INFO | GENERAL | Command line arguments : --no-ui --config=http://localhost:8000/openfin/app.json --runtime-arguments=--runtime-information-channel-v6=NodeAdapter.e9f66a38f30cc36732aed13cd119791e
+25-12-08 13:51:35.549 | 33440:28632 | INFO | GENERAL | RVM sessionId: 9fb35433-b425-474d-839d-379b2fd4f834
+25-12-08 13:51:35.549 | 33440:28632 | INFO | GENERAL | Machine ID: 896fbf0c-849d-4c12-a96e-a18fbe474f00
+25-12-08 13:51:35.549 | 33440:28632 | INFO | GENERAL | Integrity Level: 2
+25-12-08 13:51:35.549 | 33440:28632 | INFO | GENERAL | <- Primary RVM
+25-12-08 13:51:35.551 | 33440:28632 | INFO | VERBOSE | Global Configuration Inserting:	unusedRuntimeExpirationInMinutes : 0
+25-12-08 13:51:35.551 | 33440:28632 | INFO | VERBOSE | Global Configuration Inserting:	maxAppLogFiles : 0
+25-12-08 13:51:35.551 | 33440:28632 | INFO | VERBOSE | Global Configuration Inserting:	maxAppLogFileSizeMB : 0
+25-12-08 13:51:35.551 | 33440:28632 | INFO | GENERAL | Initializing RVM configuration settings from Registry
+25-12-08 13:51:35.551 | 33440:28632 | INFO | GENERAL | Checking for RVM config registry settings for local machine
+25-12-08 13:51:35.551 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.551 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:35.551 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM:
+25-12-08 13:51:35.553 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings:
+25-12-08 13:51:35.557 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings\Network:
+25-12-08 13:51:35.557 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings\Deployment:
+25-12-08 13:51:35.557 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings\ApplicationLogging:
+25-12-08 13:51:35.557 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\AppSettings:
+25-12-08 13:51:35.559 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.559 | 33440:28632 | INFO | GENERAL | Checking for RVM config registry settings for current user
+25-12-08 13:51:35.559 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.559 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:35.559 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM:
+25-12-08 13:51:35.559 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings:
+25-12-08 13:51:35.562 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings\Network:
+25-12-08 13:51:35.564 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings\Deployment:
+25-12-08 13:51:35.564 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\Settings\ApplicationLogging:
+25-12-08 13:51:35.564 | 33440:28632 | INFO | VERBOSE | Reading from Software\OpenFin\RVM\AppSettings:
+25-12-08 13:51:35.564 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.566 | 33440:28632 | INFO | GENERAL | Checking for RVM config registry settings for local machine
+25-12-08 13:51:35.566 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.566 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:35.566 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM:
+25-12-08 13:51:35.566 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings:
+25-12-08 13:51:35.568 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings\Network:
+25-12-08 13:51:35.570 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings\Deployment:
+25-12-08 13:51:35.570 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings\ApplicationLogging:
+25-12-08 13:51:35.570 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\AppSettings:
+25-12-08 13:51:35.570 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.570 | 33440:28632 | INFO | GENERAL | Checking for RVM config registry settings for current user
+25-12-08 13:51:35.572 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.572 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:35.572 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM:
+25-12-08 13:51:35.572 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings:
+25-12-08 13:51:35.578 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings\Network:
+25-12-08 13:51:35.578 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings\Deployment:
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\Settings\ApplicationLogging:
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Reading from Software\Microsoft\Windows\CurrentVersion\Policies\OpenFin\RVM\AppSettings:
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Global Configuration key: readTimeout missing. Using default value.
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Global Configuration key: receiveTimeout missing. Using default value.
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Global Configuration key: sendTimeout missing. Using default value.
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Global Configuration key: connectTimeout missing. Using default value.
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Global Configuration key: allowInvalidNetworkCertificates missing. Using default value.
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Global Configuration key: allowHttpToHttpsNetworkRedirects missing. Using default value.
+25-12-08 13:51:35.580 | 33440:28632 | INFO | VERBOSE | Global Configuration key: allowHttpsToHttpNetworkRedirects missing. Using default value.
+25-12-08 13:51:35.580 | 33440:28632 | INFO | HTTP_REQUEST | Initializing WinINet
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | Invalid network certificates: Allow
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | HTTP -> HTTPS redirects: Allow
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | HTTPS -> HTTP redirects: Allow
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | *********************************************************************************
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | Invalid HTTPS certificates are allowed, configure with the OpenFin\RVM\Settings\allowInvalidNetworkCertificates registry key
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | HTTPS -> HTTP redirects are allowed, configure with the OpenFin\RVM\Settings\allowHttpsToHttpNetworkRedirects registry key
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | *********************************************************************************
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | Receive timeout: 30000
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | Connect timeout: 30000
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | Send timeout: 30000
+25-12-08 13:51:35.609 | 33440:28632 | INFO | VERBOSE | Global Configuration key: remoteConfigUrl missing. Using default value.
+25-12-08 13:51:35.609 | 33440:28632 | INFO | HTTP_REQUEST | [0] GET https://cdn.openfin.co/release/rvm/RemoteConfig 
+25-12-08 13:51:36.777 | 33440:28632 | INFO | HTTP_REQUEST | [0] [1.16726s] HTTP 200 137 bytes (text/plain)
+25-12-08 13:51:36.777 | 33440:28632 | INFO | VERBOSE | Global Configuration key: DesktopOwnerSettings missing. Using default value.
+25-12-08 13:51:36.777 | 33440:28632 | INFO | VERBOSE | Global Configuration key: overrideEnvUrl missing. Using default value.
+25-12-08 13:51:36.777 | 33440:28632 | INFO | HTTP_REQUEST | [1] GET https://of.os.openfin.co/api/dos 
+25-12-08 13:51:37.922 | 33440:28632 | INFO | HTTP_REQUEST | [1] [1.14568s] HTTP 200 2 bytes (application/json; charset=utf-8)
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Using Cloud DesktopOwnerSettings.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | DesktopOwnerSettings JSON:
+{
+}
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | DesktopOwnerSettings has been activated
+25-12-08 13:51:37.922 | 33440:28632 | INFO | PATHS | THIS_RVM_BINARY_DIR -> 'C:\Users\odolb\AppData\Local\OpenFin'
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Global Configuration key: runtimeDirectory missing. Using default value.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | PATHS | RUNTIME_INSTALLATIONS_DIR -> 'C:\Users\odolb\AppData\Local\OpenFin\runtime'
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Global Configuration key: runtimeCache missing. Using default value.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | PATHS | RUNTIME_PROFILES_DIR -> 'C:\Users\odolb\AppData\Local\OpenFin\cache'
+25-12-08 13:51:37.922 | 33440:28632 | INFO | PATHS | THIS_RVM_APPLICATION_PATH -> 'C:\Users\odolb\AppData\Local\OpenFin\OpenFinRVM.exe'
+25-12-08 13:51:37.922 | 33440:28632 | INFO | PATHS | DEFAULT_RVM_INSTALL_DIR -> 'C:\Users\odolb\AppData\Local\OpenFin'
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Global Configuration key: rvmInstallDirectory missing. Using default value.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | GENERAL | rvmInstallDirectory not specified, defaulting to "C:\Users\odolb\AppData\Local\OpenFin"
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Global Configuration key: assetsUrl missing. Using default value.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | 	Using assetsUrl: https://cdn.openfin.co/release/
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Global Configuration key: takeoverManagerExperimental missing. Using default value.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Global Configuration key: analyticsUrl missing. Using default value.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | VERBOSE | Global Configuration key: takeoverManagerExperimental missing. Using default value.
+25-12-08 13:51:37.922 | 33440:28632 | INFO | GENERAL | Continuing on with loading app as we are currently the primary RVM.
+25-12-08 13:51:37.954 | 33440:28632 | INFO | GENERAL | Removing database file
+25-12-08 13:51:37.954 | 33440:28632 | INFO | VERBOSE | Global Configuration key: takeoverManagerExperimental missing. Using default value.
+25-12-08 13:51:37.954 | 33440:28632 | INFO | VERBOSE | Global Configuration key: protocolHandlerLocation missing. Using default value.
+25-12-08 13:51:37.954 | 33440:28632 | INFO | VERBOSE | Not running as system account.
+25-12-08 13:51:37.954 | 33440:28632 | INFO | VERBOSE | Not running as system account.
+25-12-08 13:51:37.965 | 33440:28632 | INFO | VERBOSE | Not running as system account.
+25-12-08 13:51:37.965 | 33440:28632 | INFO | VERBOSE | Not running as system account.
+25-12-08 13:51:37.970 | 33440:28632 | INFO | VERBOSE | Initializing RVM cache
+25-12-08 13:51:37.970 | 33440:28632 | INFO | GENERAL | [Working Directory] - C:\Users\odolb\AppData\Local\OpenFin
+25-12-08 13:51:37.970 | 33440:28632 | INFO | GENERAL | Working dir has sufficient access !
+25-12-08 13:51:37.970 | 33440:28632 | INFO | VERBOSE | Global Configuration key: assetsUrl missing. Using default value.
+25-12-08 13:51:37.970 | 33440:28632 | INFO | VERBOSE | Global Configuration key: trackBetaAutoUpdates missing. Using default value.
+25-12-08 13:51:37.970 | 33440:28632 | INFO | VERBOSE | Global Configuration key: trackBetaAutoUpdates missing. Using default value.
+25-12-08 13:51:37.970 | 33440:28632 | INFO | VERBOSE | Global Configuration key: disableAutoUpdates missing. Using default value.
+25-12-08 13:51:37.970 | 33440:28632 | INFO | VERBOSE | Global Configuration key: disableAutoUpdates missing. Using default value.
+25-12-08 13:51:37.970 | 33440:28632 | INFO | HTTP_REQUEST | [2] GET https://cdn.openfin.co/release/rvm/latestVersion 
+25-12-08 13:51:38.314 | 33440:28632 | INFO | HTTP_REQUEST | [2] [0.3443s] HTTP 200 9 bytes (text/plain)
+25-12-08 13:51:38.314 | 33440:28632 | INFO | VERBOSE | Global Configuration key: trackBetaAutoUpdates missing. Using default value.
+25-12-08 13:51:38.314 | 33440:28632 | INFO | GENERAL | Running RVM version: 18.0.0.81, comparing to Latest: 18.0.0.81
+25-12-08 13:51:38.314 | 33440:28632 | INFO | GENERAL | Currently running the latest RVM version, nothing to update.
+25-12-08 13:51:38.314 | 33440:28632 | ERROR | GENERAL | Failed to auto-update
+25-12-08 13:51:38.314 | 33440:28632 | INFO | VERBOSE | Global Configuration key: rvmInstallDirectory missing. Using default value.
+25-12-08 13:51:38.316 | 33440:5472 | INFO | VERBOSE | Sending analytics event to https://ingest.openfin.co/desktop-analytics/
+25-12-08 13:51:38.316 | 33440:34624 | INFO | HTTP_REQUEST | [3] POST https://ingest.openfin.co/desktop-analytics/ 
+25-12-08 13:51:38.316 | 33440:28632 | INFO | VERBOSE | Global Configuration key: connectTimeout missing. Using default value.
+25-12-08 13:51:38.316 | 33440:28632 | INFO | VERBOSE | Global Configuration key: sendTimeout missing. Using default value.
+25-12-08 13:51:38.316 | 33440:28632 | INFO | VERBOSE | Global Configuration key: receiveTimeout missing. Using default value.
+25-12-08 13:51:38.316 | 33440:28632 | INFO | VERBOSE | Global Configuration key: readTimeout missing. Using default value.
+25-12-08 13:51:38.316 | 33440:28632 | INFO | HTTP_REQUEST | Receive timeout: 30000
+25-12-08 13:51:38.316 | 33440:28632 | INFO | HTTP_REQUEST | Connect timeout: 30000
+25-12-08 13:51:38.316 | 33440:28632 | INFO | HTTP_REQUEST | Send timeout: 30000
+25-12-08 13:51:38.316 | 33440:28632 | INFO | VERBOSE | Global Configuration key: EnableStartMenuShortcut missing. Using default value.
+25-12-08 13:51:38.318 | 33440:28632 | INFO | VERBOSE | Global Configuration key: EnableDesktopShortcut missing. Using default value.
+25-12-08 13:51:38.318 | 33440:28632 | INFO | VERBOSE | Global Configuration key: EnableStartupShortcut missing. Using default value.
+25-12-08 13:51:38.318 | 33440:28632 | INFO | VERBOSE | Global Configuration key: disableShortcutCreation missing. Using default value.
+25-12-08 13:51:38.318 | 33440:28632 | INFO | VERBOSE | Global Configuration key: startMenuRootFolder missing. Using default value.
+25-12-08 13:51:38.318 | 33440:28632 | INFO | VERBOSE | rescanConfigsIntervalMs: 1h; licensingHeartbeatIntervalMs: 10m
+25-12-08 13:51:38.318 | 33440:28632 | INFO | VERBOSE | Global Configuration key: runtimeCache missing. Using default value.
+25-12-08 13:51:38.318 | 33440:28632 | INFO | VERBOSE | Global Configuration key: runtimeDiagnosticsOffsetZero missing. Using default value.
+25-12-08 13:51:38.346 | 33440:28632 | INFO | VERBOSE | Number of orphaned runtime processes detected: 0
+25-12-08 13:51:38.365 | 33440:28632 | INFO | VERBOSE | Global Configuration key: disableCandidateEval missing. Using default value.
+25-12-08 13:51:38.365 | 33440:28632 | INFO | VERBOSE | Global Configuration key: remoteConfigUrl missing. Using default value.
+25-12-08 13:51:38.365 | 33440:28632 | INFO | VERBOSE | Global Configuration key: analyticsUrl missing. Using default value.
+25-12-08 13:51:38.365 | 33440:28632 | INFO | VERBOSE | Creating Tray Icon Host
+25-12-08 13:51:38.365 | 33440:38952 | INFO | VERBOSE | EvaluationConfig successfully initialized.
+25-12-08 13:51:38.372 | 33440:28632 | INFO | VERBOSE | Global Configuration key: enableInstallationDetection missing. Using default value.
+25-12-08 13:51:38.372 | 33440:28632 | INFO | VERBOSE | Resource already exists at C:\Users\odolb\AppData\Local\OpenFin\rvm_cache\Inter-Regular-Fin.ttf
+25-12-08 13:51:38.372 | 33440:28632 | INFO | VERBOSE | Font already registered. Skipping registration.
+25-12-08 13:51:38.372 | 33440:28632 | INFO | VERBOSE | Successfully installed and registered OpenFin font.
+25-12-08 13:51:38.372 | 33440:28632 | INFO | VERBOSE | Global Configuration key: enableTrayIconShortcuts missing. Using default value.
+25-12-08 13:51:38.372 | 33440:28632 | INFO | ENDSESSION_HANDLER | EndSessionHandlerThreadImpl::Start
+25-12-08 13:51:38.372 | 33440:35756 | INFO | ENDSESSION_HANDLER | EndSessionHandlerWindowImpl::Initialize
+25-12-08 13:51:38.383 | 33440:28632 | INFO | HEALTHCHECK_REQUEST_MAKER | Created
+25-12-08 13:51:38.383 | 33440:28632 | INFO | VERBOSE | Global Configuration key: lrsUrl missing. Using default value.
+25-12-08 13:51:38.383 | 33440:28632 | INFO | VERBOSE | 131108 | 	Using RdmUrl: https://dl.openfin.co/services/
+25-12-08 13:51:38.383 | 33440:28632 | INFO | MANIFEST | 131108 | Loading manifest from 'http://localhost:8000/openfin/app.json'
+25-12-08 13:51:38.383 | 33440:28632 | INFO | MANIFEST | 131108 | Load - app manifest url: 'http://localhost:8000/openfin/app.json'
+25-12-08 13:51:38.383 | 33440:28632 | INFO | MANIFEST | 131108 | App manifest url scheme is not HTTPS. Fallback into insecure connection.
+25-12-08 13:51:38.383 | 33440:28632 | INFO | MANIFEST | 131108 | Fetching app manifest from 'http://localhost:8000/openfin/app.json' by insecure connection
+25-12-08 13:51:38.383 | 33440:28632 | INFO | HTTP_REQUEST | [4] GET http://localhost:8000/openfin/app.json 
+25-12-08 13:51:39.463 | 33440:34624 | INFO | HTTP_REQUEST | [3] [1.14771s] HTTP 200 2 bytes (text/plain; charset=utf-8)
+25-12-08 13:51:40.415 | 33440:28632 | INFO | HTTP_REQUEST | [4] [2.03131s] HTTP 200 1 kB (application/json)
+25-12-08 13:51:40.420 | 33440:28632 | INFO | MANIFEST | 131108 | The app manifest fetched by insecure connection successfully
+25-12-08 13:51:40.420 | 33440:28632 | INFO | VERBOSE | 131108 | JSON from http://localhost:8000/openfin/app.json:
+{
+    "$schema" : "https://openfin.co/schemas/app.schema.json",
+    "appAssets" : [
+    ],
+    "platform" : {
+        "applicationIcon" : "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+        "autoShow" : true,
+        "defaultWindowOptions" : {
+            "cornerRounding" : {
+                "height" : 10,
+                "width" : 10
+            }
+        },
+        "uuid" : "creditnexus-platform"
+    },
+    "runtime" : {
+        "arguments" : "--enable-mesh --security-realm=creditnexus",
+        "version" : "35.127.81.16"
+    },
+    "services" : [
+        {
+            "manifestUrl" : "https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json",
+            "name" : "fdc3"
+        }
+    ],
+    "shortcut" : {
+        "company" : "CreditNexus",
+        "description" : "FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
+        "icon" : "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+        "name" : "CreditNexus"
+    },
+    "snapshot" : {
+        "windows" : [
+            {
+                "backgroundThrottling" : true,
+                "defaultHeight" : 900,
+                "defaultLeft" : 100,
+                "defaultTop" : 100,
+                "defaultWidth" : 1400,
+                "layout" : {
+                    "content" : [
+                        {
+                            "content" : [
+                                {
+                                    "componentName" : "view",
+                                    "componentState" : {
+                                        "name" : "creditnexus-main",
+                                        "processAffinity" : "main",
+                                        "url" : "http://localhost:5000"
+                                    },
+                                    "title" : "CreditNexus",
+                                    "type" : "component"
+                                }
+                            ],
+                            "type" : "stack"
+                        }
+                    ]
+                },
+                "saveWindowState" : true
+            }
+        ]
+    },
+    "splashScreenImage" : "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+    "supportInformation" : {
+        "company" : "CreditNexus",
+        "email" : "support@creditnexus.com",
+        "product" : "CreditNexus Enterprise"
+    }
+}
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | _______________________________________________________________
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | Attempting to parse app config from JSON
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 	supportInformation:
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 		company : CreditNexus
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 		product : CreditNexus Enterprise
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 		email : support@creditnexus.com
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	[-- Relative paths enabled. --]
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	rootUrl : http://localhost:8000/openfin
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	platform's UUID : creditnexus-platform
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	platform: 
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	runtime:
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 		version : 35.127.81.16
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 		arguments : --enable-mesh --security-realm=creditnexus
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	shortcut : JSON Object that will be parsed later
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	appAssets : JSON Array that will be parsed later
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	splashScreenImage : https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 	services (to be loaded):
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 		manifestUrl: https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json
+25-12-08 13:51:40.422 | 33440:28632 | INFO | VERBOSE | 131108 | 		name: fdc3; mandatory: 0; relaunchOnClose: 0; manifestUrl: https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json
+25-12-08 13:51:40.424 | 33440:28632 | INFO | VERBOSE | 131108 | Successfully parsed APP Config JSON keys/values
+25-12-08 13:51:40.424 | 33440:28632 | INFO | VERBOSE | 131108 | _______________________________________________________________
+25-12-08 13:51:40.424 | 33440:28632 | INFO | VERBOSE | Global Configuration key: crashReporterUrl missing. Using default value.
+25-12-08 13:51:40.424 | 33440:28632 | INFO | VERBOSE | Global Configuration key: lrsUrl missing. Using default value.
+25-12-08 13:51:40.424 | 33440:28632 | INFO | VERBOSE | 131108 | 	Using RdmUrl: https://dl.openfin.co/services/
+25-12-08 13:51:40.424 | 33440:28632 | INFO | MANIFEST | 131108 | Loading manifest from 'http://localhost:8000/openfin/app.json'
+25-12-08 13:51:40.424 | 33440:28632 | INFO | MANIFEST | 131108 | Load - app manifest url: 'http://localhost:8000/openfin/app.json'
+25-12-08 13:51:40.424 | 33440:28632 | INFO | MANIFEST | 131108 | App manifest url scheme is not HTTPS. Fallback into insecure connection.
+25-12-08 13:51:40.424 | 33440:28632 | INFO | MANIFEST | 131108 | Fetching app manifest from 'http://localhost:8000/openfin/app.json' by insecure connection
+25-12-08 13:51:40.424 | 33440:28632 | INFO | HTTP_REQUEST | [5] GET http://localhost:8000/openfin/app.json 
+25-12-08 13:51:40.428 | 33440:28632 | INFO | HTTP_REQUEST | [5] [0.004024s] HTTP 200 1 kB (application/json)
+25-12-08 13:51:40.430 | 33440:28632 | INFO | MANIFEST | 131108 | The app manifest fetched by insecure connection successfully
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | JSON from http://localhost:8000/openfin/app.json:
+{
+    "$schema" : "https://openfin.co/schemas/app.schema.json",
+    "appAssets" : [
+    ],
+    "platform" : {
+        "applicationIcon" : "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+        "autoShow" : true,
+        "defaultWindowOptions" : {
+            "cornerRounding" : {
+                "height" : 10,
+                "width" : 10
+            }
+        },
+        "uuid" : "creditnexus-platform"
+    },
+    "runtime" : {
+        "arguments" : "--enable-mesh --security-realm=creditnexus",
+        "version" : "35.127.81.16"
+    },
+    "services" : [
+        {
+            "manifestUrl" : "https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json",
+            "name" : "fdc3"
+        }
+    ],
+    "shortcut" : {
+        "company" : "CreditNexus",
+        "description" : "FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
+        "icon" : "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+        "name" : "CreditNexus"
+    },
+    "snapshot" : {
+        "windows" : [
+            {
+                "backgroundThrottling" : true,
+                "defaultHeight" : 900,
+                "defaultLeft" : 100,
+                "defaultTop" : 100,
+                "defaultWidth" : 1400,
+                "layout" : {
+                    "content" : [
+                        {
+                            "content" : [
+                                {
+                                    "componentName" : "view",
+                                    "componentState" : {
+                                        "name" : "creditnexus-main",
+                                        "processAffinity" : "main",
+                                        "url" : "http://localhost:5000"
+                                    },
+                                    "title" : "CreditNexus",
+                                    "type" : "component"
+                                }
+                            ],
+                            "type" : "stack"
+                        }
+                    ]
+                },
+                "saveWindowState" : true
+            }
+        ]
+    },
+    "splashScreenImage" : "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+    "supportInformation" : {
+        "company" : "CreditNexus",
+        "email" : "support@creditnexus.com",
+        "product" : "CreditNexus Enterprise"
+    }
+}
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | _______________________________________________________________
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | Attempting to parse app config from JSON
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 	supportInformation:
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 		company : CreditNexus
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 		product : CreditNexus Enterprise
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 		email : support@creditnexus.com
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 	[-- Relative paths enabled. --]
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 	rootUrl : http://localhost:8000/openfin
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 	platform's UUID : creditnexus-platform
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 	platform: 
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 	runtime:
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 		version : 35.127.81.16
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 		arguments : --enable-mesh --security-realm=creditnexus
+25-12-08 13:51:40.430 | 33440:28632 | INFO | VERBOSE | 131108 | 	shortcut : JSON Object that will be parsed later
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | 	appAssets : JSON Array that will be parsed later
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | 	splashScreenImage : https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | 	services (to be loaded):
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | 		manifestUrl: https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | 		name: fdc3; mandatory: 0; relaunchOnClose: 0; manifestUrl: https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | Successfully parsed APP Config JSON keys/values
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | _______________________________________________________________
+25-12-08 13:51:40.434 | 33440:28632 | WARNING | VERBOSE | 131108 | App name: ; does not meet requirements for a valid app name (must contain only alphanumeric characters, spaces, underscores, or dashes and be between 1 and 32 characters inclusive); app directory name will remain as its hash: 4094089369
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | Saving support email: support@creditnexus.com; and offlineAccessEnabled: 0; to cache
+25-12-08 13:51:40.434 | 33440:28632 | INFO | VERBOSE | 131108 | SaveJSONToCache: "apps\4094089369\config.json"
+25-12-08 13:51:40.439 | 33440:28632 | INFO | VERBOSE | 131108 | maybeManifestData: {
+    "applicationName" : "CreditNexus",
+    "companyName" : "CreditNexus",
+    "diagnosticsShortcut" : false,
+    "forceCreate" : false,
+    "maybeRelativeIconUrl" : "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+    "shortcutDescription" : "FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
+    "startMenuRootFolder" : null,
+    "targets" : [
+        "Desktop",
+        "StartMenu"
+    ],
+    "uninstallShortcut" : true,
+    "windowsStartupDelay" : null
+}
+25-12-08 13:51:40.439 | 33440:28632 | INFO | VERBOSE | 131108 | strAppUserModelId: CreditNexus.CreditNexus
+25-12-08 13:51:40.439 | 33440:28632 | INFO | VERBOSE | Global Configuration key: createShortcutsForAllUsers missing. Using default value.
+25-12-08 13:51:40.441 | 33440:28632 | INFO | SHORTCUTS | Public 'StartMenuAutoStart' shortcut does not exist
+25-12-08 13:51:40.443 | 33440:28632 | INFO | SHORTCUTS | Public 'Desktop' shortcut does not exist
+25-12-08 13:51:40.445 | 33440:28632 | INFO | TRUSTED_APP | Cannot use 'trustedAppConfig' for application loaded from insecure source.
+25-12-08 13:51:40.445 | 33440:28632 | INFO | CODECS | 131108 | No valid 'trustedAppConfig' entry.
+25-12-08 13:51:40.445 | 33440:28632 | INFO | VERBOSE | Global Configuration key: extensionServerURLs missing. Using default value.
+25-12-08 13:51:40.445 | 33440:28632 | INFO | EXTENSION_SERVER_URLS | 131108 | Did not find extension server urls from DesktopOwnerSettings, trying trustedAppConfig.
+25-12-08 13:51:40.447 | 33440:28632 | INFO | TRUSTED_APP | Cannot use 'trustedAppConfig' for application loaded from insecure source.
+25-12-08 13:51:40.447 | 33440:28632 | INFO | EXTENSION_SERVER_URLS | 131108 | No valid 'trustedAppConfig' entry.
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | 131108 | Installing service fdc3
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | 131108 | Service has appConfigUrl: https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json; specified in the DesktopOwnerSettings or app's app config; not resolving it from the app directory.
+25-12-08 13:51:40.447 | 33440:28632 | INFO | GENERAL | Updating RVM config registry settings for local machine
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:40.447 | 33440:28632 | INFO | GENERAL | Updating RVM config registry settings for current user
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:40.447 | 33440:28632 | INFO | GENERAL | Updating RVM config registry settings for local machine
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:40.447 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:40.449 | 33440:28632 | INFO | GENERAL | Updating RVM config registry settings for current user
+25-12-08 13:51:40.449 | 33440:28632 | INFO | VERBOSE | _______________________________________________________________
+25-12-08 13:51:40.449 | 33440:28632 | INFO | VERBOSE | Successfully parsed the following RVM settings keys/values
+25-12-08 13:51:40.449 | 33440:28632 | INFO | VERBOSE | Global Configuration key: DesktopOwnerSettings missing. Using default value.
+25-12-08 13:51:40.449 | 33440:28632 | INFO | HTTP_REQUEST | [6] GET https://of.os.openfin.co/api/dos 
+25-12-08 13:51:41.330 | 33440:28632 | INFO | HTTP_REQUEST | [6] [0.881076s] HTTP 200 2 bytes (application/json; charset=utf-8)
+25-12-08 13:51:41.339 | 33440:28632 | INFO | VERBOSE | Using Cloud DesktopOwnerSettings.
+25-12-08 13:51:41.339 | 33440:28632 | INFO | VERBOSE | DesktopOwnerSettings JSON:
+{
+}
+25-12-08 13:51:41.339 | 33440:28632 | INFO | VERBOSE | Global Configuration key: lrsUrl missing. Using default value.
+25-12-08 13:51:41.339 | 33440:28632 | INFO | VERBOSE | 191022 | 	Using RdmUrl: https://dl.openfin.co/services/
+25-12-08 13:51:41.339 | 33440:28632 | INFO | MANIFEST | 191022 | Loading manifest from 'https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json'
+25-12-08 13:51:41.339 | 33440:28632 | INFO | MANIFEST | 191022 | Load - app manifest url: 'https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json'
+25-12-08 13:51:41.339 | 33440:28632 | INFO | MANIFEST | 191022 | Fetching app manifest from 'https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json' by secure connection
+25-12-08 13:51:41.339 | 33440:28632 | INFO | MANIFEST | 191022 | Security requirements are disabled by the policy; enabling them for the secure connection
+25-12-08 13:51:41.339 | 33440:28632 | INFO | HTTP_REQUEST | [7] GET https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json 
+25-12-08 13:51:43.871 | 33440:28632 | WARNING | HTTP_REQUEST | [7] Unhandled HTTP status code: 404
+25-12-08 13:51:43.873 | 33440:28632 | INFO | HTTP_REQUEST | [7] [2.53443s] ERR: Unhandled HTTP status code: 404
+25-12-08 13:51:43.873 | 33440:28632 | WARNING | MANIFEST | 191022 | Failed to get app manifest from 'https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json' by secure connection: Unhandled HTTP status code: 404
+25-12-08 13:51:43.873 | 33440:28632 | WARNING | MANIFEST | 191022 | Fallback to insecure connection forbidden for 'https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json'
+25-12-08 13:51:43.873 | 33440:28632 | ERROR | MANIFEST | 191022 | Failed to get app config from 'https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json': Unhandled HTTP status code: 404
+25-12-08 13:51:43.874 | 33440:28632 | ERROR | GENERAL | 191022 | Failed to read the cached config file
+25-12-08 13:51:43.874 | 33440:28632 | INFO | VERBOSE | No support email for strKey: app_2870229160
+25-12-08 13:51:43.874 | 33440:28632 | INFO | VERBOSE | 191022 | Failed to read app config.
+25-12-08 13:51:43.874 | 33440:28632 | ERROR | VERBOSE | 131108 | Error when adding to load queue for service fdc3: 303
+25-12-08 13:51:43.874 | 33440:28632 | INFO | VERBOSE | 131108 | Ignoring failure of non-mandatory service
+25-12-08 13:51:43.877 | 33440:28632 | INFO | GENERAL | 131108 | Added app to load queue: http://localhost:8000/openfin/app.json, origin: ConfigSwitchOnCommandLine
+25-12-08 13:51:43.877 | 33440:28632 | INFO | APP_REGISTRY | 131108 | Added 'http://localhost:8000/openfin/app.json'
+25-12-08 13:51:43.877 | 33440:28632 | INFO | APP_REGISTRY | 131108 | http://localhost:8000/openfin/app.json: Created -> Created
+25-12-08 13:51:43.879 | 33440:28632 | INFO | APP_REGISTRY | 131108 | Manifest loaded for 'http://localhost:8000/openfin/app.json'
+25-12-08 13:51:43.879 | 33440:28632 | INFO | APP_REGISTRY | 131108 | http://localhost:8000/openfin/app.json: Created -> Loading
+25-12-08 13:51:43.879 | 33440:28632 | INFO | APP_TRACKER | 131108 | http://localhost:8000/openfin/app.json -> Loading VERBOSE | No last used runtime for strKey: app_4094089369
+25-12-08 13:51:43.879 | 33440:28632 | INFO | 
+25-12-08 13:51:43.879 | 33440:28632 | INFO | VERBOSE | No last used runtime for strKey: app_4094089369
+25-12-08 13:51:43.879 | 33440:28632 | INFO | MESSAGE_HANDLER | STARTUP_MODE -> NORMAL_MODE
+25-12-08 13:51:43.879 | 33440:34624 | WARNING | GENERAL | 131108 | App manifest url scheme is not HTTPS.
+25-12-08 13:51:43.881 | 33440:34624 | WARNING | VERBOSE | 131108 | App manifest url has invalid SSL certificate. Cannot certify app installation.
+25-12-08 13:51:43.881 | 33440:34624 | INFO | VERBOSE | Global Configuration key: appDirectoryUrl missing. Using default value.
+25-12-08 13:51:43.881 | 33440:34624 | INFO | HTTP_REQUEST | [8] GET https://config.openfin.co/api/v1/info?manifest=http://localhost:8000/openfin/app.json 
+25-12-08 13:51:45.020 | 33440:34624 | WARNING | HTTP_REQUEST | [8] Unhandled HTTP status code: 404
+25-12-08 13:51:45.020 | 33440:34624 | INFO | HTTP_REQUEST | [8] [1.13875s] ERR: Unhandled HTTP status code: 404
+25-12-08 13:51:45.020 | 33440:34624 | INFO | NETWORK | CachingURLFetcherImpl::RequestConfig: failed to reach config url. Trying local file.
+25-12-08 13:51:45.020 | 33440:34624 | INFO | GENERAL | It has been 20430 day(s) since Config was cached. The cached copy has expired.
+25-12-08 13:51:45.020 | 33440:34624 | INFO | VERBOSE | Invalid cached copy. path: apps\4094089369\certified_app_info_cache_1368784659
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | Failed to retrieve certified info for AppConfig from url http://localhost:8000/openfin/app.json: could not retrieve data either from remote location or from local storage
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | Cannot retrieve certified app info.
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | Certifying App Info: 
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	HasRun : 1
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	IsCertified : 0
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	IsSSLCertValid : 0
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	SuppressAnalytics : 0
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	enableDosCapture : 0
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	IsOptedIntoCertifiedApp : 0
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	IsCertifiedInAppDirectory : 0
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	appAnalytics : 1
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	desktopOwnerSettings : {
+}
+25-12-08 13:51:45.021 | 33440:34624 | INFO | VERBOSE | 131108 | 	permissions : {
+}
+25-12-08 13:51:45.022 | 33440:5472 | INFO | VERBOSE | Sending analytics event to https://ingest.openfin.co/desktop-analytics/
+25-12-08 13:51:45.022 | 33440:28632 | INFO | VERBOSE | 131108 | App will use the following assets URL: https://cdn.openfin.co/release/
+25-12-08 13:51:45.022 | 33440:28632 | INFO | VERBOSE | 131108 | App will use the following RDM URL: https://dl.openfin.co/services/
+25-12-08 13:51:45.022 | 33440:34624 | INFO | HTTP_REQUEST | [9] POST https://ingest.openfin.co/desktop-analytics/ 
+25-12-08 13:51:45.023 | 33440:28632 | INFO | VERBOSE | Global Configuration key: runtimeVersion missing. Using default value.
+25-12-08 13:51:45.024 | 33440:28632 | INFO | GENERAL | Resolved '35.127.81.16' to the runtime version: 35.127.81.16 -- Using Cache
+25-12-08 13:51:45.024 | 33440:28632 | INFO | GENERAL | Resolved '35.127.81.16' to the runtime version: 35.127.81.16 -- Ignoring Cache
+25-12-08 13:51:45.024 | 33440:28632 | INFO | GENERAL | 131108 | Checking runtime version control rules.
+25-12-08 13:51:45.024 | 33440:28632 | INFO | GENERAL | 131108 | Starting download request for application's splash screen.
+25-12-08 13:51:45.025 | 33440:28632 | INFO | HTTP_REQUEST | [10] GET https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png 
+25-12-08 13:51:45.887 | 33440:34624 | INFO | HTTP_REQUEST | [9] [0.865785s] HTTP 200 2 bytes (text/plain; charset=utf-8)
+25-12-08 13:51:46.263 | 33440:28632 | INFO | HTTP_REQUEST | [10] Redirect to 'https://www.finos.org/wp-content/uploads/2020/03/FINOS-icon.png'
+25-12-08 13:51:51.259 | 33440:28632 | WARNING | HTTP_REQUEST | [10] Unhandled HTTP status code: 404
+25-12-08 13:51:51.259 | 33440:28632 | INFO | HTTP_REQUEST | [10] [6.23459s] ERR: Unhandled HTTP status code: 404 [1] -> https://www.finos.org/wp-content/uploads/2020/03/FINOS-icon.png
+25-12-08 13:51:51.259 | 33440:28632 | ERROR | GENERAL | 131108 | Failed to download the splash screen image - won't show anything.
+25-12-08 13:51:51.259 | 33440:28632 | INFO | VERBOSE | Global Configuration key: force32BitRuntimes missing. Using default value.
+25-12-08 13:51:51.259 | 33440:28632 | INFO | VERBOSE | Checking if 64-bit version of runtime exists at https://cdn.openfin.co/release/runtime/x64/35.127.81.16
+25-12-08 13:51:51.259 | 33440:28632 | INFO | HTTP_REQUEST | [11] HEAD https://cdn.openfin.co/release/runtime/x64/35.127.81.16 
+25-12-08 13:51:52.131 | 33440:28632 | WARNING | HTTP_REQUEST | [11] Unhandled HTTP status code: 404
+25-12-08 13:51:52.133 | 33440:28632 | INFO | HTTP_REQUEST | [11] [0.874119s] ERR: Unhandled HTTP status code: 404
+25-12-08 13:51:52.133 | 33440:28632 | INFO | VERBOSE | Failed to find 64-bit Runtime: Unable to find the asset at 'https://cdn.openfin.co/release/runtime/x64/35.127.81.16': Unhandled HTTP status code: 404; downloading 32-bit version of Runtime.
+25-12-08 13:51:52.135 | 33440:28632 | INFO | GENERAL | 131108 | App load has successfully started for: http://localhost:8000/openfin/app.json
+25-12-08 13:51:52.136 | 33440:34624 | INFO | GENERAL | Installing runtime from url: "https://cdn.openfin.co/release/runtime/35.127.81.16"
+25-12-08 13:51:52.136 | 33440:28632 | INFO | VERBOSE | 131108 | Result of loading primary application: Success
+25-12-08 13:51:52.136 | 33440:28632 | INFO | DELEGATE_ACTION_HANDLER | Number of delegation messages in memory storage: 0
+25-12-08 13:51:52.136 | 33440:5472 | INFO | VERBOSE | Sending analytics event to https://ingest.openfin.co/desktop-analytics/
+25-12-08 13:51:52.136 | 33440:34624 | INFO | HTTP_REQUEST | [12] GET https://cdn.openfin.co/release/runtime/35.127.81.16 
+25-12-08 13:51:52.137 | 33440:8416 | INFO | HTTP_REQUEST | [13] POST https://ingest.openfin.co/desktop-analytics/ 
+25-12-08 13:51:52.691 | 33440:34624 | WARNING | HTTP_REQUEST | [12] Unhandled HTTP status code: 404
+25-12-08 13:51:52.692 | 33440:34624 | INFO | HTTP_REQUEST | [12] [0.555375s] ERR: Unhandled HTTP status code: 404
+25-12-08 13:51:52.693 | 33440:34624 | ERROR | NETWORK | HTTP task failed: "https://cdn.openfin.co/release/runtime/35.127.81.16"
+25-12-08 13:51:52.693 | 33440:34624 | ERROR | GENERAL | Not able to fetch the required assets. Contact yout local desktop administrator.
+25-12-08 13:51:52.693 | 33440:34624 | INFO | VERBOSE | Removing the runtime install folder: "C:\Users\odolb\AppData\Local\OpenFin\runtime\35.127.81.16"
+25-12-08 13:51:52.694 | 33440:34624 | INFO | VERBOSE | Removing the runtime zip downloaded to temp: "C:\Users\odolb\AppData\Local\Temp\runtimee8f2-50f2-b61a-dcba.zip"
+25-12-08 13:51:52.694 | 33440:34624 | INFO | VERBOSE | Removing the runtime folder extracted to temp: "C:\Users\odolb\AppData\Local\Temp\runtimee8f2-50f2-b61a-dcba"
+25-12-08 13:51:52.697 | 33440:28632 | INFO | APP_REGISTRY | 131108 | http://localhost:8000/openfin/app.json: Loading -> Failed[RvmLoadError] Not able to fetch the required assets. Contact yout local desktop administrator.
+25-12-08 13:51:52.697 | 33440:28632 | INFO | APP_TRACKER | 131108 | http://localhost:8000/openfin/app.json -> Failed VERBOSE | No last used runtime for strKey: app_4094089369
+25-12-08 13:51:52.697 | 33440:28632 | INFO | 
+25-12-08 13:51:52.697 | 33440:28632 | INFO | APP_TRACKER | 131108 | http://localhost:8000/openfin/app.json : [RvmLoadError] Not able to fetch the required assets. Contact yout local desktop administrator.
+25-12-08 13:51:52.697 | 33440:28632 | INFO | APP_REGISTRY | 131108 | Removed 'http://localhost:8000/openfin/app.json'
+25-12-08 13:51:52.697 | 33440:28632 | INFO | VERBOSE | 131108 | UnregisterAppLogger; App logger already unregistered
+25-12-08 13:51:52.698 | 33440:28632 | INFO | VERBOSE | 131108 | ShowAppLoadErrorNewDialog: Dialog won't be displayed as RVM is launched in no-ui mode.
+25-12-08 13:51:52.699 | 33440:28632 | INFO | GENERAL | 131108 | There are no apps running or in progress app installs. Terminating the RVM.
+25-12-08 13:51:52.699 | 33440:28632 | INFO | MESSAGE_HANDLER | NORMAL_MODE -> SHUTDOWN_MODE
+25-12-08 13:51:52.701 | 33440:28632 | INFO | VERBOSE | Signaling thread to teardown.
+25-12-08 13:51:52.704 | 33440:28632 | INFO | VERBOSE | Global Configuration key: enableRuntimeDiagnostics missing. Using default value.
+25-12-08 13:51:52.704 | 33440:28632 | INFO | VERBOSE | Moving Runtime analytics To storage
+25-12-08 13:51:52.704 | 33440:28632 | INFO | VERBOSE | Failed to create metrics
+25-12-08 13:51:52.704 | 33440:28632 | INFO | VERBOSE | Uploading runtime analytics...
+25-12-08 13:51:52.705 | 33440:28632 | INFO | RUNTIME_DIAGNOSTICS | Analytics file does not exist. Will not perform upload.
+25-12-08 13:51:52.705 | 33440:28632 | INFO | VERBOSE | Global Configuration key: cleanUnusedRuntimes missing. Using default value.
+25-12-08 13:51:52.705 | 33440:28632 | INFO | GENERAL | Starting Runtime Cleaner Service.
+25-12-08 13:51:52.705 | 33440:28632 | INFO | GENERAL | Exiting RVM... - Exit Code: 305
+25-12-08 13:51:52.705 | 33440:28632 | INFO | VERBOSE | Uninitializing loaded apps
+25-12-08 13:51:52.705 | 33440:28632 | INFO | VERBOSE | Calling View.Uninit()
+25-12-08 13:51:52.708 | 33440:28632 | INFO | VERBOSE | Destroying Trayicon host
+25-12-08 13:51:52.712 | 33440:28632 | INFO | VERBOSE | Global Configuration key: takeoverManagerExperimental missing. Using default value.
+25-12-08 13:51:52.970 | 33440:8416 | INFO | HTTP_REQUEST | [13] [0.83231s] HTTP 200 2 bytes (text/plain; charset=utf-8)
+25-12-08 13:51:52.970 | 33440:5472 | INFO | VERBOSE | Sending analytics event to https://ingest.openfin.co/desktop-analytics/
+25-12-08 13:51:52.971 | 33440:8416 | INFO | HTTP_REQUEST | [14] POST https://ingest.openfin.co/desktop-analytics/ 
+25-12-08 13:51:53.831 | 33440:8416 | INFO | HTTP_REQUEST | [14] [0.860356s] HTTP 200 2 bytes (text/plain; charset=utf-8)
+25-12-08 13:51:53.831 | 33440:5472 | INFO | VERBOSE | Sending analytics event to https://ingest.openfin.co/desktop-analytics/
+25-12-08 13:51:53.831 | 33440:8416 | INFO | HTTP_REQUEST | [15] POST https://ingest.openfin.co/desktop-analytics/ 
+25-12-08 13:51:54.694 | 33440:8416 | INFO | HTTP_REQUEST | [15] [0.863029s] HTTP 200 2 bytes (text/plain; charset=utf-8)
+25-12-08 13:51:54.694 | 33440:28632 | INFO | VERBOSE | Stopping app worker thread
+25-12-08 13:51:54.694 | 33440:29980 | INFO | RUNTIME_MONITOR | RefreshMonitor
+25-12-08 13:51:54.694 | 33440:28632 | INFO | VERBOSE | Waiting for 0 HTTP request(s) to finish
+25-12-08 13:51:54.694 | 33440:28632 | INFO | VERBOSE | Calling HttpRequest::Uninitialize
+25-12-08 13:51:54.696 | 33440:28632 | INFO | LOG_MANAGER | Zipping up log files.
+25-12-08 13:51:54.802 | 33440:28632 | INFO | ENDSESSION_HANDLER | EndSessionHandlerImpl::Stop
+25-12-08 13:51:54.808 | 33440:35756 | INFO | ENDSESSION_HANDLER | EndSessionHandlerWindowImpl::OnPostDestroy
+25-12-08 13:51:54.810 | 33440:28632 | INFO | HEALTHCHECK_REQUEST_MAKER | Shutdown
+25-12-08 13:51:54.810 | 33440:28632 | INFO | HEALTHCHECK_REQUEST_MAKER | Destroyed
+25-12-08 13:51:54.810 | 33440:28632 | INFO | SHUTDOWN | No late delegation messages
+25-12-08 13:51:54.811 | 33440:28632 | INFO | SHUTDOWN | Calling MessageHandler.Destroy()
+25-12-08 13:51:54.811 | 33440:28632 | INFO | MESSAGE_HANDLER_WIN | Destroying message handler.
+25-12-08 13:51:54.816 | 33440:28632 | INFO | MESSAGE_HANDLER_WIN | Closing communication message window.
+25-12-08 13:51:54.816 | 33440:15872 | INFO | VERBOSE | MsgWindow received close event, posting quit message.
+25-12-08 13:51:54.816 | 33440:15872 | INFO | MESSAGE_HANDLER_WIN | Message handler received close, posting quit to communication message window.
+25-12-08 13:51:54.824 | 33440:28632 | INFO | VERBOSE | Calling Gdiplus::GdiplusShutdown
+25-12-08 13:51:54.830 | 33440:28632 | INFO | RUNTIME_MONITOR | Shutdown
+25-12-08 13:51:54.830 | 33440:28632 | INFO | VERBOSE | ExitInstance() complete
+25-12-08 13:51:54.834 | 33440:28632 | INFO | VERBOSE | Uninitializing CAD
+25-12-08 13:51:54.834 | 33440:28632 | INFO | VERBOSE | Uninitializing CAD
