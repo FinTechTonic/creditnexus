@@ -4,10 +4,11 @@ import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { Dashboard } from '@/components/Dashboard';
+import { LoginForm } from '@/components/LoginForm';
 import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
-import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext, PortfolioContext } from '@/context/FDC3Context';
+import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext } from '@/context/FDC3Context';
 
 type AppView = 'dashboard' | 'docu-digitizer' | 'trade-blotter' | 'green-lens' | 'library';
 
@@ -49,7 +50,8 @@ function App() {
   const [hasBroadcast, setHasBroadcast] = useState(false);
   const [viewData, setViewData] = useState<CreditAgreementData | null>(null);
   const [extractionContent, setExtractionContent] = useState<string | null>(null);
-  const { user, isLoading, isAuthenticated, login, logout } = useAuth();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const { user, isLoading, isAuthenticated, logout } = useAuth();
   const { isAvailable, pendingIntent, clearPendingIntent, onIntentReceived } = useFDC3();
 
   const processIntent = (intent: IntentName, context: unknown) => {
@@ -215,7 +217,7 @@ function App() {
               </div>
             ) : (
               <button
-                onClick={login}
+                onClick={() => setShowLoginModal(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 <LogIn className="h-4 w-4" />
@@ -225,6 +227,8 @@ function App() {
           </div>
         </div>
       </header>
+      
+      <LoginForm isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {activeApp === 'dashboard' && <Dashboard />}

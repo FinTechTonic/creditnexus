@@ -20,3 +20,6 @@ PyJWT
 starlette
 openpyxl
 pandas
+bcrypt
+passlib
+python-jose[cryptography]

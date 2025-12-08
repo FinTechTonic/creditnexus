@@ -58,6 +58,8 @@ class User(Base):
     
     email = Column(String(255), unique=True, nullable=False, index=True)
     
+    password_hash = Column(String(255), nullable=True)
+    
     display_name = Column(String(255), nullable=False)
     
     profile_image = Column(String(500), nullable=True)
@@ -65,6 +67,14 @@ class User(Base):
     role = Column(String(20), default=UserRole.ANALYST.value, nullable=False)
     
     is_active = Column(Boolean, default=True, nullable=False)
+    
+    is_email_verified = Column(Boolean, default=False, nullable=False)
+    
+    failed_login_attempts = Column(Integer, default=0, nullable=False)
+    
+    locked_until = Column(DateTime, nullable=True)
+    
+    password_changed_at = Column(DateTime, nullable=True)
     
     last_login = Column(DateTime, nullable=True)
     

@@ -12,6 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routes import router
 from app.auth.routes import auth_router
+from app.auth.jwt_auth import jwt_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(auth_router, prefix="/api")
+app.include_router(jwt_router, prefix="/api")
 
 # Serve OpenFin manifest files
 openfin_dir = Path(__file__).parent / "openfin"
