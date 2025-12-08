@@ -2,7 +2,7 @@
   "$schema": "https://openfin.co/schemas/app.schema.json",
   "platform": {
     "uuid": "creditnexus-platform",
-    "applicationIcon": "${APP_URL}/favicon.ico",
+    "applicationIcon": "http://localhost:5000/favicon.ico",
     "autoShow": true,
     "defaultWindowOptions": {
       "cornerRounding": {
@@ -17,7 +17,7 @@
   "shortcut": {
     "company": "CreditNexus",
     "description": "FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
-    "icon": "${APP_URL}/favicon.ico",
+    "icon": "http://localhost:5000/favicon.ico",
     "name": "CreditNexus"
   },
   "supportInformation": {

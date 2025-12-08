@@ -24,3 +24,4 @@ bcrypt
 passlib
 python-jose[cryptography]
 email-validator
+alembic>=1.13.0

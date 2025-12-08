@@ -17,7 +17,7 @@
       ],
       "icons": [
         {
-          "src": "${APP_URL}/favicon.ico",
+          "src": "http://localhost:5000/favicon.ico",
           "size": "256x256",
           "type": "image/x-icon"
         }
@@ -25,7 +25,7 @@
       "screenshots": [],
       "type": "web",
       "details": {
-        "url": "${APP_URL}"
+        "url": "http://localhost:5000"
       },
       "interop": {
         "intents": {
@@ -132,7 +132,7 @@
       "hostManifests": {
         "OpenFin": {
           "type": "manifest",
-          "details": "${APP_URL}/openfin/app.json"
+          "details": "http://localhost:5000/openfin/app.json"
         }
       },
       "localizedVersions": {},

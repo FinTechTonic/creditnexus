@@ -18,8 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
 from jose import JWTError, jwt
+import bcrypt
+import hashlib
 
 from app.db import get_db
 from app.db.models import User, AuditLog, AuditAction, UserRole, RefreshToken
@@ -27,7 +28,8 @@ from app.db.models import User, AuditLog, AuditAction, UserRole, RefreshToken
 jwt_router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer(auto_error=False)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Using bcrypt directly instead of passlib to avoid initialization issues
+# with long passwords during backend setup
 
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", secrets.token_urlsafe(32))
 JWT_REFRESH_SECRET_KEY = os.environ.get("JWT_REFRESH_SECRET_KEY", secrets.token_urlsafe(32))
@@ -130,14 +132,44 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
-
-
 def get_password_hash(password: str) -> str:
-    """Hash a password using bcrypt."""
-    return pwd_context.hash(password)
+    """Hash a password using bcrypt.
+    
+    Bcrypt has a 72-byte limit, so we pre-hash longer passwords with SHA-256
+    to ensure they fit within the limit while maintaining security.
+    Uses bcrypt directly to avoid passlib initialization issues.
+    """
+    password_bytes = password.encode('utf-8')
+    
+    # If password is longer than 72 bytes, pre-hash it with SHA-256
+    if len(password_bytes) > 72:
+        # Pre-hash with SHA-256 to get a fixed 64-character hex string (64 bytes)
+        pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
+        # Hash the pre-hashed value with bcrypt
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(pre_hashed, salt).decode('utf-8')
+    else:
+        # For passwords <= 72 bytes, hash directly with bcrypt
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(password_bytes, salt).decode('utf-8')
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash.
+    
+    If the password was pre-hashed (longer than 72 bytes), we need to
+    apply the same pre-hashing before verification.
+    Uses bcrypt directly to avoid passlib initialization issues.
+    """
+    password_bytes = plain_password.encode('utf-8')
+    hashed_bytes = hashed_password.encode('utf-8')
+    
+    # If password is longer than 72 bytes, pre-hash it the same way
+    if len(password_bytes) > 72:
+        pre_hashed = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
+        return bcrypt.checkpw(pre_hashed, hashed_bytes)
+    else:
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
