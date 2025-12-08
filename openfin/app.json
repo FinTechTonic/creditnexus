@@ -2,22 +2,24 @@
   "$schema": "https://openfin.co/schemas/app.schema.json",
   "platform": {
     "uuid": "creditnexus-platform",
-    "applicationIcon": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+    "applicationIcon": "${APP_URL}/favicon.ico",
     "autoShow": true,
     "defaultWindowOptions": {
       "cornerRounding": {
         "height": 10,
         "width": 10
       }
+    },
+    "defaultViewOptions": {
+      "fdc3InteropApi": "2.0"
     }
   },
   "shortcut": {
     "company": "CreditNexus",
     "description": "FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
-    "icon": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+    "icon": "${APP_URL}/favicon.ico",
     "name": "CreditNexus"
   },
-  "splashScreenImage": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
   "supportInformation": {
     "company": "CreditNexus",
     "email": "support@creditnexus.com",
@@ -55,14 +57,8 @@
     ]
   },
   "runtime": {
-    "version": "35.127.81.16",
+    "version": "stable",
     "arguments": "--enable-mesh --security-realm=creditnexus"
   },
-  "appAssets": [],
-  "services": [
-    {
-      "name": "fdc3",
-      "manifestUrl": "https://cdn.openfin.co/services/openfin/fdc3/2.0.3/app.json"
-    }
-  ]
+  "appAssets": []
 }

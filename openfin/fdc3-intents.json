@@ -17,9 +17,9 @@
       ],
       "icons": [
         {
-          "src": "https://finos.org/wp-content/uploads/2020/03/FINOS-icon.png",
+          "src": "${APP_URL}/favicon.ico",
           "size": "256x256",
-          "type": "image/png"
+          "type": "image/x-icon"
         }
       ],
       "screenshots": [],
