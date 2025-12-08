@@ -1199,6 +1199,162 @@ async def get_dashboard_analytics(
         )
 
 
+@router.get("/analytics/charts")
+async def get_chart_analytics(
+    range: str = Query("7d", description="Date range: 7d, 30d, 90d, or all"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get time-series chart data for dashboard visualizations.
+    
+    Args:
+        range: Date range filter - 7d (week), 30d (month), 90d (quarter), or all
+        
+    Returns:
+        Chart data including document trends over time and workflow pipeline data.
+    """
+    from sqlalchemy import func, cast, Date
+    from datetime import timedelta
+    from collections import defaultdict
+    
+    try:
+        now = datetime.utcnow()
+        
+        range_days = {
+            "7d": 7,
+            "30d": 30,
+            "90d": 90,
+            "all": 365
+        }
+        days = range_days.get(range, 7)
+        start_date = now - timedelta(days=days)
+        
+        if days <= 7:
+            group_format = "%Y-%m-%d"
+            date_labels = [(now - timedelta(days=i)).strftime("%b %d") for i in range(days, -1, -1)]
+        elif days <= 30:
+            group_format = "%Y-%m-%d"
+            date_labels = [(now - timedelta(days=i)).strftime("%b %d") for i in range(days, -1, -1)]
+        else:
+            group_format = "%Y-%U"
+            weeks = days // 7
+            date_labels = [(now - timedelta(weeks=i)).strftime("Week %U") for i in range(weeks, -1, -1)]
+        
+        docs_by_date = defaultdict(int)
+        
+        documents = db.query(
+            Document.created_at
+        ).filter(
+            Document.created_at >= start_date
+        ).all()
+        
+        for doc in documents:
+            if doc.created_at:
+                if days <= 30:
+                    date_key = doc.created_at.strftime("%b %d")
+                else:
+                    date_key = doc.created_at.strftime("Week %U")
+                docs_by_date[date_key] += 1
+        
+        document_trend = []
+        cumulative = 0
+        for label in date_labels:
+            count = docs_by_date.get(label, 0)
+            cumulative += count
+            document_trend.append({
+                "date": label,
+                "documents": count,
+                "cumulative": cumulative
+            })
+        
+        workflow_states = db.query(
+            Workflow.state,
+            func.count(Workflow.id).label('count')
+        ).group_by(Workflow.state).all()
+        
+        workflow_colors = {
+            "draft": "#64748b",
+            "under_review": "#f59e0b",
+            "approved": "#10b981",
+            "published": "#3b82f6",
+            "archived": "#6b7280"
+        }
+        
+        workflow_pipeline = []
+        for state, count in workflow_states:
+            workflow_pipeline.append({
+                "state": state,
+                "label": state.replace("_", " ").title(),
+                "count": count,
+                "color": workflow_colors.get(state, "#64748b")
+            })
+        
+        commitments_by_date = defaultdict(float)
+        
+        commitment_docs = db.query(
+            Document.created_at,
+            Document.total_commitment,
+            Document.currency
+        ).filter(
+            Document.created_at >= start_date,
+            Document.total_commitment.isnot(None)
+        ).all()
+        
+        for doc in commitment_docs:
+            if doc.created_at and doc.total_commitment:
+                if days <= 30:
+                    date_key = doc.created_at.strftime("%b %d")
+                else:
+                    date_key = doc.created_at.strftime("Week %U")
+                amount = float(doc.total_commitment)
+                commitments_by_date[date_key] += amount
+        
+        commitment_trend = []
+        cumulative_commitment = 0
+        for label in date_labels:
+            amount = commitments_by_date.get(label, 0)
+            cumulative_commitment += amount
+            commitment_trend.append({
+                "date": label,
+                "amount": round(amount, 2),
+                "cumulative": round(cumulative_commitment, 2)
+            })
+        
+        action_counts = db.query(
+            AuditLog.action,
+            func.count(AuditLog.id).label('count')
+        ).filter(
+            AuditLog.occurred_at >= start_date
+        ).group_by(AuditLog.action).all()
+        
+        activity_by_type = []
+        for action, count in action_counts:
+            activity_by_type.append({
+                "action": action,
+                "label": action.replace("_", " ").title(),
+                "count": count
+            })
+        
+        return {
+            "status": "success",
+            "charts": {
+                "date_range": range,
+                "start_date": start_date.isoformat(),
+                "end_date": now.isoformat(),
+                "document_trend": document_trend,
+                "workflow_pipeline": workflow_pipeline,
+                "commitment_trend": commitment_trend,
+                "activity_by_type": activity_by_type
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching chart analytics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to fetch chart analytics: {str(e)}"}
+        )
+
+
 class WorkflowTransitionRequest(BaseModel):
     """Request model for workflow transitions."""
     comment: Optional[str] = Field(None, description="Optional comment for the transition")
