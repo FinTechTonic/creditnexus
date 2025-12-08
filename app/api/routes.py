@@ -2,12 +2,15 @@
 
 import logging
 import io
+import json
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
+import pandas as pd
 
 from app.chains.extraction_chain import extract_data, extract_data_smart
 from app.models.cdm import ExtractionResult
@@ -1623,4 +1626,339 @@ async def list_document_audit_logs(
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": f"Failed to list document audit logs: {str(e)}"}
+        )
+
+
+def flatten_agreement_data(agreement_data: dict) -> dict:
+    """Flatten nested agreement data structure for tabular export.
+    
+    Args:
+        agreement_data: The nested agreement data from extraction.
+        
+    Returns:
+        Flattened dictionary suitable for DataFrame/CSV export.
+    """
+    flat = {}
+    
+    flat["agreement_date"] = agreement_data.get("agreement_date")
+    flat["governing_law"] = agreement_data.get("governing_law")
+    flat["amendment_number"] = agreement_data.get("amendment_number")
+    
+    parties = agreement_data.get("parties", [])
+    borrowers = [p for p in parties if p.get("role") == "Borrower"]
+    lenders = [p for p in parties if p.get("role") in ["Lender", "Administrative Agent"]]
+    
+    if borrowers:
+        flat["borrower_name"] = borrowers[0].get("legal_name")
+        flat["borrower_lei"] = borrowers[0].get("lei")
+        flat["borrower_jurisdiction"] = borrowers[0].get("jurisdiction")
+    
+    if lenders:
+        flat["lender_count"] = len(lenders)
+        flat["administrative_agent"] = next(
+            (p.get("legal_name") for p in lenders if p.get("role") == "Administrative Agent"),
+            None
+        )
+    
+    facilities = agreement_data.get("facilities", [])
+    flat["facility_count"] = len(facilities)
+    
+    total_commitment = Decimal("0")
+    currency = None
+    for i, facility in enumerate(facilities):
+        prefix = f"facility_{i+1}_"
+        flat[f"{prefix}type"] = facility.get("facility_type")
+        flat[f"{prefix}name"] = facility.get("facility_name")
+        
+        commitment = facility.get("commitment", {})
+        if commitment:
+            amount = commitment.get("amount")
+            if amount:
+                flat[f"{prefix}commitment_amount"] = float(amount)
+                total_commitment += Decimal(str(amount))
+            curr = commitment.get("currency")
+            if curr:
+                flat[f"{prefix}currency"] = curr
+                if not currency:
+                    currency = curr
+        
+        flat[f"{prefix}maturity_date"] = facility.get("maturity_date")
+        
+        interest = facility.get("interest_rate_payout", {})
+        if interest:
+            floating = interest.get("floating_rate_option", {})
+            if floating:
+                flat[f"{prefix}benchmark_rate"] = floating.get("benchmark_rate")
+                flat[f"{prefix}spread_bps"] = floating.get("spread")
+            flat[f"{prefix}payment_frequency"] = interest.get("payment_frequency")
+    
+    flat["total_commitment"] = float(total_commitment) if total_commitment > 0 else None
+    flat["currency"] = currency
+    
+    sustainability = agreement_data.get("sustainability_provisions")
+    if sustainability and isinstance(sustainability, dict):
+        flat["sustainability_linked"] = sustainability.get("is_sustainability_linked", False)
+        kpis = sustainability.get("esg_kpis", [])
+        if kpis:
+            flat["esg_kpi_count"] = len(kpis)
+            flat["esg_kpis"] = "; ".join([k.get("name", "") for k in kpis if k.get("name")])
+        margin = sustainability.get("margin_adjustment")
+        if margin:
+            flat["margin_adjustment_bps"] = margin.get("basis_points")
+    else:
+        flat["sustainability_linked"] = False
+    
+    covenants = agreement_data.get("financial_covenants", [])
+    if covenants:
+        flat["covenant_count"] = len(covenants)
+        flat["covenants"] = "; ".join([c.get("name", "") for c in covenants if c.get("name")])
+    
+    return flat
+
+
+def agreement_to_dataframe(agreement_data: dict, include_raw: bool = False) -> pd.DataFrame:
+    """Convert agreement data to a pandas DataFrame.
+    
+    Args:
+        agreement_data: The agreement data from extraction.
+        include_raw: Whether to include a column with the raw JSON.
+        
+    Returns:
+        DataFrame with one row containing the flattened data.
+    """
+    flat = flatten_agreement_data(agreement_data)
+    
+    if include_raw:
+        flat["raw_json"] = json.dumps(agreement_data, default=str)
+    
+    df = pd.DataFrame([flat])
+    return df
+
+
+def facilities_to_dataframe(agreement_data: dict) -> pd.DataFrame:
+    """Convert facilities from agreement data to a DataFrame.
+    
+    Args:
+        agreement_data: The agreement data from extraction.
+        
+    Returns:
+        DataFrame with one row per facility.
+    """
+    facilities = agreement_data.get("facilities", [])
+    if not facilities:
+        return pd.DataFrame()
+    
+    rows = []
+    for facility in facilities:
+        row = {
+            "facility_type": facility.get("facility_type"),
+            "facility_name": facility.get("facility_name"),
+            "maturity_date": facility.get("maturity_date"),
+        }
+        
+        commitment = facility.get("commitment", {})
+        if commitment:
+            row["commitment_amount"] = commitment.get("amount")
+            row["currency"] = commitment.get("currency")
+        
+        interest = facility.get("interest_rate_payout", {})
+        if interest:
+            floating = interest.get("floating_rate_option", {})
+            if floating:
+                row["benchmark_rate"] = floating.get("benchmark_rate")
+                row["spread_bps"] = floating.get("spread")
+            row["payment_frequency"] = interest.get("payment_frequency")
+        
+        rows.append(row)
+    
+    return pd.DataFrame(rows)
+
+
+def parties_to_dataframe(agreement_data: dict) -> pd.DataFrame:
+    """Convert parties from agreement data to a DataFrame.
+    
+    Args:
+        agreement_data: The agreement data from extraction.
+        
+    Returns:
+        DataFrame with one row per party.
+    """
+    parties = agreement_data.get("parties", [])
+    if not parties:
+        return pd.DataFrame()
+    
+    rows = []
+    for party in parties:
+        rows.append({
+            "legal_name": party.get("legal_name"),
+            "role": party.get("role"),
+            "lei": party.get("lei"),
+            "jurisdiction": party.get("jurisdiction"),
+        })
+    
+    return pd.DataFrame(rows)
+
+
+@router.get("/documents/{document_id}/export")
+async def export_document(
+    document_id: int,
+    format: str = Query("json", description="Export format: json, csv, or excel"),
+    version_id: Optional[int] = Query(None, description="Specific version ID to export (defaults to current version)"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_optional_user)
+):
+    """Export document data in various formats.
+    
+    Args:
+        document_id: The document ID.
+        format: Export format (json, csv, excel).
+        version_id: Optional specific version to export.
+        request: The HTTP request.
+        db: Database session.
+        current_user: The current user (optional).
+        
+    Returns:
+        The exported data as a file download.
+    """
+    format = format.lower()
+    if format not in ["json", "csv", "excel", "xlsx"]:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": f"Invalid format: {format}. Supported: json, csv, excel"}
+        )
+    
+    if format == "xlsx":
+        format = "excel"
+    
+    try:
+        doc = db.query(Document).options(
+            joinedload(Document.versions)
+        ).filter(Document.id == document_id).first()
+        
+        if not doc:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": "Document not found"}
+            )
+        
+        if version_id:
+            version = next((v for v in doc.versions if v.id == version_id), None)
+            if not version:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"status": "error", "message": f"Version {version_id} not found"}
+                )
+        else:
+            version = next((v for v in doc.versions if v.id == doc.current_version_id), None)
+            if not version and doc.versions:
+                version = max(doc.versions, key=lambda v: v.version_number)
+        
+        if not version:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": "No versions found for this document"}
+            )
+        
+        agreement_data = version.extracted_data
+        safe_title = "".join(c for c in doc.title if c.isalnum() or c in " -_").strip()[:50]
+        filename_base = f"{safe_title}_v{version.version_number}"
+        
+        if format == "json":
+            output = io.BytesIO()
+            json_data = json.dumps(agreement_data, indent=2, default=str)
+            output.write(json_data.encode("utf-8"))
+            output.seek(0)
+            
+            if current_user:
+                log_audit_action(
+                    db=db,
+                    action=AuditAction.EXPORT,
+                    target_type="document",
+                    target_id=document_id,
+                    user_id=current_user.id,
+                    metadata={"format": "json", "version_id": version.id},
+                    request=request
+                )
+                db.commit()
+            
+            return StreamingResponse(
+                output,
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename_base}.json"'
+                }
+            )
+        
+        elif format == "csv":
+            df = agreement_to_dataframe(agreement_data)
+            output = io.StringIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+            
+            if current_user:
+                log_audit_action(
+                    db=db,
+                    action=AuditAction.EXPORT,
+                    target_type="document",
+                    target_id=document_id,
+                    user_id=current_user.id,
+                    metadata={"format": "csv", "version_id": version.id},
+                    request=request
+                )
+                db.commit()
+            
+            return StreamingResponse(
+                io.BytesIO(output.getvalue().encode("utf-8")),
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename_base}.csv"'
+                }
+            )
+        
+        elif format == "excel":
+            output = io.BytesIO()
+            
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                summary_df = agreement_to_dataframe(agreement_data)
+                summary_df.to_excel(writer, sheet_name="Summary", index=False)
+                
+                facilities_df = facilities_to_dataframe(agreement_data)
+                if not facilities_df.empty:
+                    facilities_df.to_excel(writer, sheet_name="Facilities", index=False)
+                
+                parties_df = parties_to_dataframe(agreement_data)
+                if not parties_df.empty:
+                    parties_df.to_excel(writer, sheet_name="Parties", index=False)
+            
+            output.seek(0)
+            
+            if current_user:
+                log_audit_action(
+                    db=db,
+                    action=AuditAction.EXPORT,
+                    target_type="document",
+                    target_id=document_id,
+                    user_id=current_user.id,
+                    metadata={"format": "excel", "version_id": version.id},
+                    request=request
+                )
+                db.commit()
+            
+            return StreamingResponse(
+                output,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename_base}.xlsx"'
+                }
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error exporting document {document_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to export document: {str(e)}"}
         )

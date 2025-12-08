@@ -5,7 +5,7 @@ integrations = ["python_database:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libxcrypt", "mupdf", "openjpeg", "swig", "xcbuild"]
+packages = ["freetype", "glibcLocales", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libxcrypt", "mupdf", "openjpeg", "swig", "xcbuild"]
 
 [workflows]
 runButton = "Project"
@@ -57,8 +57,8 @@ externalPort = 8000
 exposeLocalhost = true
 
 [[ports]]
-localPort = 34761
-externalPort = 3000
+localPort = 46223
+externalPort = 3001
 
 [deployment]
 deploymentTarget = "autoscale"

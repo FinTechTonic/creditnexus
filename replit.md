@@ -96,6 +96,27 @@ The backend automatically detects the presence of built static files and serves 
 └── server.py             # FastAPI application entry point
 ```
 
+## Enterprise Features
+
+### Document Management
+- **Document Library**: Browse, search, and manage saved documents
+- **Version History**: Track all versions of a document with full audit trail
+- **Workflow Management**: Draft → Under Review → Approved → Published state machine
+- **Audit Logging**: Full audit trail for all user actions with timestamps and metadata
+
+### Export Capabilities
+Export extracted data in multiple formats:
+- **JSON**: Complete structured data in FINOS CDM format
+- **CSV**: Flattened tabular format for spreadsheet analysis
+- **Excel**: Multi-sheet workbook with Summary, Facilities, and Parties sheets
+
+API Endpoint: `GET /api/documents/{id}/export?format=json|csv|excel`
+
+### User Authentication
+- Replit OAuth2 PKCE flow for secure authentication
+- Role-based access control (Viewer, Analyst, Reviewer, Admin)
+- Session management with secure cookies
+
 ## Recent Changes (December 2024)
 - Created FastAPI backend with extraction endpoints
 - Configured Vite frontend with API proxy and allowedHosts
@@ -110,3 +131,11 @@ The backend automatically detects the presence of built static files and serves 
   - Text paste input for documents
   - Responsive layout with glassmorphism effects
   - Improved review interface with summary and JSON views
+- Added enterprise features:
+  - Database schema with Users, Documents, DocumentVersions, Workflows, AuditLog tables
+  - User authentication with Replit OAuth2
+  - Document history with version tracking
+  - Dashboard analytics with portfolio overview
+  - Approval workflow with state machine
+  - Audit trail with comprehensive logging
+  - Export capabilities (JSON, CSV, Excel formats)

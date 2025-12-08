@@ -18,3 +18,5 @@ httpx
 itsdangerous
 PyJWT
 starlette
+openpyxl
+pandas

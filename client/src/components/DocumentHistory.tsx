@@ -16,7 +16,11 @@ import {
   Scale,
   Leaf,
   Trash2,
-  ExternalLink
+  ExternalLink,
+  Download,
+  FileJson,
+  FileSpreadsheet,
+  Table
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { WorkflowActions } from './WorkflowActions';
@@ -159,6 +163,42 @@ export function DocumentHistory({ onViewData }: DocumentHistoryProps) {
     setSelectedVersion(null);
   };
 
+  const handleExport = async (format: 'json' | 'csv' | 'excel') => {
+    if (!selectedDocument || !selectedVersion) return;
+    
+    try {
+      const url = `/api/documents/${selectedDocument.id}/export?format=${format}&version_id=${selectedVersion.id}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to export document');
+      }
+      
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `document_${selectedDocument.id}.${format === 'excel' ? 'xlsx' : format}`;
+      
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+      
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Error exporting document:', err);
+      setError('Failed to export document');
+    }
+  };
+
   const handleWorkflowUpdate = (updatedWorkflow: WorkflowData) => {
     if (selectedDocument) {
       setSelectedDocument({
@@ -217,17 +257,52 @@ export function DocumentHistory({ onViewData }: DocumentHistoryProps) {
               Document #{selectedDocument.id} · {selectedDocument.versions?.length || 0} versions
             </p>
           </div>
-          {isAuthenticated && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="text-red-400 hover:bg-red-500/10"
-              onClick={() => handleDeleteDocument(selectedDocument.id)}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 border border-slate-700 rounded-lg p-1 bg-slate-800/50">
+              <span className="text-xs text-muted-foreground px-2">Export:</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 px-2 hover:bg-emerald-500/10 hover:text-emerald-400"
+                onClick={() => handleExport('json')}
+                title="Export as JSON"
+              >
+                <FileJson className="h-4 w-4 mr-1" />
+                <span className="text-xs">JSON</span>
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 px-2 hover:bg-blue-500/10 hover:text-blue-400"
+                onClick={() => handleExport('csv')}
+                title="Export as CSV"
+              >
+                <Table className="h-4 w-4 mr-1" />
+                <span className="text-xs">CSV</span>
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 px-2 hover:bg-green-500/10 hover:text-green-400"
+                onClick={() => handleExport('excel')}
+                title="Export as Excel"
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-1" />
+                <span className="text-xs">Excel</span>
+              </Button>
+            </div>
+            {isAuthenticated && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-red-400 hover:bg-red-500/10"
+                onClick={() => handleDeleteDocument(selectedDocument.id)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6">
