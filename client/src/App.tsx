@@ -35,8 +35,7 @@ function App() {
 
     setIsExtracting(true);
     try {
-      // TODO: Replace with actual API call to backend
-      const response = await fetch('http://localhost:8000/api/extract', {
+      const response = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: documentText }),
