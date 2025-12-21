@@ -46,8 +46,8 @@ class ESGKPITarget(BaseModel):
     target_value: float = Field(..., description="Target value for the KPI")
     current_value: Optional[float] = Field(None, description="Current reported value for the KPI")
     unit: str = Field(..., description="Unit of measurement (e.g., 'tons CO2', '%', 'incidents')")
-    margin_adjustment_bps: float = Field(
-        default=0.0,
+    margin_adjustment_bps: Decimal = Field(
+        default=Decimal("0.0"),
         description="Margin adjustment in basis points if target is met (negative = discount)"
     )
 
@@ -110,14 +110,14 @@ class Party(BaseModel):
 class FloatingRateOption(BaseModel):
     """Defines the floating rate index and spread for interest calculations."""
     benchmark: str = Field(..., description="The floating rate index used (e.g., 'SOFR', 'EURIBOR', 'Term SOFR')")
-    spread_bps: float = Field(
+    spread_bps: Decimal = Field(
         ...,
         description="The margin added to the benchmark in basis points. Example: 2.5% should be extracted as 250.0"
     )
     
     @field_validator('spread_bps')
     @classmethod
-    def validate_spread(cls, v: float) -> float:
+    def validate_spread(cls, v: Decimal) -> Decimal:
         """Ensure spread is a reasonable value (between -10000 and 10000 bps)."""
         if v < -10000 or v > 10000:
             raise ValueError("spread_bps must be between -10000 and 10000 basis points")
@@ -316,4 +316,3 @@ class ExtractionResult(BaseModel):
         elif self.agreement.extraction_status != ExtractionStatus.SUCCESS:
             object.__setattr__(self, 'status', self.agreement.extraction_status)
         return self
-
