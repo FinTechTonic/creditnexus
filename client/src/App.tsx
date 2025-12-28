@@ -1,18 +1,23 @@
 import { useState, useEffect, useMemo } from 'react';
-import { DocuDigitizer } from '@/apps/docu-digitizer/DocuDigitizer';
+import { DocumentParser } from '@/apps/docu-digitizer/DocumentParser';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { Dashboard } from '@/components/Dashboard';
+import { GroundTruthDashboard } from '@/components/GroundTruthDashboard';
 import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext } from '@/context/FDC3Context';
 
-type AppView = 'dashboard' | 'docu-digitizer' | 'trade-blotter' | 'green-lens' | 'library';
+
+import VerificationDashboard from '@/components/VerificationDashboard';
+import RiskWarRoom from '@/components/RiskWarRoom';
+
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'risk-war-room';
 
 const mainApps: { id: AppView; name: string; icon: React.ReactNode; description: string }[] = [
   {
@@ -22,8 +27,8 @@ const mainApps: { id: AppView; name: string; icon: React.ReactNode; description:
     description: 'Portfolio overview & analytics',
   },
   {
-    id: 'docu-digitizer',
-    name: 'Docu-Digitizer',
+    id: 'document-parser',
+    name: 'Document Parser',
     icon: <FileText className="h-5 w-5" />,
     description: 'Extract & digitize credit agreements',
   },
@@ -37,10 +42,28 @@ const mainApps: { id: AppView; name: string; icon: React.ReactNode; description:
 
 const sidebarApps: { id: AppView; name: string; icon: React.ReactNode; description: string }[] = [
   {
+    id: 'verification-demo',
+    name: 'Verification Demo',
+    icon: <Sparkles className="h-5 w-5 text-indigo-400" />,
+    description: 'Live Verification Workflow',
+  },
+  {
+    id: 'ground-truth',
+    name: 'Ground Truth',
+    icon: <Shield className="h-5 w-5" />,
+    description: 'Geospatial verification for sustainability-linked loans',
+  },
+  {
     id: 'trade-blotter',
     name: 'Trade Blotter',
     icon: <ArrowLeftRight className="h-5 w-5" />,
     description: 'LMA trade confirmation & settlement',
+  },
+  {
+    id: 'risk-war-room',
+    name: 'Risk War Room',
+    icon: <RadioTower className="h-5 w-5 text-red-500" />,
+    description: 'Global Portfolio Surveillance',
   },
   {
     id: 'green-lens',
@@ -49,6 +72,8 @@ const sidebarApps: { id: AppView; name: string; icon: React.ReactNode; descripti
     description: 'ESG performance & margin ratchet',
   },
 ];
+
+
 
 interface TradeBlotterState {
   loanData: CreditAgreementData | null;
@@ -59,7 +84,7 @@ interface TradeBlotterState {
 }
 
 function App() {
-  const [activeApp, setActiveApp] = useState<AppView>('docu-digitizer');
+  const [activeApp, setActiveApp] = useState<AppView>('document-parser');
   const [hasBroadcast, setHasBroadcast] = useState(false);
   const [viewData, setViewData] = useState<CreditAgreementData | null>(null);
   const [extractionContent, setExtractionContent] = useState<string | null>(null);
@@ -77,7 +102,7 @@ function App() {
 
   const processIntent = (intent: IntentName, context: unknown) => {
     console.log('[App] Processing FDC3 intent:', intent, context);
-    
+
     switch (intent) {
       case 'ViewLoanAgreement': {
         const agreementCtx = context as AgreementContext;
@@ -115,7 +140,7 @@ function App() {
         const docCtx = context as DocumentContext;
         if (docCtx.content) {
           setExtractionContent(docCtx.content);
-          setActiveApp('docu-digitizer');
+          setActiveApp('document-parser');
         }
         break;
       }
@@ -148,7 +173,7 @@ function App() {
 
   const handleViewData = (data: Record<string, unknown>) => {
     setViewData(data as CreditAgreementData);
-    setActiveApp('docu-digitizer');
+    setActiveApp('document-parser');
   };
 
   const handleSaveToLibrary = () => {
@@ -158,9 +183,9 @@ function App() {
   const breadcrumbItems = useMemo(() => {
     const currentApp = [...mainApps, ...sidebarApps].find(app => app.id === activeApp);
     if (!currentApp) return [];
-    
+
     return [
-      { 
+      {
         label: currentApp.name,
         icon: currentApp.icon
       }
@@ -190,15 +215,14 @@ function App() {
               <button
                 key={app.id}
                 onClick={() => setActiveApp(app.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  activeApp === app.id
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeApp === app.id
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
               >
                 {app.icon}
                 <span className="hidden md:inline">{app.name}</span>
-                {app.id !== 'docu-digitizer' && hasBroadcast && (
+                {app.id !== 'document-parser' && hasBroadcast && (
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -210,7 +234,7 @@ function App() {
 
           <div className="flex items-center gap-4">
             <ThemeToggle />
-            
+
             <div className="flex items-center gap-2 text-sm text-slate-400" title={isAvailable ? 'FDC3 Desktop Agent Connected' : 'FDC3 Mock Mode (No Desktop Agent)'}>
               <Radio className={`h-4 w-4 ${isAvailable ? 'text-emerald-500' : 'text-slate-500'}`} />
               <span className="hidden sm:inline">FDC3</span>
@@ -221,7 +245,7 @@ function App() {
                 </span>
               )}
             </div>
-            
+
             {isLoading ? (
               <div className="flex items-center gap-2 text-slate-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -266,7 +290,7 @@ function App() {
           </div>
         </div>
       </header>
-      
+
       <LoginForm isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
 
       <div className="flex flex-1">
@@ -288,11 +312,10 @@ function App() {
               <button
                 key={app.id}
                 onClick={() => setActiveApp(app.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  activeApp === app.id
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                }`}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeApp === app.id
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
                 title={app.description}
               >
                 {app.icon}
@@ -313,33 +336,37 @@ function App() {
             </div>
           </nav>
         </aside>
-        
+
         <main className="flex-1 max-w-6xl mx-auto px-6 py-8">
           <BreadcrumbContainer>
-            <Breadcrumb 
+            <Breadcrumb
               items={breadcrumbItems}
               onHomeClick={handleBreadcrumbHome}
             />
           </BreadcrumbContainer>
-          
+
           {activeApp === 'dashboard' && <Dashboard />}
-          {activeApp === 'docu-digitizer' && (
-            <DocuDigitizer 
-              onBroadcast={handleBroadcast} 
+          {activeApp === 'document-parser' && (
+            <DocumentParser
+              onBroadcast={handleBroadcast}
               onSaveToLibrary={handleSaveToLibrary}
               initialData={viewData}
+              initialContent={extractionContent}
             />
           )}
           {activeApp === 'library' && (
             <DocumentHistory onViewData={handleViewData} />
           )}
           {activeApp === 'trade-blotter' && (
-            <TradeBlotter 
+            <TradeBlotter
               state={tradeBlotterState}
               setState={setTradeBlotterState}
             />
           )}
           {activeApp === 'green-lens' && <GreenLens />}
+          {activeApp === 'ground-truth' && <GroundTruthDashboard />}
+          {activeApp === 'verification-demo' && <VerificationDashboard />}
+          {activeApp === 'risk-war-room' && <RiskWarRoom />}
         </main>
       </div>
 

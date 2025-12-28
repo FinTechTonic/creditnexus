@@ -20,6 +20,16 @@ from app.auth.jwt_auth import get_current_user, require_auth
 
 logger = logging.getLogger(__name__)
 
+# Deep Tech Components (Loaded on startup)
+from app.agents.classifier import LandUseClassifier
+from app.models.cdm_events import generate_cdm_trade_execution, generate_cdm_observation, generate_cdm_terms_change
+from app.agents.vector_store import GLOBAL_VECTOR_STORE
+import hashlib
+
+# Initialize TorchGeo Classifier (Loads ResNet50 Weights)
+# This might take a few seconds on first run
+GLOBAL_CLASSIFIER = LandUseClassifier()
+
 
 def log_audit_action(
     db: Session,
@@ -2267,3 +2277,448 @@ async def export_document(
             status_code=500,
             detail={"status": "error", "message": f"Failed to export document: {str(e)}"}
         )
+
+
+# ============================================================================
+# GROUND TRUTH PROTOCOL - Loan Asset & Geospatial Verification Endpoints
+# ============================================================================
+
+from app.models.loan_asset import LoanAsset, RiskStatus
+from app.agents.audit_workflow import run_full_audit, AuditResult
+
+
+class CreateLoanAssetRequest(BaseModel):
+    """Request model for creating a loan asset."""
+    loan_id: str = Field(..., description="External loan identifier")
+    document_text: str = Field(..., description="Full text of loan agreement")
+    title: Optional[str] = Field(None, description="Optional title for the asset")
+
+
+class RunAuditRequest(BaseModel):
+    """Request model for running a full audit."""
+    document_text: Optional[str] = Field(None, description="Optional new document text to re-analyze")
+
+
+@router.post("/loan-assets")
+async def create_loan_asset(
+    request_data: CreateLoanAssetRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """
+    Create a new loan asset and run the full Ground Truth audit.
+    
+    This is the "Securitize & Verify" endpoint that:
+    1. Extracts SPT and collateral address from document
+    2. Geocodes the address
+    3. Fetches satellite imagery
+    4. Calculates NDVI and determines compliance status
+    
+    Args:
+        request_data: Loan ID and document text
+        request: HTTP request for audit logging
+        db: Database session
+        current_user: Authenticated user
+        
+    Returns:
+        Created loan asset with verification results
+    """
+    try:
+        logger.info(f"Creating loan asset {request_data.loan_id}")
+        
+        # Run the full audit workflow
+        audit_result = await run_full_audit(
+            loan_id=request_data.loan_id,
+            document_text=request_data.document_text,
+            db_session=db
+        )
+        
+        if not audit_result.loan_asset:
+            raise HTTPException(
+                status_code=500,
+                detail={"status": "error", "message": "Failed to create loan asset"}
+            )
+        
+        # Log the audit action
+        log_audit_action(
+            db=db,
+            action=AuditAction.CREATE,
+            target_type="loan_asset",
+            target_id=audit_result.loan_asset.id,
+            user_id=current_user.id if current_user else None,
+            metadata={
+                "loan_id": request_data.loan_id,
+                "stages_completed": audit_result.stages_completed,
+                "stages_failed": audit_result.stages_failed,
+                "risk_status": audit_result.loan_asset.risk_status
+            },
+            request=request
+        )
+        db.commit()
+        
+        return {
+            "status": "success",
+            "message": "Loan asset created and verified",
+            "loan_asset": audit_result.loan_asset.to_dict(),
+            "audit": {
+                "success": audit_result.success,
+                "stages_completed": audit_result.stages_completed,
+                "stages_failed": audit_result.stages_failed
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating loan asset: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to create loan asset: {str(e)}"}
+        )
+
+
+@router.get("/loan-assets")
+async def list_loan_assets(
+    status: Optional[str] = Query(None, description="Filter by risk status"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List all loan assets with optional filtering.
+    
+    Args:
+        status: Optional risk status filter (COMPLIANT, WARNING, BREACH, PENDING)
+        limit: Maximum results
+        offset: Pagination offset
+        db: Database session
+        current_user: Current user
+        
+    Returns:
+        List of loan assets
+    """
+    try:
+        query = db.query(LoanAsset)
+        
+        if status:
+            query = query.filter(LoanAsset.risk_status == status.upper())
+        
+        total = query.count()
+        assets = query.order_by(LoanAsset.created_at.desc()).offset(offset).limit(limit).all()
+        
+        return {
+            "status": "success",
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "loan_assets": [asset.to_dict() for asset in assets]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing loan assets: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to list loan assets: {str(e)}"}
+        )
+
+
+@router.get("/loan-assets/{asset_id}")
+async def get_loan_asset(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get a single loan asset by ID.
+    
+    Args:
+        asset_id: Loan asset ID
+        db: Database session
+        current_user: Current user
+        
+    Returns:
+        Loan asset details
+    """
+    try:
+        asset = db.query(LoanAsset).filter(LoanAsset.id == asset_id).first()
+        
+        if not asset:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": "Loan asset not found"}
+            )
+        
+        return {
+            "status": "success",
+            "loan_asset": asset.to_dict()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting loan asset {asset_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get loan asset: {str(e)}"}
+        )
+
+
+@router.post("/audit/run/{asset_id}")
+async def run_asset_audit(
+    asset_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """
+    Run or re-run the Ground Truth verification for an existing asset.
+    
+    This fetches fresh satellite data and recalculates NDVI.
+    
+    Args:
+        asset_id: Loan asset ID
+        request: HTTP request
+        db: Database session
+        current_user: Authenticated user
+        
+    Returns:
+        Updated verification results
+    """
+    from app.agents.verifier import verify_asset_location
+    
+    try:
+        asset = db.query(LoanAsset).filter(LoanAsset.id == asset_id).first()
+        
+        if not asset:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": "Loan asset not found"}
+            )
+        
+        if not asset.geo_lat or not asset.geo_lon:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": "Asset has no coordinates - cannot verify"}
+            )
+        
+        logger.info(f"Running verification for asset {asset_id}")
+        
+        # Run verification
+        verification = await verify_asset_location(
+            lat=asset.geo_lat,
+            lon=asset.geo_lon,
+            threshold=asset.spt_threshold or 0.8
+        )
+        
+        if verification.get("success"):
+            ndvi_score = verification["ndvi_score"]
+            asset.update_verification(ndvi_score)
+        else:
+            asset.risk_status = RiskStatus.ERROR
+            asset.verification_error = verification.get("error", "Unknown error")
+        
+        # Log the audit action
+        log_audit_action(
+            db=db,
+            action=AuditAction.UPDATE,
+            target_type="loan_asset",
+            target_id=asset_id,
+            user_id=current_user.id if current_user else None,
+            metadata={
+                "action": "verification",
+                "ndvi_score": verification.get("ndvi_score"),
+                "risk_status": asset.risk_status,
+                "data_source": verification.get("data_source")
+            },
+            request=request
+        )
+        
+        db.commit()
+        db.refresh(asset)
+        
+        return {
+            "status": "success",
+            "message": "Verification complete",
+            "loan_asset": asset.to_dict(),
+            "verification": verification
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error running audit for asset {asset_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to run audit: {str(e)}"}
+        )
+
+
+@router.get("/audit/status/{asset_id}")
+async def get_audit_status(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the current verification status of a loan asset.
+    
+    This is a lightweight polling endpoint for frontend status updates.
+    
+    Args:
+        asset_id: Loan asset ID
+        db: Database session
+        current_user: Current user
+        
+    Returns:
+        Current status and key metrics
+    """
+    try:
+        asset = db.query(LoanAsset).filter(LoanAsset.id == asset_id).first()
+        
+        if not asset:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": "Loan asset not found"}
+            )
+        
+        return {
+            "status": "success",
+            "asset_id": asset_id,
+            "loan_id": asset.loan_id,
+            "risk_status": asset.risk_status,
+            "ndvi_score": asset.last_verified_score,
+            "spt_threshold": asset.spt_threshold,
+            "base_interest_rate": asset.base_interest_rate,
+            "current_interest_rate": asset.current_interest_rate,
+            "last_verified_at": asset.last_verified_at.isoformat() if asset.last_verified_at else None,
+            "verification_error": asset.verification_error,
+            "is_cdm_compliant": asset.spt_data is not None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting audit status for asset {asset_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get audit status: {str(e)}"}
+        )
+
+
+@router.get("/loan-assets/demo")
+async def demo_loan_asset(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get or create a demo loan asset for testing.
+    
+    Uses the Paradise, CA forest area as a demo location.
+    """
+    try:
+        # Check if demo asset exists
+        demo_asset = db.query(LoanAsset).filter(LoanAsset.loan_id == "DEMO-2024-001").first()
+        
+        if demo_asset:
+            return {
+                "status": "success",
+                "message": "Demo asset already exists",
+                "loan_asset": demo_asset.to_dict()
+            }
+        
+        # Create demo asset
+        from app.agents.audit_workflow import DEMO_COVENANT, run_full_audit
+        
+        result = await run_full_audit(
+            loan_id="DEMO-2024-001",
+            document_text=DEMO_COVENANT,
+            db_session=db
+        )
+        
+        return {
+            "status": "success",
+            "message": "Demo asset created",
+            "loan_asset": result.loan_asset.to_dict() if result.loan_asset else None,
+            "audit": {
+                "success": result.success,
+                "stages_completed": result.stages_completed,
+                "stages_failed": result.stages_failed
+            }
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating demo asset: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to create demo asset: {str(e)}"}
+        )
+
+# ------------------------------------------------------------------------------
+# Ground Truth Protocol - "Kill Shot" Demo Endpoints
+# ------------------------------------------------------------------------------
+
+@router.get("/cdm/events/{trade_id}")
+async def get_cdm_events(trade_id: str):
+    """
+    Returns the Life-Cycle Events for the trade in FINOS CDM format.
+    Includes the 'TermsChange' event triggered by the satellite observation.
+    """
+    # 1. Trade Execution (State v1)
+    execution = generate_cdm_trade_execution(
+        trade_id=trade_id,
+        borrower="Napa Valley Vineyards LLC",
+        amount=50000000.00,
+        rate=5.00
+    )
+    
+    # 2. Observation (The Satellite Signal) - Hardcoded 'BREACH' for demo storytelling
+    # In a real sync workflow, this would come from the database
+    mock_hash = hashlib.sha256(b"sentinel_2_image_patch_2024_08_15").hexdigest()
+    observation = generate_cdm_observation(
+        trade_id=trade_id,
+        satellite_hash=mock_hash,
+        ndvi_score=0.65,
+        status="BREACH"
+    )
+    
+    # 3. Terms Change (State v2) - The Financial Consequence
+    terms_change = generate_cdm_terms_change(
+        trade_id=trade_id,
+        current_rate=5.00,
+        status="BREACH"
+    )
+    
+    # ---------------------------------------------------------
+    # INFRASTRUCTURE LAYER: Vector Indexing (Side Effect)
+    # ---------------------------------------------------------
+    GLOBAL_VECTOR_STORE.add_trade_event(execution)
+    GLOBAL_VECTOR_STORE.add_trade_event(observation)
+    GLOBAL_VECTOR_STORE.add_trade_event(terms_change)
+    
+    return [execution, observation, terms_change]
+
+@router.get("/search")
+async def semantic_search_trades(q: str):
+    """
+    Semantic Search over Trade Lifecycle Events.
+    Demonstrates "Hybrid Search" capabilities.
+    """
+    results = GLOBAL_VECTOR_STORE.semantic_search(q)
+    return results
+
+@router.post("/classify")
+async def classify_land_use(lat: float, lon: float):
+    """
+    Real-time Deep Learning Inference using TorchGeo.
+    """
+    if not GLOBAL_CLASSIFIER:
+        raise HTTPException(status_code=503, detail="Classifier not initialized")
+        
+    result = GLOBAL_CLASSIFIER.classify_lat_lon(lat, lon)
+    return result
+

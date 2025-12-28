@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     
     OPENAI_API_KEY: SecretStr
     
+    # Sentinel Hub credentials for satellite imagery
+    SENTINELHUB_KEY: SecretStr = None
+    SENTINELHUB_SECRET: SecretStr = None
+    
     def get_secret_value(self, key: str) -> str:
         """Get the secret value for a given key."""
         if key == "OPENAI_API_KEY":

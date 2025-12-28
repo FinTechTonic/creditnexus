@@ -17,7 +17,7 @@
       ],
       "icons": [
         {
-          "src": "http://localhost:5000/favicon.ico",
+          "src": "http://localhost:8000/favicon.ico",
           "size": "256x256",
           "type": "image/x-icon"
         }
@@ -25,7 +25,7 @@
       "screenshots": [],
       "type": "web",
       "details": {
-        "url": "http://localhost:5000"
+        "url": "http://localhost:8000"
       },
       "interop": {
         "intents": {
@@ -132,7 +132,7 @@
       "hostManifests": {
         "OpenFin": {
           "type": "manifest",
-          "details": "http://localhost:5000/openfin/app.json"
+          "details": "http://localhost:8000/openfin/app.json"
         }
       },
       "localizedVersions": {},
@@ -158,7 +158,9 @@
                       "description": "Version number of the agreement"
                     }
                   },
-                  "required": ["agreementId"]
+                  "required": [
+                    "agreementId"
+                  ]
                 },
                 "name": {
                   "type": "string",
@@ -186,7 +188,12 @@
                 },
                 "workflowStatus": {
                   "type": "string",
-                  "enum": ["draft", "under_review", "approved", "published"]
+                  "enum": [
+                    "draft",
+                    "under_review",
+                    "approved",
+                    "published"
+                  ]
                 },
                 "facilities": {
                   "type": "array",
@@ -197,7 +204,10 @@
                   "description": "Parties to the agreement"
                 }
               },
-              "required": ["type", "id"]
+              "required": [
+                "type",
+                "id"
+              ]
             }
           },
           "finos.creditnexus.document": {
@@ -227,7 +237,10 @@
                   "type": "string"
                 }
               },
-              "required": ["type", "content"]
+              "required": [
+                "type",
+                "content"
+              ]
             }
           },
           "finos.creditnexus.portfolio": {
@@ -270,7 +283,9 @@
                   "type": "integer"
                 }
               },
-              "required": ["type"]
+              "required": [
+                "type"
+              ]
             }
           },
           "finos.creditnexus.approvalResult": {
@@ -299,10 +314,20 @@
                 },
                 "newStatus": {
                   "type": "string",
-                  "enum": ["draft", "under_review", "approved", "published", "rejected"]
+                  "enum": [
+                    "draft",
+                    "under_review",
+                    "approved",
+                    "published",
+                    "rejected"
+                  ]
                 }
               },
-              "required": ["type", "agreementId", "approved"]
+              "required": [
+                "type",
+                "agreementId",
+                "approved"
+              ]
             }
           },
           "finos.creditnexus.esgData": {
@@ -338,7 +363,9 @@
                   "type": "boolean"
                 }
               },
-              "required": ["type"]
+              "required": [
+                "type"
+              ]
             }
           }
         }

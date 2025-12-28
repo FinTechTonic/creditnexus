@@ -36,6 +36,7 @@ export interface CreditAgreementData {
   deal_id?: string;
   loan_identification_number?: string;
   extraction_status?: string;
+  document_text?: string;
 }
 
 export interface CreditNexusLoanContext extends Context {
@@ -110,13 +111,23 @@ export interface ESGDataContext extends Context {
   sustainabilityLinkedTerms?: boolean;
 }
 
+export interface LandUseContext extends Context {
+  type: 'finos.cdm.landUse';
+  id: { internalID: string };
+  classification: string;
+  complianceStatus: 'COMPLIANT' | 'WARNING' | 'BREACH';
+  lastInferenceConfidence: number;
+  cloudCover: number;
+}
+
 export type CreditNexusContext =
   | CreditNexusLoanContext
   | AgreementContext
   | DocumentContext
   | PortfolioContext
   | ApprovalResultContext
-  | ESGDataContext;
+  | ESGDataContext
+  | LandUseContext;
 
 export type IntentName =
   | 'ViewLoanAgreement'

@@ -1,0 +1,117 @@
+CREDIT AGREEMENT
+
+Dated as of December 28, 2024
+
+among
+
+NAPA VALLEY VINEYARDS LLC,
+as Borrower,
+
+THE LENDERS PARTY HERETO,
+
+and
+
+CREDITNEXUS STRATEGIC CAPITAL,
+as Administrative Agent and Sustainability Structuring Agent
+
+
+--------------------------------------------------------------------------------
+ARTICLE I: DEFINITIONS AND ACCOUNTING TERMS
+--------------------------------------------------------------------------------
+
+Section 1.01 Defined Terms. As used in this Agreement, the following terms shall have the meanings specified below:
+
+"Agreement" means this Credit Agreement, as amended, restated, supplemented or otherwise modified from time to time.
+
+"Applicable Margin" means, for any day, the rate per annum set forth below opposite the applicable Sustainability Performance Target Status:
+
+Status | Term Loan Margin (bps) | Revolver Margin (bps)
+-------|------------------------|----------------------
+Target Met (NDVI > 0.75) | 225 | 200
+Target Not Met | 250 | 225
+
+"Borrower" means Napa Valley Vineyards LLC, a Delaware limited liability company.
+
+"Business Day" means any day that is not a Saturday, Sunday or other day on which commercial banks in New York City are authorized or required by law to remain closed.
+
+"CDM" means the FINOS Common Domain Model.
+
+"Collateral" means the real property located at 123 Silverado Trail, Napa, CA 94558, together with all agricultural improvements and crops thereon.
+
+"Commitment" means, with respect to each Lender, the amount set forth opposite such Lender's name on Schedule 1.01.
+
+"Facilities" means the Term Loan Facility and the Revolving Credit Facility.
+
+"NDVI" means the Normalized Difference Vegetation Index as measured by Sentinel-2 satellite imagery over the Collateral coordinates.
+
+"Sustainability Performance Target" or "SPT" means the requirement that the Borrower maintain a minimum NDVI score of 0.75 across the primary vineyard plots during the Peak Growing Season (June-August).
+
+--------------------------------------------------------------------------------
+ARTICLE II: THE CREDITS
+--------------------------------------------------------------------------------
+
+Section 2.01 The Loans.
+
+(a) Term Loan. Subject to the terms and conditions set forth herein, each Lender agrees to make a term loan (the "Term Loan") to the Borrower on the Effective Date in a principal amount not to exceed $50,000,000.00.
+
+(b) Revolving Credit Facility. Each Lender agrees to make revolving loans to the Borrower from time to time during the Availability Period in an aggregate principal amount that will not result in such Lender's Revolving Exposure exceeding such Lender's Revolving Commitment. The total Revolving Commitment is $25,000,000.00.
+
+Section 2.02 Interest Rates.
+
+(a) Each Loan shall bear interest on the outstanding principal amount thereof at a rate per annum equal to the Adjusted Term SOFR plus the Applicable Margin.
+
+(b) If an Event of Default has occurred and is continuing, all outstanding Obligations shall bear interest at the Default Rate (2.00% per annum plus the rate otherwise applicable).
+
+Section 2.03 Maturity.
+
+(a) The Term Loan shall mature on December 28, 2029 (the "Term Loan Maturity Date").
+(b) The Revolving Credit Facility shall mature on December 28, 2027.
+
+--------------------------------------------------------------------------------
+ARTICLE III: SUSTAINABILITY-LINKED PROVISIONS
+--------------------------------------------------------------------------------
+
+Section 3.01 Sustainability Structuring. The Borrower and the Sustainability Structuring Agent have established the Sustainability Performance Targets as set forth in the Definitions.
+
+Section 3.02 Annual Verification. Within 30 days of the end of each Peak Growing Season, the Administrative Agent shall utilize the "Ground Truth Protocol" to verify the NDVI status of the Collateral.
+
+(a) Verification Process: The Agent shall fetch Sentinel-2 imagery for coordinates 38.3031238, -122.285854.
+(b) Automated Classification: The Agent shall utilize deep learning models (TorchGeo) to confirm the land use remains "Vineyard/Annual Crop".
+(c) Margin Adjustment: If the verified NDVI is less than 0.75, the Applicable Margin shall increase by 25 basis points effective as of the next Interest Period.
+
+Section 3.03 Satellite Data Integrity. In the event of persistent cloud cover, the Agent may utilize alternative SAR (Synthetic Aperture Radar) data or ground sensors at the Borrower's expense.
+
+--------------------------------------------------------------------------------
+ARTICLE IV: REPRESENTATIONS AND WARRANTIES
+--------------------------------------------------------------------------------
+
+Section 4.01 Existence, Qualification and Power. The Borrower (a) is duly organized and validly existing under the laws of the State of Delaware, (b) has all requisite power and authority to own its assets and carry on its business.
+
+Section 4.02 Compliance with Laws. The Borrower is in compliance with all Environmental Laws and agricultural regulations in the State of California.
+
+--------------------------------------------------------------------------------
+ARTICLE V: COVENANTS
+--------------------------------------------------------------------------------
+
+Section 5.01 Financial Covenants. The Borrower shall maintain a Debt Service Coverage Ratio of not less than 1.25 to 1.00.
+
+Section 5.02 Negative Covenants. The Borrower shall not create, incur, assume or suffer to exist any Lien upon any of its property, except for Permitted Liens.
+
+--------------------------------------------------------------------------------
+ARTICLE VI: EVENTS OF DEFAULT
+--------------------------------------------------------------------------------
+
+Section 6.01 Events of Default. If any of the following events shall occur:
+(a) Failure to pay principal when due;
+(b) Failure to meet the Sustainability Performance Target for two consecutive years;
+(c) The Collateral land use is reclassified away from agricultural use by the Ground Truth Protocol.
+
+--------------------------------------------------------------------------------
+ARTICLE VII: MISCELLANEOUS
+--------------------------------------------------------------------------------
+
+Section 7.01 Governing Law. This Agreement shall be governed by, and construed in accordance with, the law of the State of New York.
+
+Section 7.02 FDC3 Compliance. All data extracts and trade life-cycle events related to this Agreement shall be broadcast via FDC3 context messages to Ensure interoperability between the Borrower's treasury system and the Lenders' blotters.
+
+[SIGNATURE PAGES FOLLOW]

@@ -3,7 +3,7 @@
   "startup_app": {
     "uuid": "creditnexus-provider",
     "name": "CreditNexus FDC3 Provider",
-    "url": "${APP_URL}/fdc3-provider.html",
+    "url": "http://localhost:8000/fdc3-provider.html",
     "autoShow": false,
     "defaultWidth": 1,
     "defaultHeight": 1
@@ -27,7 +27,7 @@
       "appDirectory": true
     },
     "appDirectory": {
-      "url": "${APP_URL}/api/fdc3/apps",
+      "url": "http://localhost:8000/api/fdc3/apps",
       "applications": [
         {
           "appId": "creditnexus",

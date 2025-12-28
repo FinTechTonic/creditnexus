@@ -1,293 +1,110 @@
-# CreditNexus: FINOS-Compliant Financial AI Agent
+# Algorithmic Nature-Finance Platform (CreditNexus)
 
-A production-grade financial AI agent that extracts structured data from credit agreements using OpenAI's GPT-4o, LangChain, and the FINOS Common Domain Model (CDM). Built as a full-stack enterprise application with a React frontend and Python backend.
+**"Where Legal Text Meets Ground Truth"**
 
-## Features
+CreditNexus is a next-generation financial operating system that bridges the gap between **Sustainabiity-Linked Loans (Legal Contracts)** and **Physical Reality (Satellite Data)**. It uses AI agents to extract covenants from PDF agreements and orchestrates "Ground Truth" verification using geospatial deep learning.
 
-### AI-Powered Extraction
-- **Structured Data Extraction**: Extracts FINOS CDM-compliant data from unstructured credit agreement text
-- **Smart Strategy Selection**: Automatically chooses between simple and map-reduce extraction based on document length
-- **Reflexion Pattern**: Automatic retry with validation error feedback for improved accuracy
-- **Long Document Processing**: Map-reduce strategy for documents > 50k characters
+## 🚀 Quick Start
 
-### Enterprise Features
-- **User Authentication**: Secure login with Replit OAuth2 PKCE flow
-- **Document Library**: Browse, search, and manage saved documents
-- **Version History**: Track all versions of a document with full audit trail
-- **Workflow Management**: Draft → Under Review → Approved → Published state machine
-- **Audit Logging**: Full audit trail for all user actions with timestamps and metadata
-- **Dashboard Analytics**: Portfolio overview with total commitments, ESG scores, and maturity timelines
-- **Export Capabilities**: Download extracted data as JSON, CSV, or Excel
-
-### Desktop Interoperability
-- **FDC3 2.0 Compliant**: Full support for Financial Desktop Connectivity standard
-- **OpenFin Ready**: Pre-configured app manifests and intent declarations
-- **Finsemble Ready**: Application configuration with channel bindings
-- **App Channels**: Real-time communication for workflow, extraction, and portfolio events
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         CreditNexus Architecture                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Frontend Layer        │  React + TypeScript + Tailwind CSS             │
-│  (Port 5000)           │  FDC3 Integration for desktop interoperability │
-├─────────────────────────────────────────────────────────────────────────┤
-│  API Layer             │  FastAPI REST API                              │
-│  (Port 8000)           │  Authentication, CORS, Static file serving     │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Cognitive Layer       │  OpenAI GPT-4o for semantic parsing            │
-│                        │  LangChain for orchestration                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Validation Layer      │  Pydantic for schema enforcement               │
-│                        │  Business logic validation                     │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Data Layer            │  PostgreSQL for persistence                    │
-│                        │  SQLModel ORM                                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Ontology Layer        │  FINOS CDM for standardized representation     │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## Project Structure
-
-```
-creditnexus/
-├── app/                          # Python backend application
-│   ├── api/                      # FastAPI routes
-│   │   └── routes.py             # API endpoints
-│   ├── core/
-│   │   └── config.py             # Configuration management
-│   ├── db/
-│   │   ├── models.py             # SQLModel database models
-│   │   └── session.py            # Database session management
-│   ├── models/
-│   │   ├── cdm.py                # FINOS CDM Pydantic models
-│   │   └── partial_cdm.py        # Partial models for map-reduce
-│   ├── chains/
-│   │   ├── extraction_chain.py   # Simple extraction chain
-│   │   └── map_reduce_chain.py   # Map-reduce for long documents
-│   └── utils/
-│       ├── document_splitter.py  # Article-based document splitting
-│       └── pdf_extractor.py      # PDF text extraction
-├── client/                       # React frontend application
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Dashboard.tsx     # Portfolio analytics dashboard
-│   │   │   ├── DocumentHistory.tsx # Document history and version management
-│   │   │   ├── ReviewInterface.tsx # Extraction review UI
-│   │   │   └── ui/               # Reusable UI components
-│   │   ├── context/
-│   │   │   └── FDC3Context.tsx   # FDC3 integration context
-│   │   ├── App.tsx               # Main application component
-│   │   └── main.tsx              # Application entry point
-│   └── dist/                     # Built static files (production)
-├── openfin/                      # OpenFin deployment configuration
-│   ├── app.json                  # Application manifest
-│   ├── fdc3-intents.json         # FDC3 intent declarations
-│   ├── provider.json             # Service provider config
-│   └── README.md                 # OpenFin deployment guide
-├── finsemble/                    # Finsemble deployment configuration
-│   ├── appConfig.json            # Finsemble app configuration
-│   ├── channels.json             # Channel bindings
-│   └── README.md                 # Finsemble deployment guide
-├── server.py                     # FastAPI application entry point
-├── requirements.txt              # Python dependencies
-└── README.md                     # This file
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+ and npm
-- PostgreSQL database
-- OpenAI API key
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `OPENAI_API_KEY` | OpenAI API key for GPT-4o access |
-| `DATABASE_URL` | PostgreSQL connection string |
-
-### Development
-
-Both frontend and backend run concurrently:
-
+### 1. Backend (The Brain)
+The backend powers the AI agents, satellite imagery fetching, and FINOS CDM event generation.
 ```bash
-# Backend (runs on port 8000)
-uvicorn server:app --host 127.0.0.1 --port 8000 --reload
-
-# Frontend (runs on port 5000)
-cd client && npm run dev
+# In the root directory
+uvicorn server:app --reload
 ```
+*Runs on http://localhost:8000*
 
-The Vite frontend proxies `/api` requests to the backend automatically.
-
-### Production Build
-
+### 2. Frontend (The Interface)
+The React-based dashboard for traders and risk officers.
 ```bash
-# Build frontend
-cd client && npm run build
-
-# Start production server (serves both API and static files)
-uvicorn server:app --host 0.0.0.0 --port 5000
+# In the client directory
+cd client
+npm run dev
 ```
+*Runs on http://localhost:5173*
 
-## API Reference
+---
 
-### Extraction
+## 🧩 Core Modules
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `POST /api/extract` | POST | Extract structured data from credit agreement text |
-| `GET /api/health` | GET | Health check endpoint |
+### 1. The Verification Demo (Live Orchestration)
+> **Access via: "Verification Demo" in Sidebar**
+The primary demonstration of the "Live Wire" workflow.
+- **Input**: Upload a PDF Credit Agreement.
+- **Process**:
+    1.  **Legal Extraction**: Uses LLMs to find "Borrower", "Collateral Address", and "Sustainability Performance Targets (SPTs)".
+    2.  **Geocoding**: Converts the address to Lat/Lon coordinates.
+    3.  **Satellite Verification**: Fetches Sentinel-2 imagery and runs a TorchGeo ResNet-50 classifier.
+    4.  **NDVI Calculation**: Computes the Normalized Difference Vegetation Index to verify crop health.
+- **Output**: Determines if the borrower is in **COMPLIANCE** or **BREACH** based on the satellite evidence.
 
-### Documents
+### 2. Ground Truth Dashboard
+> **Access via: "Ground Truth" in Sidebar**
+The "Production View" for monitoring the entire portfolio of spatially-verified assets.
+- **Map View**: See all collateral assets on a global map.
+- **Status Indicators**: Green (Compliant), Red (Breach), Yellow (Warning).
+- **Asset Creation**: Manually onboard new loans for verification.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `GET /api/documents` | GET | List all documents |
-| `GET /api/documents/{id}` | GET | Get document by ID |
-| `POST /api/documents` | POST | Create new document |
-| `PUT /api/documents/{id}` | PUT | Update document |
-| `DELETE /api/documents/{id}` | DELETE | Delete document |
-| `GET /api/documents/{id}/versions` | GET | Get document version history |
-| `GET /api/documents/{id}/export` | GET | Export document (format: json, csv, excel) |
+### 3. Risk War Room
+> **Access via: "Risk War Room" in Sidebar**
+A semantic search engine for risk officers, integrated with FDC3.
+- **Capabilities**: Ask questions like "Find all vineyards in California with NDVI < 0.6".
+- **FDC3**: Listens for context broadcasts from other apps (e.g., when the dashboard detects a breach, the War Room automatically focuses on that asset).
 
-### Workflows
+### 4. GreenLens
+> **Access via: "GreenLens" in Sidebar**
+Visualizes the financial impact (Margin Ratchets) of ESG performance.
+- **Dynamic Pricing**: Shows how the loan's interest rate changes based on real-time ESG metrics (e.g., +25bps penalty for missed target).
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `GET /api/workflows/{document_id}` | GET | Get workflow state |
-| `POST /api/workflows/{document_id}/transition` | POST | Transition workflow state |
+### 5. Document Parser
+> **Access via: "Document Parser" in Top Nav**
+The foundational tool for extracting structured data from unstructured PDF legal documents.
 
-### Analytics
+---
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `GET /api/analytics/portfolio` | GET | Get portfolio analytics |
+## 🔗 System Interoperability (FDC3)
 
-### Authentication
+The platform components are designed to work as a "Chain of Command" using the **FDC3 Standard** for seamless data flow:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `GET /api/auth/login` | GET | Initiate OAuth login |
-| `GET /api/auth/callback` | GET | OAuth callback handler |
-| `GET /api/auth/me` | GET | Get current user |
-| `POST /api/auth/logout` | POST | Logout user |
+1.  **Extract**: Use the **Document Parser** to turn a PDF into data. Click "Broadcast to Desktop" to send the loan data out.
+2.  **Trade**: The **Trade Blotter** automatically receives this signal and pre-fills an LMA trade ticket.
+3.  **Analyze**: **GreenLens** picks up the same signal to show the ESG Margin Ratchet and pricing impact.
+4.  **Verify**: The **Verification Demo** runs the "Ground Truth" protocol. When a breach is detected, it broadcasts an updated context.
+5.  **Surveil**: The **Risk War Room** listens for these alerts and automatically highlights assets in breach for immediate investigation.
 
-## Data Models (FINOS CDM)
+---
 
-All extracted data conforms to the FINOS Common Domain Model:
+## 🏗️ Architecture Stack
 
-```python
-CreditAgreement
-├── agreement_date: date
-├── effective_date: date (optional)
-├── governing_law: str
-├── parties: List[Party]
-│   ├── name: str
-│   ├── role: PartyRole (Borrower, Lender, AdministrativeAgent, etc.)
-│   └── jurisdiction: str (optional)
-├── facilities: List[LoanFacility]
-│   ├── facility_type: FacilityType (Revolving, TermLoan, etc.)
-│   ├── commitment_amount: Money
-│   ├── maturity_date: date
-│   └── interest_rate_payout: InterestRatePayout
-│       ├── rate_type: str (Floating, Fixed)
-│       ├── floating_rate_option: FloatingRateOption
-│       │   ├── benchmark: str (SOFR, LIBOR, etc.)
-│       │   └── spread_bps: Decimal (basis points)
-│       └── payment_frequency: str
-└── covenants: List[Covenant] (optional)
-```
+### Frontend
+- **Framework**: React 18 (Vite)
+- **Styling**: Tailwind CSS (Premium "FinTech" Dark Mode)
+- **Mapping**: Leaflet / React-Leaflet
+- **Interoperability**: FDC3 Context API
 
-## Validation Rules
+### Backend
+- **API**: FastAPI (Python)
+- **AI/LLM**: LangChain + OpenAI GPT-4
+- **Geospatial**: TorchGeo (Deep Learning), SentinelHub (Satellite Imagery)
+- **Standard**: FINOS Common Domain Model (CDM) for trade events
+- **Database**: SQLite (Development) / PostgreSQL (Production ready)
 
-The system enforces strict validation:
+---
 
-- **Type Safety**: All fields must match declared types
-- **Business Logic**:
-  - Agreement date cannot be in the future
-  - Maturity date must be after agreement date
-  - All facilities must use the same currency
-  - At least one party must have role "Borrower"
-- **Spread Normalization**: Percentages automatically converted to basis points (3.5% → 350.0)
-- **Precision**: All monetary amounts use Decimal for financial precision
+## 🎯 The "Verification Demo" Flow
 
-## FDC3 Integration
+To demonstrate the full power of the system:
+1.  Navigate to **"Verification Demo"**.
+2.  Drag & Drop the sample **Credit Agreement PDF**.
+3.  Watch the logs as the **Legal Agent** extracts the "Napa Valley Vineyards" entity and the "NDVI > 0.75" covenant.
+4.  Click **"Securitize & Verify"**.
+5.  Observe the **"Ground Truth Protocol"** in action:
+    -   Satellite imagery is requested.
+    -   TorchGeo classifies the land (e.g., "Annual Crop").
+    -   NDVI is calculated (e.g., 0.65).
+    -   **Result**: Breach Detected!
+6.  See the **FDC3 Broadcast** trigger updates in the **Risk War Room** (if open) and generate a **Terms Change** event in the CDM ledger.
 
-### Supported Intents
+---
 
-| Intent | Description |
-|--------|-------------|
-| `ViewLoanAgreement` | View credit agreement details |
-| `ApproveLoanAgreement` | Approve or reject agreements |
-| `ViewESGAnalytics` | View ESG scores and metrics |
-| `ExtractCreditAgreement` | Extract data from documents |
-| `ViewPortfolio` | View portfolio overview |
-
-### Custom Context Types
-
-| Context Type | Description |
-|--------------|-------------|
-| `finos.creditnexus.agreement` | Credit agreement context |
-| `finos.creditnexus.document` | Document for extraction |
-| `finos.creditnexus.portfolio` | Portfolio context |
-| `finos.creditnexus.approvalResult` | Approval workflow result |
-| `finos.creditnexus.esgData` | ESG analytics data |
-
-### App Channels
-
-| Channel | Purpose |
-|---------|---------|
-| `creditnexus.workflow` | Workflow state updates and approvals |
-| `creditnexus.extraction` | Document extraction events |
-| `creditnexus.portfolio` | Portfolio analytics and updates |
-
-## Desktop Deployment
-
-### OpenFin
-
-See [openfin/README.md](openfin/README.md) for detailed OpenFin deployment instructions.
-
-```bash
-# Install OpenFin CLI
-npm install -g openfin-cli
-
-# Launch application
-openfin -l -c openfin/app.json
-```
-
-### Finsemble
-
-See [finsemble/README.md](finsemble/README.md) for detailed Finsemble deployment instructions.
-
-1. Copy `finsemble/appConfig.json` to your Finsemble configs directory
-2. Update the `url` field with your deployed application URL
-3. Restart Finsemble to load the new component
-
-## Security
-
-- OAuth2 PKCE authentication flow
-- Role-based access control (Viewer, Analyst, Reviewer, Admin)
-- API keys stored as encrypted secrets
-- Session management with secure cookies
-- Full audit logging for compliance
-
-## References
-
-- [FINOS Common Domain Model](https://cdm.finos.org/)
-- [FDC3 Specification](https://fdc3.finos.org/)
-- [OpenFin Documentation](https://developers.openfin.co/)
-- [Finsemble Documentation](https://documentation.finsemble.com/)
-- [LangChain Documentation](https://docs.langchain.com/)
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-
-## License
-
-This project implements the FINOS Common Domain Model (CDM) for financial data interoperability.
+*Built by the CreditNexus Team - "Trust, but Verify (from Space)."*

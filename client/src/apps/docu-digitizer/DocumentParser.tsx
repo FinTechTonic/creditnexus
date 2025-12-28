@@ -8,17 +8,23 @@ import { useFDC3 } from '@/context/FDC3Context';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData, CreditNexusLoanContext } from '@/context/FDC3Context';
 
-interface DocuDigitizerProps {
+interface DocumentParserProps {
   onBroadcast?: () => void;
   onSaveToLibrary?: () => void;
   initialData?: CreditAgreementData | null;
+  initialContent?: string | null;
 }
 
-export function DocuDigitizer({ onBroadcast, onSaveToLibrary, initialData }: DocuDigitizerProps) {
+export function DocumentParser({
+  onBroadcast,
+  onSaveToLibrary,
+  initialData,
+  initialContent
+}: DocumentParserProps) {
   const { broadcast } = useFDC3();
   const { isAuthenticated } = useAuth();
   const { addToast } = useToast();
-  const [documentText, setDocumentText] = useState('');
+  const [documentText, setDocumentText] = useState(initialContent || '');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extractedData, setExtractedData] = useState<CreditAgreementData | null>(initialData || null);
   const [editableData, setEditableData] = useState<CreditAgreementData | null>(initialData || null);
@@ -63,19 +69,19 @@ export function DocuDigitizer({ onBroadcast, onSaveToLibrary, initialData }: Doc
     setError(null);
     setWarningMessage(null);
     setBroadcastSuccess(false);
-    
+
     try {
       let response: Response;
-      
+
       if (uploadedFile) {
         const formData = new FormData();
         formData.append('file', uploadedFile);
-        response = await fetch('/api/upload', {
+        response = await fetchWithAuth('/api/upload', {
           method: 'POST',
           body: formData,
         });
       } else {
-        response = await fetch('/api/extract', {
+        response = await fetchWithAuth('/api/extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: documentText }),
@@ -96,12 +102,12 @@ export function DocuDigitizer({ onBroadcast, onSaveToLibrary, initialData }: Doc
       }
 
       const result = await response.json();
-      
+
       if (result.status === 'irrelevant_document') {
         setError(result.message || 'This document does not appear to be a credit agreement.');
         return;
       }
-      
+
       if (result.agreement) {
         if (result.extracted_text && uploadedFile) {
           setDocumentText(result.extracted_text);
@@ -141,13 +147,16 @@ export function DocuDigitizer({ onBroadcast, onSaveToLibrary, initialData }: Doc
         LIN: editableData.loan_identification_number,
         DealID: editableData.deal_id,
       },
-      loan: editableData,
+      loan: {
+        ...editableData,
+        document_text: documentText
+      },
     };
 
     broadcast(context);
     setBroadcastSuccess(true);
     addToast('Data broadcast to connected apps', 'success');
-    
+
     if (onBroadcast) {
       onBroadcast();
     }
@@ -168,8 +177,8 @@ export function DocuDigitizer({ onBroadcast, onSaveToLibrary, initialData }: Doc
 
     try {
       const borrower = editableData.parties?.find(p => p.role.toLowerCase().includes('borrower'));
-      const title = borrower?.name 
-        ? `${borrower.name} Credit Agreement` 
+      const title = borrower?.name
+        ? `${borrower.name} Credit Agreement`
         : `Credit Agreement - ${editableData.agreement_date || 'Untitled'}`;
 
       const response = await fetchWithAuth('/api/documents', {
@@ -186,8 +195,8 @@ export function DocuDigitizer({ onBroadcast, onSaveToLibrary, initialData }: Doc
 
       if (!response.ok) {
         const data = await response.json();
-        const errorMessage = typeof data.detail === 'string' 
-          ? data.detail 
+        const errorMessage = typeof data.detail === 'string'
+          ? data.detail
           : data.detail?.message || 'Failed to save document';
         throw new Error(errorMessage);
       }
@@ -287,8 +296,8 @@ export function DocuDigitizer({ onBroadcast, onSaveToLibrary, initialData }: Doc
                         {uploadedFile ? uploadedFile.name : 'Document Ready'}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {uploadedFile 
-                          ? `PDF file - ${(uploadedFile.size / 1024).toFixed(1)} KB` 
+                        {uploadedFile
+                          ? `PDF file - ${(uploadedFile.size / 1024).toFixed(1)} KB`
                           : `${documentText.length.toLocaleString()} characters`}
                       </p>
                     </div>
