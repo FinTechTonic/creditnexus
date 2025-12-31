@@ -13,7 +13,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
 from app.core.config import settings
-from app.models.cdm import CreditAgreement, ExtractionResult
+from app.models.cdm import ExtractionResult
 from app.chains.map_reduce_chain import extract_data_map_reduce
 
 # Configure logging
@@ -29,7 +29,7 @@ def create_extraction_chain() -> ChatOpenAI:
     
     Returns:
         A ChatOpenAI instance configured with structured output
-        bound to the CreditAgreement Pydantic model.
+        bound to the ExtractionResult Pydantic model.
     """
     # Initialize the LLM with temperature=0 for deterministic extraction
     llm = ChatOpenAI(
@@ -55,7 +55,7 @@ def create_extraction_prompt() -> ChatPromptTemplate:
 
 Your responsibilities:
 1. Extract the exact legal names of parties and their roles (Borrower, Lender, Administrative Agent, etc.)
-2. Normalize all financial amounts to the Money structure (amount as Decimal, currency as code)
+2. Normalize all financial amounts to the Money structure (amount as string to preserve precision, currency as ISO 4217 code)
 3. Convert percentage spreads to basis points (e.g., 3.5% -> 350.0, 2.75% -> 275.0)
 4. Extract dates in ISO 8601 format (YYYY-MM-DD)
 5. Identify all loan facilities and their terms
@@ -170,4 +170,3 @@ def extract_data_smart(text: str, force_map_reduce: bool = False, max_retries: i
     else:
         logger.info(f"Document length ({text_length} chars) within threshold, using simple extraction")
         return extract_data(text, max_retries=max_retries)
-
