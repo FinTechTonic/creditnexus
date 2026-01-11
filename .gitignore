@@ -21,6 +21,8 @@ env/
 storage/
 project-site/dist/
 *.cursor.tar
+attached_assets/
+chroma_db/
 
 # uv
 uv.lock

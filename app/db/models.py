@@ -11,6 +11,13 @@ from app.db import Base
 
 class UserRole(str, enum.Enum):
     """User roles for access control."""
+    # New roles
+    AUDITOR = "auditor"      # Full oversight, read-only access to all
+    BANKER = "banker"        # Write permissions for deals, documents
+    LAW_OFFICER = "law_officer"  # Write/edit for legal documents
+    ACCOUNTANT = "accountant"     # Write/edit for financial data
+    APPLICANT = "applicant"      # Apply and track applications
+    # Legacy roles for backward compatibility
     VIEWER = "viewer"
     ANALYST = "analyst"
     REVIEWER = "reviewer"
@@ -91,6 +98,34 @@ class ApplicationStatus(str, enum.Enum):
     UNDER_REVIEW = "under_review"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class PolicyStatus(str, enum.Enum):
+    """Status of policies in the editor workflow."""
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class DealStatus(str, enum.Enum):
+    """Status of deals in the lifecycle."""
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    UNDER_REVIEW = "under_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ACTIVE = "active"
+    CLOSED = "closed"
+
+
+class DealType(str, enum.Enum):
+    """Types of deals."""
+    LOAN_APPLICATION = "loan_application"
+    DEBT_SALE = "debt_sale"
+    LOAN_PURCHASE = "loan_purchase"
+    REFINANCING = "refinancing"
+    RESTRUCTURING = "restructuring"
     WITHDRAWN = "withdrawn"
 
 
@@ -143,6 +178,17 @@ class User(Base):
     
     wallet_address = Column(String(255), nullable=True, unique=True, index=True)
     
+    permissions = Column(JSONB(), nullable=True)  # Explicit user permissions (overrides role permissions)
+    
+    profile_data = Column(JSONB(), nullable=True)  # Enriched profile information (phone, company, job_title, address, etc.)
+    
+    # Signup approval workflow fields
+    signup_status = Column(String(20), default="pending", nullable=False, index=True)  # pending, approved, rejected
+    signup_submitted_at = Column(DateTime, nullable=True)
+    signup_reviewed_at = Column(DateTime, nullable=True)
+    signup_reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    signup_rejection_reason = Column(Text, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -150,6 +196,7 @@ class User(Base):
     documents = relationship("Document", back_populates="uploaded_by_user")
     audit_logs = relationship("AuditLog", back_populates="user")
     applications = relationship("Application", back_populates="user")
+    deals = relationship("Deal", back_populates="applicant", foreign_keys="Deal.applicant_id")
     inquiries = relationship("Inquiry", back_populates="user", foreign_keys="Inquiry.user_id")
     organized_meetings = relationship("Meeting", back_populates="organizer", foreign_keys="Meeting.organizer_id")
     
@@ -164,6 +211,12 @@ class User(Base):
             "is_active": self.is_active,
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "wallet_address": self.wallet_address,
+            "signup_status": self.signup_status,
+            "signup_submitted_at": self.signup_submitted_at.isoformat() if self.signup_submitted_at else None,
+            "signup_reviewed_at": self.signup_reviewed_at.isoformat() if self.signup_reviewed_at else None,
+            "signup_reviewed_by": self.signup_reviewed_by,
+            "signup_rejection_reason": self.signup_rejection_reason,
+            "profile_data": self.profile_data,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -202,6 +255,9 @@ class Document(Base):
     template_id = Column(Integer, ForeignKey("lma_templates.id", ondelete="SET NULL"), nullable=True, index=True)
     source_cdm_data = Column(JSONB, nullable=True)  # CDM data used for generation
     
+    # Deal relationship
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="SET NULL"), nullable=True, index=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -210,6 +266,7 @@ class Document(Base):
     versions = relationship("DocumentVersion", back_populates="document", order_by="DocumentVersion.version_number.desc()")
     workflow = relationship("Workflow", back_populates="document", uselist=False)
     lma_template = relationship("LMATemplate", foreign_keys=[template_id])
+    deal = relationship("Deal", back_populates="documents")
     
     def to_dict(self):
         """Convert model to dictionary."""
@@ -513,10 +570,12 @@ class PolicyDecision(Base):
     # Foreign keys to CreditNexus entities
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     loan_asset_id = Column(Integer, ForeignKey("loan_assets.id"), nullable=True)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     # Relationships
     document = relationship("Document", backref="policy_decisions")
+    deal = relationship("Deal", backref="policy_decisions")
     # Note: LoanAsset is a SQLModel in app.models.loan_asset, not in app.db.models
     # Relationship will work if loan_assets table exists
     user = relationship("User", backref="policy_decisions")
@@ -537,6 +596,7 @@ class PolicyDecision(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "document_id": self.document_id,
             "loan_asset_id": self.loan_asset_id,
+            "deal_id": self.deal_id,
             "user_id": self.user_id,
         }
 
@@ -869,6 +929,7 @@ class Application(Base):
     
     # Relationships
     user = relationship("User", back_populates="applications")
+    deal = relationship("Deal", back_populates="application", uselist=False)
     inquiries = relationship("Inquiry", back_populates="application")
     meetings = relationship("Meeting", back_populates="application")
     
@@ -1191,6 +1252,296 @@ class Meeting(Base):
             "attendees": self.attendees,
             "meeting_link": self.meeting_link,
             "ics_file_path": self.ics_file_path,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class Permission(Base):
+    """Permission definition model for granular access control."""
+    
+    __tablename__ = "permission_definitions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=False, index=True)  # 'document', 'deal', 'user', 'policy', etc.
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    role_permissions = relationship("RolePermission", back_populates="permission")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class RolePermission(Base):
+    """Junction table for role-permission mappings."""
+    
+    __tablename__ = "role_permissions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role = Column(String(50), nullable=False, index=True)
+    permission_id = Column(Integer, ForeignKey("permission_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    permission = relationship("Permission", back_populates="role_permissions")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "role": self.role,
+            "permission_id": self.permission_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Deal(Base):
+    """Deal model for tracking deal lifecycle and file management."""
+    
+    __tablename__ = "deals"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    deal_id = Column(String(255), unique=True, nullable=False, index=True)  # External deal identifier
+    
+    applicant_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=True, index=True)
+    
+    status = Column(String(50), default=DealStatus.DRAFT.value, nullable=False, index=True)
+    
+    deal_type = Column(String(50), nullable=True, index=True)  # loan_application, debt_sale, loan_purchase, etc.
+    
+    deal_data = Column(JSONB, nullable=True)  # Deal parameters, metadata
+    
+    folder_path = Column(String(500), nullable=True)  # File system path for deal documents
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    applicant = relationship("User", back_populates="deals", foreign_keys=[applicant_id])
+    application = relationship("Application", back_populates="deal")
+    documents = relationship("Document", back_populates="deal")
+    notes = relationship("DealNote", back_populates="deal", cascade="all, delete-orphan")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "deal_id": self.deal_id,
+            "applicant_id": self.applicant_id,
+            "application_id": self.application_id,
+            "status": self.status,
+            "deal_type": self.deal_type,
+            "deal_data": self.deal_data,
+            "folder_path": self.folder_path,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DealNote(Base):
+    """Deal note model for user notes on deals."""
+    
+    __tablename__ = "deal_notes"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    content = Column(Text, nullable=False)
+    
+    note_type = Column(String(50), nullable=True)  # general, verification, status_change, etc.
+    
+    # Note: Using note_metadata instead of metadata to avoid SQLAlchemy reserved attribute conflict
+    note_metadata = Column(JSONB, name='metadata', nullable=True)  # Additional note metadata
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    deal = relationship("Deal", back_populates="notes")
+    user = relationship("User", foreign_keys=[user_id])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "deal_id": self.deal_id,
+            "user_id": self.user_id,
+            "content": self.content,
+            "note_type": self.note_type,
+            "metadata": self.note_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class Policy(Base):
+    """Policy model for policy editor and management."""
+    
+    __tablename__ = "policies"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    name = Column(String(255), nullable=False, index=True)
+    category = Column(String(100), nullable=True, index=True)  # 'regulatory', 'credit_risk', 'esg', etc.
+    description = Column(Text, nullable=True)
+    rules_yaml = Column(Text, nullable=False)  # Full YAML content
+    
+    status = Column(String(50), default=PolicyStatus.DRAFT.value, nullable=False, index=True)  # 'draft', 'pending_approval', 'active', 'archived'
+    version = Column(Integer, default=1, nullable=False)
+    
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Note: Using additional_metadata instead of metadata to avoid SQLAlchemy reserved attribute conflict
+    additional_metadata = Column(JSONB, name='metadata', nullable=True)  # Additional metadata (tags, notes, etc.)
+    
+    # Soft delete
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by], backref="created_policies")
+    approver = relationship("User", foreign_keys=[approved_by], backref="approved_policies")
+    versions = relationship("PolicyVersion", back_populates="policy", cascade="all, delete-orphan")
+    approvals = relationship("PolicyApproval", back_populates="policy", cascade="all, delete-orphan")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category": self.category,
+            "description": self.description,
+            "rules_yaml": self.rules_yaml,
+            "status": self.status,
+            "version": self.version,
+            "created_by": self.created_by,
+            "approved_by": self.approved_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "metadata": self.additional_metadata,
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
+        }
+
+
+class PolicyVersion(Base):
+    """Policy version history for tracking changes."""
+    
+    __tablename__ = "policy_versions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    policy_id = Column(Integer, ForeignKey("policies.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    
+    rules_yaml = Column(Text, nullable=False)  # YAML content for this version
+    changes_summary = Column(Text, nullable=True)  # Summary of changes from previous version
+    
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    policy = relationship("Policy", back_populates="versions")
+    creator = relationship("User", foreign_keys=[created_by])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "policy_id": self.policy_id,
+            "version": self.version,
+            "rules_yaml": self.rules_yaml,
+            "changes_summary": self.changes_summary,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PolicyApproval(Base):
+    """Policy approval history for audit trail."""
+    
+    __tablename__ = "policy_approvals"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    policy_id = Column(Integer, ForeignKey("policies.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)  # Version being approved
+    
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    approved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    approval_status = Column(String(50), nullable=False)  # 'approved', 'rejected'
+    approval_comment = Column(Text, nullable=True)  # Approval/rejection reason
+    
+    # Relationships
+    policy = relationship("Policy", back_populates="approvals")
+    approver = relationship("User", foreign_keys=[approved_by])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "policy_id": self.policy_id,
+            "version": self.version,
+            "approved_by": self.approved_by,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "approval_status": self.approval_status,
+            "approval_comment": self.approval_comment,
+        }
+
+
+class PolicyTemplate(Base):
+    """Policy template model for storing pre-built policy templates."""
+    
+    __tablename__ = "policy_templates"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    category = Column(String(100), nullable=False, index=True)  # 'regulatory', 'credit_risk', 'esg', etc.
+    description = Column(Text, nullable=True)
+    rules_yaml = Column(Text, nullable=False)  # Template YAML content
+    use_case = Column(String(255), nullable=True, index=True)  # e.g., 'basel_iii_capital', 'sanctions_screening'
+    metadata_ = Column(JSONB, name='metadata', nullable=True)  # Additional metadata (tags, complexity, etc.)
+    is_system_template = Column(Boolean, default=False, nullable=False, index=True)  # System vs user-created
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category": self.category,
+            "description": self.description,
+            "rules_yaml": self.rules_yaml,
+            "use_case": self.use_case,
+            "metadata": self.metadata_,
+            "is_system_template": self.is_system_template,
+            "created_by": self.created_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

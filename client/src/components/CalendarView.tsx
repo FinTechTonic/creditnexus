@@ -65,7 +65,10 @@ export function CalendarView() {
         throw new Error('Failed to fetch meetings');
       }
 
-      const meetings: Meeting[] = await response.json();
+      const data = await response.json();
+      
+      // Handle both array and object response formats
+      const meetings: Meeting[] = Array.isArray(data) ? data : (data.meetings || []);
       
       // Convert meetings to calendar events
       const calendarEvents: CalendarEvent[] = meetings.map(meeting => {

@@ -11,11 +11,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from decimal import Decimal
+from functools import lru_cache
 
 from app.models.cdm import CreditAgreement
 from app.models.loan_asset import LoanAsset
 from app.models.cdm_events import generate_cdm_policy_evaluation
 from app.services.policy_engine_interface import PolicyEngineInterface
+from app.services.credit_risk_service import CreditRiskService
+from app.services.credit_risk_mapper import CreditRiskMapper
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,10 @@ class PolicyService:
             policy_engine: Vendor-agnostic policy engine interface
         """
         self.engine = policy_engine
+        self.credit_risk_service = CreditRiskService()
+        self.credit_risk_mapper = CreditRiskMapper()
+        # Cache for credit risk calculations (key: transaction_id, value: credit_risk_metrics)
+        self._credit_risk_cache: Dict[str, Dict[str, Any]] = {}
     
     def evaluate_facility_creation(
         self,
@@ -359,6 +366,133 @@ class PolicyService:
         frameworks.append("FATF")
         
         return frameworks
+    
+    # Credit Risk Evaluation Methods
+    
+    def evaluate_credit_risk(
+        self,
+        credit_agreement: CreditAgreement,
+        additional_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Perform full credit risk assessment.
+        
+        Args:
+            credit_agreement: CDM CreditAgreement
+            additional_context: Optional additional context (borrower financials, etc.)
+            
+        Returns:
+            Dictionary with credit risk assessment results
+        """
+        # Map CDM to credit risk fields
+        credit_risk_fields = self.credit_risk_mapper.map_cdm_to_credit_risk_fields(
+            credit_agreement=credit_agreement,
+            additional_context=additional_context
+        )
+        
+        # Calculate RWA and capital requirements
+        if "exposure_at_default" in credit_risk_fields:
+            ead = Decimal(str(credit_risk_fields["exposure_at_default"]))
+            pd = credit_risk_fields.get("probability_of_default", 0.01)
+            lgd = credit_risk_fields.get("loss_given_default", 0.45)
+            maturity = credit_risk_fields.get("maturity_years", 1.0)
+            asset_class = credit_risk_fields.get("asset_class", "corporate")
+            approach = credit_risk_fields.get("risk_model_approach", "standardized")
+            
+            # Calculate RWA
+            rwa = self.credit_risk_service.calculate_rwa(
+                exposure=ead,
+                pd=pd,
+                lgd=lgd,
+                maturity=maturity,
+                asset_class=asset_class,
+                approach=approach
+            )
+            credit_risk_fields["risk_weighted_assets"] = float(rwa)
+            
+            # Calculate capital requirements
+            capital_requirement = self.credit_risk_service.calculate_capital_requirement(rwa)
+            credit_risk_fields["capital_requirement"] = float(capital_requirement)
+            
+            tier1_requirement = self.credit_risk_service.calculate_tier1_capital_requirement(rwa)
+            credit_risk_fields["tier1_capital_requirement"] = float(tier1_requirement)
+        
+        # Assess creditworthiness if borrower data available
+        if additional_context:
+            borrower_data = {
+                "credit_score": additional_context.get("credit_score"),
+                "debt_service_coverage_ratio": additional_context.get("debt_service_coverage_ratio"),
+                "leverage_ratio": additional_context.get("leverage_ratio"),
+                "net_worth": additional_context.get("net_worth"),
+                "free_cash_flow": additional_context.get("free_cash_flow"),
+            }
+            if any(borrower_data.values()):
+                creditworthiness = self.credit_risk_service.assess_creditworthiness(borrower_data)
+                credit_risk_fields.update(creditworthiness)
+        
+        return credit_risk_fields
+    
+    def calculate_capital_requirements(
+        self,
+        rwa: Decimal,
+        capital_ratio: Optional[Decimal] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate capital requirements for given RWA.
+        
+        Args:
+            rwa: Risk-weighted assets
+            capital_ratio: Optional capital ratio (default: 8%)
+            
+        Returns:
+            Dictionary with capital requirement breakdown
+        """
+        capital_requirement = self.credit_risk_service.calculate_capital_requirement(
+            rwa=rwa,
+            capital_ratio=capital_ratio
+        )
+        
+        tier1_requirement = self.credit_risk_service.calculate_tier1_capital_requirement(rwa)
+        
+        return {
+            "risk_weighted_assets": float(rwa),
+            "capital_requirement": float(capital_requirement),
+            "tier1_capital_requirement": float(tier1_requirement),
+            "capital_ratio": float(capital_ratio) if capital_ratio else 0.08,
+            "tier1_ratio": float(tier1_requirement / rwa) if rwa > 0 else 0.0
+        }
+    
+    def assess_creditworthiness(
+        self,
+        credit_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Assess borrower creditworthiness.
+        
+        Args:
+            credit_data: Dictionary with credit metrics (credit_score, financial_ratios, etc.)
+            
+        Returns:
+            Dictionary with rating, score, and rationale
+        """
+        return self.credit_risk_service.assess_creditworthiness(credit_data)
+    
+    def validate_collateral(
+        self,
+        collateral_data: Dict[str, Any],
+        facility_amount: Decimal
+    ) -> Dict[str, Any]:
+        """
+        Validate collateral adequacy.
+        
+        Args:
+            collateral_data: Dictionary with collateral information
+            facility_amount: Facility amount to be secured
+            
+        Returns:
+            Dictionary with validation results
+        """
+        return self.credit_risk_service.validate_collateral(collateral_data, facility_amount)
     
     def _extract_rate_from_cdm(self, cdm_event: Dict[str, Any]) -> Optional[float]:
         """Extract interest rate from CDM event (helper method)."""

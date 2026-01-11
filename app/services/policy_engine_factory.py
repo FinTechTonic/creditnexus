@@ -15,6 +15,31 @@ from app.services.policy_engine_interface import PolicyEngineInterface, MockPoli
 logger = logging.getLogger(__name__)
 
 
+def get_policy_engine(vendor: Optional[str] = None) -> PolicyEngineInterface:
+    """
+    Get a policy engine instance (convenience wrapper for create_policy_engine).
+    
+    This function provides a consistent interface for obtaining policy engine
+    instances. It reads the vendor from environment configuration if not provided.
+    
+    Args:
+        vendor: Policy engine vendor identifier (defaults to environment setting or "default")
+        
+    Returns:
+        PolicyEngineInterface instance
+    """
+    # Try to get vendor from environment if not provided
+    if vendor is None:
+        try:
+            from app.core.config import settings
+            vendor = settings.POLICY_ENGINE_VENDOR
+        except Exception:
+            # If config not available, use default
+            vendor = "default"
+    
+    return create_policy_engine(vendor=vendor)
+
+
 def create_policy_engine(vendor: Optional[str] = None) -> PolicyEngineInterface:
     """
     Create a policy engine instance based on vendor configuration.

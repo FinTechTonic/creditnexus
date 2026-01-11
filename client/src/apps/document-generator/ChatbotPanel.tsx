@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useParams, useLocation } from 'react-router-dom';
 import {
   MessageSquare,
   Send,
@@ -19,6 +20,14 @@ import {
   CheckCircle2,
   ChevronRight,
   X,
+  Building2,
+  Calendar,
+  Clock,
+  Folder,
+  ListChecks,
+  Info,
+  Search,
+  ChevronDown,
 } from 'lucide-react';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/button';
@@ -52,12 +61,49 @@ interface FieldGuidance {
   guidance: string;
 }
 
+interface Deal {
+  id: number;
+  deal_id: string;
+  status: string;
+  deal_type: string | null;
+  deal_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+interface DealDocument {
+  id: number;
+  title: string;
+  filename: string;
+  created_at: string;
+}
+
+interface TemplateRecommendation {
+  template_id: number;
+  name: string;
+  category: string;
+  reason: string;
+  priority?: 'high' | 'medium' | 'low';
+}
+
+interface TemplateRecommendations {
+  missing_required: TemplateRecommendation[];
+  optional_not_generated: TemplateRecommendation[];
+  generated_templates: TemplateRecommendation[];
+  completion_status: {
+    required_generated: number;
+    required_total: number;
+    completion_percentage: number;
+  };
+}
+
 interface ChatbotPanelProps {
   cdmData?: Record<string, unknown>;
   onCdmDataUpdate?: (updatedCdmData: Record<string, unknown>) => void;
   onTemplateSelect?: (templateId: number) => void;
   onClose?: () => void;
   className?: string;
+  dealId?: number | null;
+  onDealIdChange?: (dealId: number | null) => void;
 }
 
 export function ChatbotPanel({
@@ -66,7 +112,21 @@ export function ChatbotPanel({
   onTemplateSelect,
   onClose,
   className = '',
+  dealId: propDealId = null,
+  onDealIdChange,
 }: ChatbotPanelProps) {
+  const { dealId: urlDealId } = useParams<{ dealId?: string }>();
+  const location = useLocation();
+  
+  // Auto-select deal from URL if on deal detail page
+  const [internalDealId, setInternalDealId] = useState<number | null>(() => {
+    if (propDealId) return propDealId;
+    if (urlDealId) return parseInt(urlDealId, 10);
+    return null;
+  });
+  
+  const dealId = propDealId || internalDealId;
+  
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -80,6 +140,15 @@ export function ChatbotPanel({
   const [error, setError] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [templateSuggestions, setTemplateSuggestions] = useState<TemplateSuggestion[]>([]);
+  const [deal, setDeal] = useState<Deal | null>(null);
+  const [dealDocuments, setDealDocuments] = useState<DealDocument[]>([]);
+  const [templateRecommendations, setTemplateRecommendations] = useState<TemplateRecommendations | null>(null);
+  const [loadingDealContext, setLoadingDealContext] = useState(false);
+  const [showDealContext, setShowDealContext] = useState(true);
+  const [availableDeals, setAvailableDeals] = useState<Deal[]>([]);
+  const [loadingDeals, setLoadingDeals] = useState(false);
+  const [showDealSelector, setShowDealSelector] = useState(false);
+  const [dealSearchQuery, setDealSearchQuery] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -92,6 +161,109 @@ export function ChatbotPanel({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Auto-select deal from URL if on deal detail page
+  useEffect(() => {
+    if (urlDealId && !propDealId) {
+      const parsedId = parseInt(urlDealId, 10);
+      if (!isNaN(parsedId) && parsedId !== internalDealId) {
+        setInternalDealId(parsedId);
+        if (onDealIdChange) {
+          onDealIdChange(parsedId);
+        }
+      }
+    }
+  }, [urlDealId, propDealId, internalDealId, onDealIdChange]);
+
+  // Load deal context when dealId is provided
+  useEffect(() => {
+    if (dealId) {
+      loadDealContext();
+    } else {
+      // Clear deal context when no deal selected
+      setDeal(null);
+      setDealDocuments([]);
+      setTemplateRecommendations(null);
+    }
+  }, [dealId]);
+
+  // Load available deals for selection
+  useEffect(() => {
+    if (showDealSelector) {
+      loadAvailableDeals();
+    }
+  }, [showDealSelector]);
+
+  const loadDealContext = useCallback(async () => {
+    if (!dealId) return;
+
+    setLoadingDealContext(true);
+    try {
+      // Load deal details
+      const dealResponse = await fetchWithAuth(`/api/deals/${dealId}`);
+      if (dealResponse.ok) {
+        const dealData = await dealResponse.json();
+        setDeal(dealData.deal);
+        setDealDocuments(dealData.documents || []);
+      }
+
+      // Load template recommendations
+      try {
+        const recResponse = await fetchWithAuth(`/api/deals/${dealId}/template-recommendations`);
+        if (recResponse.ok) {
+          const recData = await recResponse.json();
+          if (recData.status === 'success' && recData.recommendations) {
+            setTemplateRecommendations(recData.recommendations);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load template recommendations:', err);
+      }
+    } catch (err) {
+      console.error('Failed to load deal context:', err);
+    } finally {
+      setLoadingDealContext(false);
+    }
+  }, [dealId]);
+
+  const loadAvailableDeals = useCallback(async () => {
+    setLoadingDeals(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('limit', '20');
+      if (dealSearchQuery.trim()) {
+        params.append('search', dealSearchQuery.trim());
+      }
+      
+      const response = await fetchWithAuth(`/api/deals?${params.toString()}`);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableDeals(data.deals || []);
+      }
+    } catch (err) {
+      console.error('Failed to load deals:', err);
+    } finally {
+      setLoadingDeals(false);
+    }
+  }, [dealSearchQuery]);
+
+  const handleSelectDeal = useCallback((selectedDealId: number) => {
+    setInternalDealId(selectedDealId);
+    setShowDealSelector(false);
+    if (onDealIdChange) {
+      onDealIdChange(selectedDealId);
+    }
+  }, [onDealIdChange]);
+
+  const handleClearDeal = useCallback(() => {
+    setInternalDealId(null);
+    setDeal(null);
+    setDealDocuments([]);
+    setTemplateRecommendations(null);
+    if (onDealIdChange) {
+      onDealIdChange(null);
+    }
+  }, [onDealIdChange]);
 
   const addMessage = useCallback((role: 'user' | 'assistant', content: string, extras?: {
     suggestions?: TemplateSuggestion[];
@@ -129,6 +301,7 @@ export function ChatbotPanel({
         body: JSON.stringify({
           message: userMessage,
           cdm_context: Object.keys(cdmData).length > 0 ? cdmData : undefined,
+          deal_id: dealId || undefined,
         }),
       });
 
@@ -189,6 +362,7 @@ export function ChatbotPanel({
         },
         body: JSON.stringify({
           cdm_data: cdmData,
+          deal_id: dealId || undefined,
         }),
       });
 
@@ -245,6 +419,7 @@ export function ChatbotPanel({
           cdm_data: cdmData,
           required_fields: requiredFields,
           conversation_context: 'User is filling missing fields in CDM data for template generation',
+          deal_id: dealId || undefined,
         }),
       });
 
@@ -307,46 +482,211 @@ export function ChatbotPanel({
   };
 
   return (
-    <div className={`flex flex-col h-full bg-slate-800 ${className}`}>
-      {/* Header */}
-      <div className="border-b border-slate-700 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-lg font-semibold text-slate-100">AI Assistant</h2>
-          </div>
-          <div className="flex items-center gap-2">
+    <div className={`flex h-full bg-slate-800 ${className}`}>
+      {/* Deal Context Sidebar */}
+      {dealId && deal && showDealContext && (
+        <div className="w-80 border-r border-slate-700 flex flex-col bg-slate-900/50">
+          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+              <Info className="w-4 h-4" />
+              Deal Context
+            </h3>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              onClick={handleSuggestTemplates}
-              disabled={isLoading || Object.keys(cdmData).length === 0}
-              title="Get template suggestions"
-              className="border-slate-600 text-slate-300 hover:bg-slate-700"
+              onClick={() => setShowDealContext(false)}
+              className="h-6 w-6 p-0 text-slate-400 hover:text-slate-100"
             >
-              <FileText className="w-4 h-4 mr-1" />
-              Suggest Templates
+              <X className="w-3 h-3" />
             </Button>
-            {onClose && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClose}
-                className="text-slate-400 hover:text-slate-100"
-                aria-label="Close chatbot"
-              >
-                <X className="w-4 h-4" />
-              </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* Deal Info */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-slate-300">
+                <Building2 className="w-4 h-4 text-slate-400" />
+                <span className="font-medium">{deal.deal_id}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <Clock className="w-3 h-3" />
+                <span>Status: {deal.status}</span>
+              </div>
+              {deal.deal_type && (
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <FileText className="w-3 h-3" />
+                  <span>Type: {deal.deal_type}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Attached Documents */}
+            {dealDocuments.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                  <Folder className="w-3 h-3" />
+                  <span>Documents ({dealDocuments.length})</span>
+                </div>
+                <div className="space-y-1">
+                  {dealDocuments.slice(0, 5).map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="text-xs text-slate-400 p-2 bg-slate-800 rounded border border-slate-700"
+                    >
+                      {doc.title || doc.filename}
+                    </div>
+                  ))}
+                  {dealDocuments.length > 5 && (
+                    <div className="text-xs text-slate-500 text-center">
+                      +{dealDocuments.length - 5} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Template Recommendations */}
+            {templateRecommendations && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                  <ListChecks className="w-3 h-3" />
+                  <span>Template Recommendations</span>
+                </div>
+                
+                {/* Completion Status */}
+                {templateRecommendations.completion_status && (
+                  <div className="p-2 bg-slate-800 rounded border border-slate-700">
+                    <div className="text-xs text-slate-400 mb-1">Completion</div>
+                    <div className="text-sm font-medium text-slate-200">
+                      {templateRecommendations.completion_status.required_generated}/
+                      {templateRecommendations.completion_status.required_total} required
+                    </div>
+                    <div className="w-full bg-slate-700 rounded-full h-1.5 mt-1">
+                      <div
+                        className="bg-emerald-500 h-1.5 rounded-full"
+                        style={{
+                          width: `${templateRecommendations.completion_status.completion_percentage}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Missing Required Templates */}
+                {templateRecommendations.missing_required.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs text-yellow-400 font-medium">
+                      Missing Required ({templateRecommendations.missing_required.length})
+                    </div>
+                    {templateRecommendations.missing_required.slice(0, 3).map((rec) => (
+                      <button
+                        key={rec.template_id}
+                        onClick={() => onTemplateSelect?.(rec.template_id)}
+                        className="w-full text-left text-xs p-2 bg-yellow-500/10 border border-yellow-500/30 rounded hover:bg-yellow-500/20 transition-colors"
+                      >
+                        <div className="font-medium text-slate-200">{rec.name}</div>
+                        <div className="text-slate-400 mt-0.5">{rec.category}</div>
+                        {rec.reason && (
+                          <div className="text-slate-500 mt-1 text-[10px]">{rec.reason}</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Optional Templates */}
+                {templateRecommendations.optional_not_generated.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-400 font-medium">
+                      Optional ({templateRecommendations.optional_not_generated.length})
+                    </div>
+                    {templateRecommendations.optional_not_generated.slice(0, 2).map((rec) => (
+                      <button
+                        key={rec.template_id}
+                        onClick={() => onTemplateSelect?.(rec.template_id)}
+                        className="w-full text-left text-xs p-2 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 transition-colors"
+                      >
+                        <div className="font-medium text-slate-300">{rec.name}</div>
+                        <div className="text-slate-500 mt-0.5">{rec.category}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {loadingDealContext && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+              </div>
             )}
           </div>
         </div>
-        <p className="text-sm text-slate-400 mt-1">
-          Get help with template selection, field filling, and CDM structure
-        </p>
-      </div>
+      )}
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Main Chat Area */}
+      <div className={`flex flex-col h-full flex-1 ${dealId && deal && !showDealContext ? '' : ''}`}>
+        {/* Header */}
+        <div className="border-b border-slate-700 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-lg font-semibold text-slate-100">AI Assistant</h2>
+              {dealId && deal && !showDealContext && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDealContext(true)}
+                  className="text-xs text-slate-400 hover:text-slate-100 ml-2"
+                >
+                  <Info className="w-3 h-3 mr-1" />
+                  Show Deal Context
+                </Button>
+              )}
+              {!dealId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDealSelector(true)}
+                  className="text-xs border-slate-600 text-slate-300 hover:bg-slate-700 ml-2"
+                >
+                  <Search className="w-3 h-3 mr-1" />
+                  Select Deal
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSuggestTemplates}
+                disabled={isLoading || Object.keys(cdmData).length === 0}
+                title="Get template suggestions"
+                className="border-slate-600 text-slate-300 hover:bg-slate-700"
+              >
+                <FileText className="w-4 h-4 mr-1" />
+                Suggest Templates
+              </Button>
+              {onClose && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onClose}
+                  className="text-slate-400 hover:text-slate-100"
+                  aria-label="Close chatbot"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+          <p className="text-sm text-slate-400 mt-1">
+            Get help with template selection, field filling, and CDM structure
+            {dealId && deal && ` • Context: ${deal.deal_id}`}
+          </p>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message) => (
@@ -495,6 +835,7 @@ export function ChatbotPanel({
           <p className="text-xs text-slate-400 mt-2">
             Press Enter to send, Shift+Enter for new line
           </p>
+        </div>
         </div>
       </div>
     </div>

@@ -15,11 +15,16 @@ import pandas as pd
 from app.chains.extraction_chain import extract_data, extract_data_smart
 from app.models.cdm import ExtractionResult, CreditAgreement
 from app.db import get_db
-from app.db.models import StagedExtraction, ExtractionStatus, Document, DocumentVersion, Workflow, WorkflowState, User, AuditLog, AuditAction, PolicyDecision as PolicyDecisionModel, ClauseCache, LMATemplate
+from app.db.models import StagedExtraction, ExtractionStatus, Document, DocumentVersion, Workflow, WorkflowState, User, AuditLog, AuditAction, PolicyDecision as PolicyDecisionModel, ClauseCache, LMATemplate, Deal, DealNote
 from app.auth.jwt_auth import get_current_user, require_auth
 from app.services.policy_service import PolicyService
 from app.services.x402_payment_service import X402PaymentService
 from app.services.clause_cache_service import ClauseCacheService
+from app.services.file_storage_service import FileStorageService
+from app.services.deal_service import DealService
+from app.services.profile_extraction_service import ProfileExtractionService
+from app.chains.document_retrieval_chain import DocumentRetrievalService, add_user_profile, search_user_profiles
+from app.utils.audit import log_audit_action
 from app.services.twilio_service import TwilioService
 from app.services.loan_recovery_service import LoanRecoveryService
 from fastapi import Request
@@ -35,53 +40,6 @@ import hashlib
 # Initialize TorchGeo Classifier (Loads ResNet50 Weights)
 # This might take a few seconds on first run
 GLOBAL_CLASSIFIER = LandUseClassifier()
-
-
-def log_audit_action(
-    db: Session,
-    action: AuditAction,
-    target_type: str,
-    target_id: Optional[int] = None,
-    user_id: Optional[int] = None,
-    metadata: Optional[dict] = None,
-    request: Optional[Request] = None
-) -> AuditLog:
-    """Log an audit action to the database.
-    
-    Args:
-        db: Database session.
-        action: The type of action being logged.
-        target_type: The type of entity being acted upon (e.g., 'document', 'workflow').
-        target_id: The ID of the target entity.
-        user_id: The ID of the user performing the action.
-        metadata: Additional context data for the action.
-        request: The HTTP request (to extract IP and user agent).
-        
-    Returns:
-        The created AuditLog record.
-    """
-    ip_address = None
-    user_agent = None
-    
-    if request:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            ip_address = forwarded.split(",")[0].strip()
-        else:
-            ip_address = request.client.host if request.client else None
-        user_agent = request.headers.get("user-agent", "")[:500]
-    
-    audit_log = AuditLog(
-        user_id=user_id,
-        action=action.value,
-        target_type=target_type,
-        target_id=target_id,
-        action_metadata=metadata,
-        ip_address=ip_address,
-        user_agent=user_agent,
-    )
-    db.add(audit_log)
-    return audit_log
 
 
 def get_policy_service(request: Request) -> Optional[PolicyService]:
@@ -988,6 +946,8 @@ class CreateDocumentRequest(BaseModel):
     is_generated: Optional[bool] = Field(False, description="Whether this document was generated from a template")
     template_id: Optional[int] = Field(None, description="LMA template ID if generated from template")
     source_cdm_data: Optional[dict] = Field(None, description="Source CDM data used for generation")
+    # Deal relationship
+    deal_id: Optional[int] = Field(None, description="Optional deal ID to attach document to a deal")
 
 
 class CreateVersionRequest(BaseModel):
@@ -1086,6 +1046,24 @@ async def create_document(
     try:
         metadata = extract_document_metadata(doc_request.agreement_data)
         
+        # Handle deal linking if deal_id is provided
+        deal = None
+        file_storage = FileStorageService()
+        if doc_request.deal_id:
+            deal = db.query(Deal).filter(Deal.id == doc_request.deal_id).first()
+            if not deal:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"status": "error", "message": f"Deal {doc_request.deal_id} not found"}
+                )
+            # Ensure deal folder exists
+            if not deal.folder_path:
+                deal.folder_path = file_storage.create_deal_folder(
+                    user_id=deal.applicant_id,
+                    deal_id=deal.deal_id
+                )
+                db.flush()
+        
         doc = Document(
             title=doc_request.title,
             borrower_name=metadata.get("borrower_name"),
@@ -1101,9 +1079,37 @@ async def create_document(
             is_generated=doc_request.is_generated or False,
             template_id=doc_request.template_id,
             source_cdm_data=doc_request.source_cdm_data,
+            # Deal relationship
+            deal_id=doc_request.deal_id,
         )
         db.add(doc)
         db.flush()
+        
+        # Store document in deal folder if deal is linked
+        if deal and doc_request.original_text:
+            try:
+                file_storage.store_deal_document(
+                    user_id=deal.applicant_id,
+                    deal_id=deal.deal_id,
+                    document_id=doc.id,
+                    filename=doc_request.source_filename or f"document_{doc.id}.txt",
+                    content=doc_request.original_text.encode('utf-8'),
+                    subdirectory="documents"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store document in deal folder: {e}")
+        
+        # If document is attached to deal, use DealService to create CDM event
+        if deal:
+            try:
+                deal_service = DealService(db)
+                deal_service.attach_document_to_deal(
+                    deal_id=deal.id,
+                    document_id=doc.id,
+                    user_id=current_user.id
+                )
+            except Exception as e:
+                logger.warning(f"Failed to attach document to deal via DealService: {e}")
         
         version = DocumentVersion(
             document_id=doc.id,
@@ -2133,6 +2139,7 @@ class ChatbotChatRequest(BaseModel):
         description="Current CDM data context"
     )
     use_kb: bool = Field(True, description="Whether to use knowledge base retrieval (default: True)")
+    deal_id: Optional[int] = Field(None, description="Optional deal ID to load deal context")
 
 
 @router.post("/chatbot/chat")
@@ -2162,10 +2169,14 @@ async def chatbot_chat(
     from app.chains.decision_support_chain import DecisionSupportChatbot
     
     try:
-        # Initialize chatbot (could be cached/singleton in production)
-        chatbot = DecisionSupportChatbot()
+        # Initialize chatbot with database session for deal context loading
+        chatbot = DecisionSupportChatbot(db_session=db)
         
-        logger.info(f"Chatbot chat request: message length={len(request.message)}, has_cdm_context={request.cdm_context is not None}")
+        logger.info(
+            f"Chatbot chat request: message length={len(request.message)}, "
+            f"has_cdm_context={request.cdm_context is not None}, "
+            f"deal_id={request.deal_id}, user_id={current_user.id if current_user else None}"
+        )
         
         # Call chatbot
         try:
@@ -2174,6 +2185,8 @@ async def chatbot_chat(
                 conversation_history=request.conversation_history,
                 cdm_context=request.cdm_context,
                 use_kb=request.use_kb,
+                deal_id=request.deal_id,
+                user_id=current_user.id if current_user else None,
             )
         except ImportError as e:
             logger.error(f"ChromaDB not available: {e}")
@@ -2240,6 +2253,7 @@ class ChatbotSuggestTemplatesRequest(BaseModel):
     """Request model for template suggestions."""
     cdm_data: Dict[str, Any] = Field(..., description="CDM data to analyze for template suggestions")
     category_filter: Optional[str] = Field(None, description="Optional category filter for templates")
+    deal_id: Optional[int] = Field(None, description="Optional deal ID to get template recommendations based on deal type")
 
 
 @router.post("/chatbot/suggest-templates")
@@ -2281,16 +2295,20 @@ async def chatbot_suggest_templates(
             logger.warning(f"Failed to load templates from database: {e}")
             # Continue without template list - chatbot can still provide suggestions
         
-        # Initialize chatbot
-        chatbot = DecisionSupportChatbot()
+        # Initialize chatbot with database session for deal context
+        chatbot = DecisionSupportChatbot(db_session=db)
         
-        logger.info(f"Template suggestion request: has_cdm_data={bool(request.cdm_data)}, templates_count={len(available_templates)}")
+        logger.info(
+            f"Template suggestion request: has_cdm_data={bool(request.cdm_data)}, "
+            f"templates_count={len(available_templates)}, deal_id={request.deal_id}"
+        )
         
         # Get suggestions
         try:
             result = chatbot.suggest_template(
                 cdm_data=request.cdm_data,
                 available_templates=available_templates if available_templates else None,
+                deal_id=request.deal_id,
             )
         except ImportError as e:
             logger.error(f"ChromaDB not available: {e}")
@@ -2358,6 +2376,7 @@ class ChatbotFillFieldsRequest(BaseModel):
     cdm_data: Dict[str, Any] = Field(..., description="Current CDM data (may be incomplete)")
     required_fields: List[str] = Field(..., description="List of required field paths (e.g., [\"parties\", \"facilities[0].facility_name\"])")
     conversation_context: Optional[str] = Field(None, description="Optional conversation context about what user is trying to do")
+    deal_id: Optional[int] = Field(None, description="Optional deal ID to provide deal context for field filling")
 
 
 @router.post("/chatbot/fill-fields")
@@ -2385,96 +2404,96 @@ async def chatbot_fill_fields(
     """
     from app.chains.decision_support_chain import DecisionSupportChatbot
     
-    try:
-        # Validate required fields
-        if not request.required_fields:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "status": "error",
-                    "message": "required_fields cannot be empty"
-                }
-            )
-        
-        # Initialize chatbot
-        chatbot = DecisionSupportChatbot()
-        
-        logger.info(
-            f"Field filling request: required_fields_count={len(request.required_fields)}, "
-            f"has_cdm_data={bool(request.cdm_data)}, has_context={bool(request.conversation_context)}"
+    # Validate required fields
+    if not request.required_fields:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "error",
+                "message": "required_fields cannot be empty"
+            }
         )
-        
-        # Get field filling assistance
-        try:
-            result = chatbot.fill_missing_fields(
-                cdm_data=request.cdm_data,
-                required_fields=request.required_fields,
-                conversation_context=request.conversation_context,
-            )
-        except ImportError as e:
-            logger.error(f"ChromaDB not available: {e}")
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "status": "error",
-                    "message": "Field filling service is not available. ChromaDB is not installed."
-                }
-            )
-        except Exception as e:
-            logger.error(f"Field filling failed: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "status": "error",
-                    "message": f"Field filling failed: {str(e)}"
-                }
-            )
-        
-        # Prepare response
-        response_data = {
-            "status": "success",
-            "all_fields_present": result.get("all_fields_present", False),
-            "missing_fields": result.get("missing_fields", []),
-            "suggestions": result.get("suggestions", {}),
-            "guidance": result.get("guidance", ""),
-            "questions": result.get("questions", []),
-        }
-        
-        if "error" in result:
-            response_data["error"] = result["error"]
-        
-        # If all fields are present, include the filled data
-        if result.get("all_fields_present"):
-            response_data["filled_data"] = result.get("filled_data", request.cdm_data)
-        
-        # Audit log (if user is authenticated)
-        if current_user:
-            try:
-                log_audit_action(
-                    db=db,
-                    action=AuditAction.CREATE,
-                    target_type="chatbot_fill_fields",
-                    user_id=current_user.id,
-                    metadata={
-                        "required_fields_count": len(request.required_fields),
-                        "missing_fields_count": len(result.get("missing_fields", [])),
-                        "all_fields_present": result.get("all_fields_present", False),
-                        "has_conversation_context": bool(request.conversation_context),
-                    },
-                )
-            except Exception as e:
-                logger.warning(f"Failed to log field filling audit: {e}")
-        
-        return response_data
-        
-    except HTTPException:
-        raise
+    
+    # Initialize chatbot with database session for deal context
+    chatbot = DecisionSupportChatbot(db_session=db)
+    
+    logger.info(
+        f"Field filling request: required_fields_count={len(request.required_fields)}, "
+        f"has_cdm_data={bool(request.cdm_data)}, has_context={bool(request.conversation_context)}, "
+        f"deal_id={request.deal_id}"
+    )
+    
+    # Get field filling assistance
+    try:
+        result = chatbot.fill_missing_fields(
+            cdm_data=request.cdm_data,
+            required_fields=request.required_fields,
+            conversation_context=request.conversation_context,
+            deal_id=request.deal_id,
+        )
+    except ImportError as e:
+        logger.error(f"ChromaDB not available: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "error",
+                "message": "Field filling service is not available. ChromaDB is not installed."
+            }
+        )
     except Exception as e:
-        logger.error(f"Unexpected error during field filling: {e}", exc_info=True)
+        logger.error(f"Field filling failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"status": "error", "message": f"Failed to fill fields: {str(e)}"}
+            detail={
+                "status": "error",
+                "message": f"Field filling failed: {str(e)}"
+            }
         )
+    
+    # Prepare response
+    # Frontend expects field_guidance.suggested_values format
+    suggestions = result.get("suggestions", {})
+    response_data = {
+        "status": "success",
+        "all_fields_present": result.get("all_fields_present", False),
+        "missing_fields": result.get("missing_fields", []),
+        "suggestions": suggestions,
+        "guidance": result.get("guidance", ""),
+        "questions": result.get("questions", []),
+        # Add field_guidance format for frontend compatibility
+        "field_guidance": {
+            "suggested_values": suggestions,
+            "guidance": result.get("guidance", ""),
+            "questions": result.get("questions", [])
+        }
+    }
+    
+    if "error" in result:
+        response_data["error"] = result["error"]
+    
+    # If all fields are present, include the filled data
+    if result.get("all_fields_present"):
+        response_data["filled_data"] = result.get("filled_data", request.cdm_data)
+    
+    # Audit log (if user is authenticated)
+    if current_user:
+        try:
+            log_audit_action(
+                db=db,
+                action=AuditAction.CREATE,
+                target_type="chatbot_fill_fields",
+                user_id=current_user.id,
+                metadata={
+                    "required_fields_count": len(request.required_fields),
+                    "missing_fields_count": len(result.get("missing_fields", [])),
+                    "all_fields_present": result.get("all_fields_present", False),
+                    "has_conversation_context": bool(request.conversation_context),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log field filling audit: {e}")
+    
+    return response_data
 
 
 @router.get("/documents/{document_id}/versions")
@@ -6259,6 +6278,7 @@ class GenerateDocumentRequest(BaseModel):
     template_id: int = Field(..., description="Template ID")
     cdm_data: Optional[dict] = Field(None, description="CDM CreditAgreement data (optional if document_id provided)")
     document_id: Optional[int] = Field(None, description="Document ID to load CDM data from library (optional if cdm_data provided)")
+    deal_id: Optional[int] = Field(None, description="Optional deal ID to load deal context and link generated document to deal")
     source_document_id: Optional[int] = Field(None, description="Optional source document ID for tracking")
     field_overrides: Optional[Dict[str, Any]] = Field(None, description="Optional field overrides to apply to CDM data before generation. Format: {\"parties[role='Borrower'].lei\": \"value\"}")
     
@@ -6601,6 +6621,7 @@ async def generate_document(
             cdm_data=cdm_agreement,
             user_id=current_user.id,
             source_document_id=source_document_id,
+            deal_id=request.deal_id,
             field_overrides=request.field_overrides
         )
         
@@ -7048,7 +7069,7 @@ async def list_applications(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_auth)
 ):
     """List applications with filtering and pagination."""
     query = db.query(Application)
@@ -7070,6 +7091,102 @@ async def list_applications(
     applications = query.order_by(Application.created_at.desc()).offset(offset).limit(limit).all()
     
     return [ApplicationResponse(**app.to_dict()) for app in applications]
+
+
+@router.post("/applications/{application_id}/create-deal")
+async def create_deal_from_application(
+    application_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Create a deal from an approved application.
+    
+    Args:
+        application_id: The application ID.
+        request: The HTTP request.
+        db: Database session.
+        current_user: The authenticated user.
+        
+    Returns:
+        The created deal.
+    """
+    try:
+        from app.services.deal_service import DealService
+        from app.db.models import Application, ApplicationStatus
+        
+        # Verify application exists
+        application = db.query(Application).filter(Application.id == application_id).first()
+        if not application:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Application {application_id} not found"}
+            )
+        
+        # Check permission (user can only create deals from their own applications, or admin)
+        if application.user_id != current_user.id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={"status": "error", "message": "Not authorized to create deal from this application"}
+            )
+        
+        # Check if application is approved
+        if application.status != ApplicationStatus.APPROVED.value:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": f"Application must be approved to create a deal. Current status: {application.status}"}
+            )
+        
+        # Check if deal already exists for this application
+        existing_deal = db.query(Deal).filter(Deal.application_id == application_id).first()
+        if existing_deal:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": f"Deal already exists for this application: {existing_deal.deal_id}"}
+            )
+        
+        # Create deal using DealService
+        deal_service = DealService(db)
+        deal = deal_service.create_deal_from_application(
+            application_id=application_id,
+            deal_type=None,  # Will be inferred from application type
+            deal_data=application.application_data
+        )
+        
+        db.commit()
+        db.refresh(deal)
+        
+        log_audit_action(
+            db=db,
+            action=AuditAction.CREATE,
+            target_type="deal",
+            target_id=deal.id,
+            user_id=current_user.id,
+            metadata={"application_id": application_id, "deal_id": deal.deal_id},
+            request=request
+        )
+        
+        logger.info(f"Created deal {deal.deal_id} from application {application_id} by user {current_user.id}")
+        
+        return {
+            "status": "success",
+            "message": "Deal created successfully",
+            "deal": deal.to_dict()
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"status": "error", "message": str(e)}
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating deal from application: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to create deal: {str(e)}"}
+        )
 
 
 @router.get("/applications/{application_id}", response_model=ApplicationResponse)
@@ -7284,7 +7401,7 @@ async def list_inquiries(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_auth)
 ):
     """List inquiries with filtering and pagination."""
     query = db.query(Inquiry)
@@ -7502,7 +7619,7 @@ async def list_meetings(
     start_date: Optional[str] = Query(None, description="Start date filter (ISO 8601)"),
     end_date: Optional[str] = Query(None, description="End date filter (ISO 8601)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_auth)
 ):
     """List meetings with filtering."""
     query = db.query(Meeting)
@@ -7760,7 +7877,1139 @@ async def wallet_authentication(
     }
 
 
-# Recovery
+# ============================================================================
+# Deals API
+# ============================================================================
+
+@router.get("/deals")
+async def list_deals(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    deal_type: Optional[str] = Query(None, description="Filter by deal type"),
+    search: Optional[str] = Query(None, description="Search by deal_id or applicant"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List deals with filtering and pagination.
+    
+    Args:
+        status: Optional filter by status.
+        deal_type: Optional filter by deal type.
+        search: Optional search term for deal_id or applicant.
+        limit: Maximum number of results.
+        offset: Pagination offset.
+        db: Database session.
+        current_user: The current user.
+        
+    Returns:
+        List of deals.
+    """
+    try:
+        query = db.query(Deal)
+        
+        # Filter by user (unless admin)
+        if current_user.role != "admin":
+            query = query.filter(Deal.applicant_id == current_user.id)
+        
+        # Apply filters
+        if status:
+            query = query.filter(Deal.status == status)
+        if deal_type:
+            query = query.filter(Deal.deal_type == deal_type)
+        if search:
+            search_term = f"%{search}%"
+            # Join with User table for search
+            query = query.join(User, Deal.applicant_id == User.id).filter(
+                (Deal.deal_id.ilike(search_term)) |
+                (User.email.ilike(search_term)) |
+                (User.display_name.ilike(search_term))
+            )
+        
+        total = query.count()
+        deals = query.order_by(Deal.created_at.desc()).offset(offset).limit(limit).all()
+        
+        return {
+            "status": "success",
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "deals": [deal.to_dict() for deal in deals]
+        }
+    except Exception as e:
+        logger.error(f"Error listing deals: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to list deals: {str(e)}"}
+        )
+
+
+@router.get("/deals/{deal_id}")
+async def get_deal(
+    deal_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific deal with related data.
+    
+    Args:
+        deal_id: The deal ID.
+        db: Database session.
+        current_user: The current user.
+        
+    Returns:
+        The deal with documents, notes, and timeline.
+    """
+    try:
+        deal = db.query(Deal).filter(Deal.id == deal_id).first()
+        
+        if not deal:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Deal {deal_id} not found"}
+            )
+        
+        # Check permission (user can only view their own deals, or admin)
+        if deal.applicant_id != current_user.id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={"status": "error", "message": "Not authorized to view this deal"}
+            )
+        
+        # Get attached documents
+        documents = db.query(Document).filter(Document.deal_id == deal_id).all()
+        
+        # Get notes
+        notes = db.query(DealNote).filter(DealNote.deal_id == deal_id).order_by(DealNote.created_at.desc()).limit(10).all()
+        
+        # Get timeline using DealService
+        deal_service = DealService(db)
+        timeline = deal_service.get_deal_timeline(deal_id)
+        
+        return {
+            "status": "success",
+            "deal": deal.to_dict(),
+            "documents": [doc.to_dict() for doc in documents],
+            "notes": [note.to_dict() for note in notes],
+            "timeline": timeline
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting deal {deal_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get deal: {str(e)}"}
+        )
+
+
+@router.get("/deals/{deal_id}/template-recommendations")
+async def get_deal_template_recommendations(
+    deal_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get template recommendations for a deal.
+    
+    Args:
+        deal_id: The deal ID.
+        db: Database session.
+        current_user: The current user.
+        
+    Returns:
+        Template recommendations with missing required, optional, and generated templates.
+    """
+    try:
+        from app.services.template_recommendation_service import TemplateRecommendationService
+        
+        deal = db.query(Deal).filter(Deal.id == deal_id).first()
+        
+        if not deal:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Deal {deal_id} not found"}
+            )
+        
+        # Check permission (user can only view their own deals, or admin)
+        if deal.applicant_id != current_user.id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={"status": "error", "message": "Not authorized to view this deal"}
+            )
+        
+        # Get template recommendations
+        recommendation_service = TemplateRecommendationService(db)
+        recommendations = recommendation_service.recommend_templates(deal_id)
+        
+        if recommendations.get("error"):
+            raise HTTPException(
+                status_code=500,
+                detail={"status": "error", "message": recommendations.get("error", "Failed to get recommendations")}
+            )
+        
+        return {
+            "status": "success",
+            "recommendations": recommendations
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting template recommendations for deal {deal_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get template recommendations: {str(e)}"}
+        )
+    except Exception as e:
+        logger.error(f"Error getting deal: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get deal: {str(e)}"}
+        )
+
+
+# ============================================================================
+# Deal Notes API
+# ============================================================================
+
+class CreateDealNoteRequest(BaseModel):
+    """Request model for creating a deal note."""
+    content: str = Field(..., description="Note content")
+    note_type: Optional[str] = Field(None, description="Note type (general, verification, status_change, etc.)")
+    metadata: Optional[dict] = Field(None, description="Additional note metadata")
+
+
+class UpdateDealNoteRequest(BaseModel):
+    """Request model for updating a deal note."""
+    content: Optional[str] = Field(None, description="Updated note content")
+    note_type: Optional[str] = Field(None, description="Updated note type")
+    metadata: Optional[dict] = Field(None, description="Updated metadata")
+
+
+@router.post("/deals/{deal_id}/notes")
+async def create_deal_note(
+    deal_id: int,
+    note_request: CreateDealNoteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Create a new note for a deal.
+    
+    Args:
+        deal_id: The deal ID.
+        note_request: CreateDealNoteRequest containing note data.
+        request: The HTTP request.
+        db: Database session.
+        current_user: The authenticated user.
+        
+    Returns:
+        The created note.
+    """
+    try:
+        # Verify deal exists
+        deal = db.query(Deal).filter(Deal.id == deal_id).first()
+        if not deal:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Deal {deal_id} not found"}
+            )
+        
+        # Create note in database
+        note = DealNote(
+            deal_id=deal_id,
+            user_id=current_user.id,
+            content=note_request.content,
+            note_type=note_request.note_type,
+            note_metadata=note_request.metadata,
+        )
+        db.add(note)
+        db.flush()
+        
+        # Store note in file system
+        file_storage = FileStorageService()
+        try:
+            file_storage.store_deal_document(
+                user_id=deal.applicant_id,
+                deal_id=deal.deal_id,
+                document_id=note.id,
+                filename=f"note_{note.id}.txt",
+                content=note_request.content.encode('utf-8'),
+                subdirectory="notes"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to store note in file system: {e}")
+        
+        # Index note in ChromaDB
+        try:
+            retrieval_service = DocumentRetrievalService(collection_name="creditnexus_deal_notes")
+            retrieval_service.add_document(
+                document_id=note.id,
+                cdm_data={"content": note_request.content, "note_type": note_request.note_type or "general"},
+                metadata={
+                    "deal_id": str(deal_id),
+                    "deal_deal_id": deal.deal_id,
+                    "user_id": str(current_user.id),
+                    "note_type": note_request.note_type or "general",
+                    "created_at": note.created_at.isoformat() if note.created_at else None,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to index note in ChromaDB: {e}")
+        
+        log_audit_action(
+            db=db,
+            action=AuditAction.CREATE,
+            target_type="deal_note",
+            target_id=note.id,
+            user_id=current_user.id,
+            metadata={"deal_id": deal_id, "note_type": note_request.note_type},
+            request=request
+        )
+        
+        db.commit()
+        db.refresh(note)
+        
+        # Re-index deal in ChromaDB after note creation
+        try:
+            from app.chains.document_retrieval_chain import add_deal
+            # Get documents and notes for indexing
+            documents = [doc.to_dict() for doc in db.query(Document).filter(Document.deal_id == deal_id).limit(10).all()]
+            notes = [n.to_dict() for n in db.query(DealNote).filter(DealNote.deal_id == deal_id).order_by(DealNote.created_at.desc()).limit(10).all()]
+            add_deal(
+                deal_id=deal.id,
+                deal_data=deal.to_dict(),
+                documents=documents,
+                notes=notes
+            )
+            logger.info(f"Re-indexed deal {deal.id} in ChromaDB after note creation")
+        except Exception as e:
+            logger.warning(f"Failed to re-index deal in ChromaDB: {e}")
+            # Don't fail note creation if indexing fails
+        
+        logger.info(f"Created deal note {note.id} for deal {deal_id} by user {current_user.id}")
+        
+        return {
+            "status": "success",
+            "message": "Deal note created successfully",
+            "note": note.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating deal note: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to create deal note: {str(e)}"}
+        )
+
+
+@router.get("/deals/{deal_id}/notes")
+async def list_deal_notes(
+    deal_id: int,
+    note_type: Optional[str] = Query(None, description="Filter by note type"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List notes for a deal.
+    
+    Args:
+        deal_id: The deal ID.
+        note_type: Optional filter by note type.
+        limit: Maximum number of results.
+        offset: Pagination offset.
+        db: Database session.
+        current_user: The current user.
+        
+    Returns:
+        List of notes.
+    """
+    try:
+        # Verify deal exists
+        deal = db.query(Deal).filter(Deal.id == deal_id).first()
+        if not deal:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Deal {deal_id} not found"}
+            )
+        
+        query = db.query(DealNote).filter(DealNote.deal_id == deal_id)
+        
+        if note_type:
+            query = query.filter(DealNote.note_type == note_type)
+        
+        total = query.count()
+        notes = query.order_by(DealNote.created_at.desc()).offset(offset).limit(limit).all()
+        
+        return {
+            "status": "success",
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "notes": [note.to_dict() for note in notes]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing deal notes: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to list deal notes: {str(e)}"}
+        )
+
+
+@router.get("/deals/{deal_id}/notes/{note_id}")
+async def get_deal_note(
+    deal_id: int,
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific deal note.
+    
+    Args:
+        deal_id: The deal ID.
+        note_id: The note ID.
+        db: Database session.
+        current_user: The current user.
+        
+    Returns:
+        The note.
+    """
+    try:
+        note = db.query(DealNote).filter(
+            DealNote.id == note_id,
+            DealNote.deal_id == deal_id
+        ).first()
+        
+        if not note:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Note {note_id} not found for deal {deal_id}"}
+            )
+        
+        return {
+            "status": "success",
+            "note": note.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting deal note: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get deal note: {str(e)}"}
+        )
+
+
+@router.put("/deals/{deal_id}/notes/{note_id}")
+async def update_deal_note(
+    deal_id: int,
+    note_id: int,
+    note_request: UpdateDealNoteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Update a deal note.
+    
+    Args:
+        deal_id: The deal ID.
+        note_id: The note ID.
+        note_request: UpdateDealNoteRequest containing updated data.
+        request: The HTTP request.
+        db: Database session.
+        current_user: The authenticated user.
+        
+    Returns:
+        The updated note.
+    """
+    try:
+        note = db.query(DealNote).filter(
+            DealNote.id == note_id,
+            DealNote.deal_id == deal_id
+        ).first()
+        
+        if not note:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Note {note_id} not found for deal {deal_id}"}
+            )
+        
+        # Check permission (user can only update their own notes, or admin)
+        if note.user_id != current_user.id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={"status": "error", "message": "Not authorized to update this note"}
+            )
+        
+        # Update fields
+        if note_request.content is not None:
+            note.content = note_request.content
+        if note_request.note_type is not None:
+            note.note_type = note_request.note_type
+        if note_request.metadata is not None:
+            note.note_metadata = note_request.metadata
+        
+        note.updated_at = datetime.utcnow()
+        
+        # Update file system
+        if note_request.content is not None:
+            deal = db.query(Deal).filter(Deal.id == deal_id).first()
+            if deal:
+                file_storage = FileStorageService()
+                try:
+                    file_storage.store_deal_document(
+                        user_id=deal.applicant_id,
+                        deal_id=deal.deal_id,
+                        document_id=note.id,
+                        filename=f"note_{note.id}.txt",
+                        content=note_request.content.encode('utf-8'),
+                        subdirectory="notes"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update note in file system: {e}")
+        
+        # Re-index in ChromaDB
+        if note_request.content is not None:
+            try:
+                retrieval_service = DocumentRetrievalService(collection_name="creditnexus_deal_notes")
+                retrieval_service.add_document(
+                    document_id=note.id,
+                    cdm_data={"content": note.content, "note_type": note.note_type or "general"},
+                    metadata={
+                        "deal_id": str(deal_id),
+                        "deal_deal_id": deal.deal_id,
+                        "user_id": str(note.user_id),
+                        "note_type": note.note_type or "general",
+                        "updated_at": note.updated_at.isoformat() if note.updated_at else None,
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Failed to re-index note in ChromaDB: {e}")
+        
+        log_audit_action(
+            db=db,
+            action=AuditAction.UPDATE,
+            target_type="deal_note",
+            target_id=note.id,
+            user_id=current_user.id,
+            metadata={"deal_id": deal_id},
+            request=request
+        )
+        
+        db.commit()
+        db.refresh(note)
+        
+        logger.info(f"Updated deal note {note_id} for deal {deal_id} by user {current_user.id}")
+        
+        return {
+            "status": "success",
+            "message": "Deal note updated successfully",
+            "note": note.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating deal note: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to update deal note: {str(e)}"}
+        )
+
+
+@router.delete("/deals/{deal_id}/notes/{note_id}")
+async def delete_deal_note(
+    deal_id: int,
+    note_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Delete a deal note.
+    
+    Args:
+        deal_id: The deal ID.
+        note_id: The note ID.
+        request: The HTTP request.
+        db: Database session.
+        current_user: The authenticated user.
+        
+    Returns:
+        Success message.
+    """
+    try:
+        note = db.query(DealNote).filter(
+            DealNote.id == note_id,
+            DealNote.deal_id == deal_id
+        ).first()
+        
+        if not note:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"Note {note_id} not found for deal {deal_id}"}
+            )
+        
+        # Check permission (user can only delete their own notes, or admin)
+        if note.user_id != current_user.id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail={"status": "error", "message": "Not authorized to delete this note"}
+            )
+        
+        # Delete from ChromaDB
+        try:
+            retrieval_service = DocumentRetrievalService(collection_name="creditnexus_deal_notes")
+            retrieval_service.delete_document(note_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete note from ChromaDB: {e}")
+        
+        log_audit_action(
+            db=db,
+            action=AuditAction.DELETE,
+            target_type="deal_note",
+            target_id=note.id,
+            user_id=current_user.id,
+            metadata={"deal_id": deal_id},
+            request=request
+        )
+        
+        db.delete(note)
+        db.commit()
+        
+        logger.info(f"Deleted deal note {note_id} for deal {deal_id} by user {current_user.id}")
+        
+        return {
+            "status": "success",
+            "message": "Deal note deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting deal note: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to delete deal note: {str(e)}"}
+        )
+
+
+# ============================================================================
+# Profile Extraction API Endpoints
+# ============================================================================
+
+
+@router.post("/profile/extract")
+async def extract_profile_from_documents(
+    files: List[UploadFile] = File(...),
+    role: str = Form(...),
+    existing_profile: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """Extract structured profile data from uploaded documents.
+    
+    This endpoint:
+    1. Extracts text from uploaded files (PDFs and images)
+    2. Uses LLM to extract structured profile data
+    3. Merges with existing profile data if provided
+    4. Returns structured UserProfileData
+    
+    Args:
+        files: List of uploaded files (PDF, PNG, JPEG, etc.)
+        role: User role (applicant, banker, law_officer, accountant)
+        existing_profile: Optional existing profile data as JSON string
+        db: Database session
+        current_user: Authenticated user (optional, for signup flow)
+        
+    Returns:
+        Profile extraction result with structured profile data
+    """
+    from app.services.profile_extraction_service import ProfileExtractionService
+    from app.models.user_profile import UserProfileData
+    import json
+    
+    try:
+        # Parse existing profile if provided
+        existing_profile_dict = None
+        if existing_profile:
+            try:
+                existing_profile_dict = json.loads(existing_profile)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Invalid existing_profile JSON: {existing_profile}")
+        
+        # Initialize profile extraction service
+        profile_service = ProfileExtractionService(db)
+        
+        # Process all files
+        file_contents = []
+        filenames = []
+        
+        for file in files:
+            filename = file.filename or "document"
+            content = await file.read()
+            file_contents.append((content, filename))
+            filenames.append(filename)
+        
+        if len(file_contents) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": "No files provided"}
+            )
+        
+        # Extract profile from multiple documents
+        if len(file_contents) == 1:
+            # Single file
+            content, filename = file_contents[0]
+            profile_data = profile_service.extract_profile_from_document(
+                file_content=content,
+                filename=filename,
+                role=role,
+                existing_profile=existing_profile_dict
+            )
+        else:
+            # Multiple files
+            files_list = [(content, filename) for content, filename in file_contents]
+            profile_data = profile_service.extract_profile_from_multiple_documents(
+                files=files_list,
+                role=role,
+                existing_profile=existing_profile_dict
+            )
+        
+        # Convert to dict for JSON response
+        profile_dict = profile_data.model_dump(exclude_none=True)
+        
+        # Index user profile in ChromaDB if user_id provided
+        if current_user:
+            try:
+                add_user_profile(
+                    user_id=current_user.id,
+                    profile_data=profile_dict,
+                    role=current_user.role,
+                    email=current_user.email
+                )
+                logger.info(f"Indexed user profile {current_user.id} in ChromaDB after profile extraction")
+            except Exception as e:
+                logger.warning(f"Failed to index user profile in ChromaDB: {e}")
+                # Don't fail extraction if indexing fails
+        
+        logger.info(f"Extracted profile data from {len(files)} document(s) for role {role}")
+        
+        return {
+            "status": "success",
+            "message": "Profile data extracted successfully",
+            "profile_data": profile_dict,
+            "extracted_from": filenames
+        }
+        
+    except ValueError as e:
+        logger.warning(f"Profile extraction validation error: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail={"status": "error", "message": str(e)}
+        )
+    except Exception as e:
+        logger.error(f"Error extracting profile data: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to extract profile data: {str(e)}"}
+        )
+
+
+# ============================================================================
+# Admin Signup Management API Endpoints
+# ============================================================================
+
+
+@router.get("/admin/signups")
+async def list_pending_signups(
+    status: Optional[str] = Query(None, description="Filter by signup status (pending, approved, rejected)"),
+    role: Optional[str] = Query(None, description="Filter by user role"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """List pending signups (admin only).
+    
+    Returns a paginated list of user signups with their profile data.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    
+    try:
+        query = db.query(User)
+        
+        # Filter by status
+        if status:
+            query = query.filter(User.signup_status == status)
+        else:
+            # Default to pending if no status specified
+            query = query.filter(User.signup_status == "pending")
+        
+        # Filter by role
+        if role:
+            query = query.filter(User.role == role)
+        
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination
+        offset = (page - 1) * limit
+        users = query.order_by(User.signup_submitted_at.desc()).offset(offset).limit(limit).all()
+        
+        return {
+            "status": "success",
+            "data": [user.to_dict() for user in users],
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total,
+                "pages": (total + limit - 1) // limit
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error listing signups: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to list signups: {str(e)}"}
+        )
+
+
+@router.get("/admin/signups/{user_id}")
+async def get_signup_details(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Get signup details for a specific user (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"User {user_id} not found"}
+            )
+        
+        return {
+            "status": "success",
+            "data": user.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting signup details: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get signup details: {str(e)}"}
+        )
+
+
+class SignupRejectRequest(BaseModel):
+    """Request model for rejecting a signup."""
+    reason: str = Field(..., description="Reason for rejection", min_length=10)
+
+
+@router.post("/admin/signups/{user_id}/approve")
+async def approve_signup(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Approve a user signup (admin only).
+    
+    Activates the user account and sets signup_status to 'approved'.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"User {user_id} not found"}
+            )
+        
+        if user.signup_status == "approved":
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": "User is already approved"}
+            )
+        
+        # Approve user
+        user.signup_status = "approved"
+        user.is_active = True
+        user.signup_reviewed_at = datetime.utcnow()
+        user.signup_reviewed_by = current_user.id
+        user.signup_rejection_reason = None
+        
+        db.commit()
+        db.refresh(user)
+        
+        # Index user profile in ChromaDB if profile_data exists
+        if user.profile_data:
+            try:
+                add_user_profile(
+                    user_id=user.id,
+                    profile_data=user.profile_data,
+                    role=user.role,
+                    email=user.email
+                )
+                logger.info(f"Indexed user profile {user.id} in ChromaDB after signup approval")
+            except Exception as e:
+                logger.warning(f"Failed to index user profile in ChromaDB: {e}")
+                # Don't fail approval if indexing fails
+        
+        # Audit log
+        log_audit_action(
+            db=db,
+            action=AuditAction.APPROVE,
+            target_type="user",
+            target_id=user.id,
+            user_id=current_user.id,
+            metadata={"signup_approval": True},
+            request=request
+        )
+        
+        logger.info(f"User {user_id} signup approved by admin {current_user.id}")
+        
+        return {
+            "status": "success",
+            "message": "User signup approved successfully",
+            "data": user.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error approving signup: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to approve signup: {str(e)}"}
+        )
+
+
+@router.post("/admin/signups/{user_id}/reject")
+async def reject_signup(
+    user_id: int,
+    reject_request: SignupRejectRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Reject a user signup (admin only).
+    
+    Sets signup_status to 'rejected' and stores the rejection reason.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail={"status": "error", "message": f"User {user_id} not found"}
+            )
+        
+        if user.signup_status == "rejected":
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": "User is already rejected"}
+            )
+        
+        # Reject user
+        user.signup_status = "rejected"
+        user.is_active = False
+        user.signup_reviewed_at = datetime.utcnow()
+        user.signup_reviewed_by = current_user.id
+        user.signup_rejection_reason = reject_request.reason
+        
+        db.commit()
+        db.refresh(user)
+        
+        # Audit log
+        log_audit_action(
+            db=db,
+            action=AuditAction.REJECT,
+            target_type="user",
+            target_id=user.id,
+            user_id=current_user.id,
+            metadata={"signup_rejection": True, "reason": reject_request.reason},
+            request=request
+        )
+        
+        logger.info(f"User {user_id} signup rejected by admin {current_user.id}: {reject_request.reason}")
+        
+        return {
+            "status": "success",
+            "message": "User signup rejected",
+            "data": user.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error rejecting signup: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to reject signup: {str(e)}"}
+        )
+
+
+# ============================================================================
+# User Profile Search API Endpoints
+# ============================================================================
+
+class UserSearchRequest(BaseModel):
+    """Request model for user profile search."""
+    query: str = Field(..., description="Search query (company name, role, job title, etc.)")
+    role: Optional[str] = Field(None, description="Filter by user role")
+    company_name: Optional[str] = Field(None, description="Filter by company name")
+    top_k: int = Field(10, ge=1, le=50, description="Number of results to return (default: 10, max: 50)")
+
+
+@router.post("/users/search")
+async def search_users(
+    request: UserSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """Search for users by profile data using semantic search.
+    
+    This endpoint uses ChromaDB to perform semantic search on user profiles,
+    allowing you to find users by company, role, job title, or other profile attributes.
+    
+    Args:
+        request: UserSearchRequest with search query and optional filters
+        db: Database session
+        current_user: Authenticated user (optional, but recommended for access control)
+        
+    Returns:
+        List of matching user profiles with similarity scores
+    """
+    try:
+        # Prepare filter metadata
+        filter_metadata = {}
+        if request.role:
+            filter_metadata["role"] = request.role
+        if request.company_name:
+            filter_metadata["company_name"] = request.company_name
+        
+        # Search user profiles in ChromaDB
+        try:
+            search_results = search_user_profiles(
+                query=request.query,
+                top_k=request.top_k,
+                filter_metadata=filter_metadata if filter_metadata else None
+            )
+        except ImportError as e:
+            logger.error(f"ChromaDB not available: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "error",
+                    "message": "User search service is not available. ChromaDB is not installed."
+                }
+            )
+        except Exception as e:
+            logger.error(f"User search failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "status": "error",
+                    "message": f"User search failed: {str(e)}"
+                }
+            )
+        
+        # Load full user data from database for each result
+        user_results = []
+        for result in search_results:
+            user_id = result.get("user_id")
+            if user_id:
+                try:
+                    user = db.query(User).filter(User.id == user_id).first()
+                    if user:
+                        # Check permissions (users can only see their own profile or admin can see all)
+                        if current_user and (current_user.id == user_id or current_user.role == "admin"):
+                            user_results.append({
+                                "user_id": user.id,
+                                "email": user.email,
+                                "display_name": user.display_name,
+                                "role": user.role,
+                                "profile_data": user.profile_data,
+                                "similarity_score": result.get("similarity_score", 0.0),
+                                "distance": result.get("distance", 1.0),
+                                "metadata": result.get("metadata", {}),
+                            })
+                        elif not current_user:
+                            # Unauthenticated access - return limited info
+                            user_results.append({
+                                "user_id": user.id,
+                                "display_name": user.display_name,
+                                "role": user.role,
+                                "similarity_score": result.get("similarity_score", 0.0),
+                                "metadata": result.get("metadata", {}),
+                            })
+                except Exception as e:
+                    logger.warning(f"Failed to load user {user_id} from database: {e}")
+                    # Continue with other results
+        
+        # Audit log (if user is authenticated)
+        if current_user:
+            try:
+                log_audit_action(
+                    db=db,
+                    action=AuditAction.VIEW,
+                    target_type="user_search",
+                    user_id=current_user.id,
+                    metadata={
+                        "query": request.query[:200],
+                        "results_count": len(user_results),
+                        "filters": filter_metadata,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log user search audit: {e}")
+        
+        return {
+            "status": "success",
+            "query": request.query,
+            "results_count": len(user_results),
+            "users": user_results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during user search: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to search users: {str(e)}"}
+        )
+
+
+# Recovery endpoints
 @router.post("/recovery/send-sms")
 async def send_recovery_sms(
     phone: str = Body(..., description="Recipient phone number"), # Changed Field to Body

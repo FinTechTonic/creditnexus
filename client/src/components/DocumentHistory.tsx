@@ -29,6 +29,8 @@ import {
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
 import { WorkflowActions } from './WorkflowActions';
 import { SkeletonDocumentList, EmptyState } from '@/components/ui/skeleton';
+import { PermissionGate } from '@/components/PermissionGate';
+import { PERMISSION_DOCUMENT_DELETE, PERMISSION_DOCUMENT_EDIT, PERMISSION_DOCUMENT_EXPORT } from '@/utils/permissions';
 
 interface DocumentSummary {
   id: number;
@@ -458,7 +460,7 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
                 </Button>
               </div>
             </div>
-            {isAuthenticated && (
+            <PermissionGate permission={PERMISSION_DOCUMENT_DELETE}>
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -468,7 +470,7 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
               </Button>
-            )}
+            </PermissionGate>
           </div>
         </div>
 

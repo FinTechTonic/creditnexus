@@ -744,6 +744,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
               onTemplateSelect={handleChatbotTemplateSelect}
               onClose={() => setIsChatbotOpen(false)}
               className="h-full"
+              dealId={cdmData?.deal_id ? Number(cdmData.deal_id) : null}
             />
           </div>
         </DialogContent>

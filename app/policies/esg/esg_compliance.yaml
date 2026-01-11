@@ -1,0 +1,207 @@
+# ESG (Environmental, Social, Governance) Compliance Rules
+# These rules enforce sustainability-linked loan requirements and ESG standards
+# Based on EU Taxonomy, SFDR, and LMA Green Loan Principles
+
+# Block sustainability-linked loans without KPI targets
+- name: block_missing_esg_kpis
+  when:
+    all:
+      - field: sustainability_linked
+        op: eq
+        value: true
+      - any:
+          - field: esg_kpi_targets
+            op: eq
+            value: []  # Empty list
+          - field: esg_kpi_targets
+            op: eq
+            value: null
+          - field: esg_kpi_targets
+            op: exists
+            value: false
+  action: block
+  priority: 90
+  description: "Block sustainability-linked loans without defined ESG KPI targets"
+  category: "esg"
+
+# Block invalid ESG claims (greenwashing prevention)
+- name: block_invalid_esg_claims
+  when:
+    all:
+      - field: sustainability_linked
+        op: eq
+        value: true
+      - field: esg_verification_status
+        op: eq
+        value: "unverified"
+      - field: esg_verification_date
+        op: eq
+        value: null
+  action: block
+  priority: 85
+  description: "Block sustainability-linked loans without third-party ESG verification (greenwashing prevention)"
+  category: "esg"
+
+# Flag loans to high-carbon industries without transition plans
+- name: flag_high_carbon_without_transition
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower.sector
+        op: in
+        value: ["fossil_fuels", "coal_mining", "oil_gas_extraction", "cement", "steel"]
+      - field: borrower.transition_plan
+        op: exists
+        value: false
+      - field: borrower.transition_plan
+        op: eq
+        value: null
+  action: flag
+  priority: 75
+  description: "Flag loans to high-carbon industries without credible transition plans"
+  category: "esg"
+
+# Block loans violating EU Taxonomy criteria
+- name: block_eu_taxonomy_violations
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower.jurisdiction
+        op: in
+        value: ["EU_MEMBER_STATES"]
+      - field: eu_taxonomy_alignment
+        op: eq
+        value: false
+      - field: eu_taxonomy_alignment
+        op: eq
+        value: null
+  action: block
+  priority: 80
+  description: "Block loans in EU that do not meet EU Taxonomy environmental criteria"
+  category: "esg"
+
+# Flag loans with poor social indicators
+- name: flag_poor_social_indicators
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - any:
+          - field: borrower.labor_rights_score
+            op: lt
+            value: 50  # Out of 100
+          - field: borrower.diversity_score
+            op: lt
+            value: 50
+          - field: borrower.community_impact_score
+            op: lt
+            value: 50
+  action: flag
+  priority: 60
+  description: "Flag loans to entities with poor social indicators (labor rights, diversity, community impact)"
+  category: "esg"
+
+# Flag loans with governance issues
+- name: flag_governance_issues
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - any:
+          - field: borrower.board_independence
+            op: lt
+            value: 0.5  # Less than 50% independent directors
+          - field: borrower.audit_quality_score
+            op: lt
+            value: 60
+          - field: borrower.executive_compensation_ratio
+            op: gt
+            value: 200  # CEO pay > 200x median employee
+  action: flag
+  priority: 65
+  description: "Flag loans to entities with governance issues (board independence, audit quality, executive compensation)"
+  category: "esg"
+
+# Block green bonds without use-of-proceeds verification
+- name: block_unverified_green_use_of_proceeds
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: green_bond
+        op: eq
+        value: true
+      - field: use_of_proceeds_verification
+        op: eq
+        value: false
+      - field: use_of_proceeds_verification
+        op: eq
+        value: null
+  action: block
+  priority: 88
+  description: "Block green bonds without verified use-of-proceeds tracking"
+  category: "esg"
+
+# Flag loans exceeding portfolio carbon intensity threshold
+- name: flag_high_portfolio_carbon_intensity
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: portfolio.carbon_intensity
+        op: gt
+        value: 200  # tCO2e per $M revenue
+      - field: borrower.carbon_intensity
+        op: gt
+        value: 200
+  action: flag
+  priority: 55
+  description: "Flag loans that would increase portfolio carbon intensity above threshold"
+  category: "esg"
+
+# Block loans to entities with recent environmental violations
+- name: block_recent_environmental_violations
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower.environmental_violations_count
+        op: gt
+        value: 0
+      - field: borrower.last_environmental_violation_date
+        op: gt
+        value: "2023-01-01"  # Within last 2 years
+  action: block
+  priority: 70
+  description: "Block loans to entities with recent environmental violations or regulatory penalties"
+  category: "esg"
+
+# Flag loans without biodiversity impact assessment
+- name: flag_missing_biodiversity_assessment
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower.sector
+        op: in
+        value: ["agriculture", "mining", "forestry", "infrastructure"]
+      - field: biodiversity_impact_assessment
+        op: exists
+        value: false
+      - field: biodiversity_impact_assessment
+        op: eq
+        value: null
+  action: flag
+  priority: 50
+  description: "Flag loans in biodiversity-sensitive sectors without impact assessment"
+  category: "esg"

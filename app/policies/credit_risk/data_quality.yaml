@@ -1,0 +1,86 @@
+# Data Quality Management Policies
+# These rules enforce data quality requirements for credit risk calculations
+
+- name: block_missing_required_fields
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: data_completeness_score
+        op: lt
+        value: 0.90  # 90% minimum data completeness
+  action: block
+  priority: 100
+  description: "Block facilities with insufficient data completeness (below 90%)"
+  category: "data_quality"
+
+- name: flag_outdated_financial_statements
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: financial_statement_age_months
+        op: gt
+        value: 12  # Financial statements older than 12 months
+  action: flag
+  priority: 80
+  description: "Flag facilities with outdated financial statements (older than 12 months)"
+  category: "data_quality"
+
+- name: flag_inconsistent_data_fields
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: data_consistency_score
+        op: lt
+        value: 0.95  # 95% minimum data consistency
+  action: flag
+  priority: 70
+  description: "Flag facilities with data consistency issues (below 95% consistency)"
+  category: "data_quality"
+
+- name: block_unverified_borrower_information
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_verification_status
+        op: eq
+        value: "unverified"
+  action: block
+  priority: 95
+  description: "Block facilities for unverified borrowers"
+  category: "data_quality"
+
+- name: flag_missing_audit_trail
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: data_audit_trail_complete
+        op: eq
+        value: false
+  action: flag
+  priority: 75
+  description: "Flag facilities with incomplete data audit trail"
+  category: "data_quality"
+
+- name: flag_low_data_quality_score
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: overall_data_quality_score
+        op: lt
+        value: 0.85  # 85% minimum overall data quality
+  action: flag
+  priority: 65
+  description: "Flag facilities with low overall data quality score (below 85%)"
+  category: "data_quality"

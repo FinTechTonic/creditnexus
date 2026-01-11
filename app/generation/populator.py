@@ -48,7 +48,10 @@ class AIFieldPopulator:
         cdm_data: CreditAgreement,
         template: LMATemplate,
         mapped_fields: Dict[str, Any],
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
+        deal_context: Optional[Dict[str, Any]] = None,
+        user_profile: Optional[Dict[str, Any]] = None,
+        related_documents: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, str]:
         """
         Populate all AI-generated fields for a template.
@@ -58,6 +61,9 @@ class AIFieldPopulator:
             template: LMATemplate instance
             mapped_fields: Already mapped direct/computed fields (for context)
             user_id: Optional user ID for clause cache tracking
+            deal_context: Optional deal context (deal_id, status, deal_type, deal_data)
+            user_profile: Optional user profile (role, display_name, profile_data)
+            related_documents: Optional list of related documents for context
             
         Returns:
             Dictionary mapping template field names to generated content
@@ -100,7 +106,10 @@ class AIFieldPopulator:
                         section_name=section_name,
                         cdm_data=cdm_data,
                         template=template,
-                        mapped_fields=mapped_fields
+                        mapped_fields=mapped_fields,
+                        deal_context=deal_context,
+                        user_profile=user_profile,
+                        related_documents=related_documents
                     )
                     
                     # Save to cache if available
@@ -136,7 +145,10 @@ class AIFieldPopulator:
         section_name: str,
         cdm_data: CreditAgreement,
         template: LMATemplate,
-        mapped_fields: Optional[Dict[str, Any]] = None
+        mapped_fields: Optional[Dict[str, Any]] = None,
+        deal_context: Optional[Dict[str, Any]] = None,
+        user_profile: Optional[Dict[str, Any]] = None,
+        related_documents: Optional[List[Dict[str, Any]]] = None
     ) -> Optional[str]:
         """
         Generate a specific section using LLM.
@@ -146,6 +158,9 @@ class AIFieldPopulator:
             cdm_data: CreditAgreement instance
             template: LMATemplate instance
             mapped_fields: Optional already-mapped fields for context
+            deal_context: Optional deal context
+            user_profile: Optional user profile
+            related_documents: Optional related documents
             
         Returns:
             Generated text content or None if generation fails
@@ -164,7 +179,14 @@ class AIFieldPopulator:
             return None
         
         # Prepare prompt variables from CDM data
-        prompt_vars = self._prepare_prompt_variables(cdm_data, template, mapped_fields)
+        prompt_vars = self._prepare_prompt_variables(
+            cdm_data, 
+            template, 
+            mapped_fields,
+            deal_context=deal_context,
+            user_profile=user_profile,
+            related_documents=related_documents
+        )
         
         try:
             # Format prompt with variables
@@ -194,7 +216,10 @@ class AIFieldPopulator:
         self,
         cdm_data: CreditAgreement,
         template: LMATemplate,
-        mapped_fields: Optional[Dict[str, Any]]
+        mapped_fields: Optional[Dict[str, Any]],
+        deal_context: Optional[Dict[str, Any]] = None,
+        user_profile: Optional[Dict[str, Any]] = None,
+        related_documents: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Prepare variables for prompt templates from CDM data.
@@ -203,6 +228,9 @@ class AIFieldPopulator:
             cdm_data: CreditAgreement instance
             template: LMATemplate instance
             mapped_fields: Optional already-mapped fields
+            deal_context: Optional deal context
+            user_profile: Optional user profile
+            related_documents: Optional related documents
             
         Returns:
             Dictionary of prompt variables
@@ -259,6 +287,44 @@ class AIFieldPopulator:
             if context_items:
                 additional_context = "\n".join(context_items)
         
+        # Add deal context
+        deal_info = ""
+        if deal_context:
+            import json
+            deal_info = f"""
+Deal Context:
+- Deal ID: {deal_context.get('deal_id', 'N/A')}
+- Deal Type: {deal_context.get('deal_type', 'N/A')}
+- Deal Status: {deal_context.get('status', 'N/A')}
+"""
+            if deal_context.get('deal_data'):
+                deal_info += f"- Deal Data: {json.dumps(deal_context['deal_data'], indent=2, default=str)}\n"
+        
+        # Add user profile context
+        user_info = ""
+        if user_profile:
+            user_info = f"""
+User Context:
+- Role: {user_profile.get('role', 'N/A')}
+- Name: {user_profile.get('display_name', 'N/A')}
+"""
+            if user_profile.get('profile_data'):
+                profile = user_profile['profile_data']
+                if isinstance(profile, dict):
+                    if profile.get('company', {}).get('name'):
+                        user_info += f"- Company: {profile['company']['name']}\n"
+                    if profile.get('professional', {}).get('job_title'):
+                        user_info += f"- Job Title: {profile['professional']['job_title']}\n"
+        
+        # Add related documents context
+        documents_info = ""
+        if related_documents:
+            documents_info = "\nRelated Documents:\n"
+            for doc in related_documents[:5]:  # Limit to 5 most relevant
+                doc_title = doc.get('title', doc.get('filename', 'Document'))
+                doc_subdir = doc.get('subdirectory', 'documents')
+                documents_info += f"- {doc_title} ({doc_subdir})\n"
+        
         return {
             "borrower_name": borrower_name,
             "borrower_lei": borrower_lei or "Not provided",
@@ -273,6 +339,9 @@ class AIFieldPopulator:
             "esg_kpi_targets": esg_kpi_targets or "Not applicable",
             "sustainability_linked": "Yes" if cdm_data.sustainability_linked else "No",
             "additional_context": additional_context,
+            "deal_context": deal_info or "Not applicable",
+            "user_context": user_info or "Not applicable",
+            "related_documents": documents_info or "Not applicable",
         }
     
     def _generate_representations(

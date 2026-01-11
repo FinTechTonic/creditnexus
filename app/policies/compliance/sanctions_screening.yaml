@@ -1,0 +1,161 @@
+# Sanctions Screening and AML Compliance Rules
+# These rules enforce sanctions screening and anti-money laundering (AML) requirements
+# Based on FATF recommendations and OFAC/SDN list compliance
+
+# Block transactions with sanctioned parties (OFAC, UN, EU sanctions)
+- name: block_sanctioned_parties
+  when:
+    any:
+      - field: originator.lei
+        op: in
+        value: ["SANCTIONED_LEI_LIST"]  # External sanctions database
+      - field: beneficiary.lei
+        op: in
+        value: ["SANCTIONED_LEI_LIST"]
+      - field: originator.name
+        op: in
+        value: ["SANCTIONED_NAMES_LIST"]  # Fuzzy matching for name variations
+      - field: beneficiary.name
+        op: in
+        value: ["SANCTIONED_NAMES_LIST"]
+  action: block
+  priority: 100
+  description: "Block any transaction involving entities on sanctions lists (OFAC, UN, EU)"
+  category: "sanctions"
+
+# Block transactions with sanctioned countries
+- name: block_sanctioned_jurisdictions
+  when:
+    any:
+      - field: originator.jurisdiction
+        op: in
+        value: ["SANCTIONED_COUNTRIES_LIST"]  # e.g., North Korea, Iran, Syria
+      - field: beneficiary.jurisdiction
+        op: in
+        value: ["SANCTIONED_COUNTRIES_LIST"]
+      - field: transaction.destination_country
+        op: in
+        value: ["SANCTIONED_COUNTRIES_LIST"]
+  action: block
+  priority: 100
+  description: "Block transactions involving sanctioned jurisdictions"
+  category: "sanctions"
+
+# Flag high-risk jurisdictions (FATF blacklist, grey list)
+- name: flag_high_risk_jurisdiction
+  when:
+    any:
+      - field: originator.jurisdiction
+        op: in
+        value: ["HIGH_RISK_JURISDICTIONS_LIST"]  # FATF blacklist/grey list
+      - field: beneficiary.jurisdiction
+        op: in
+        value: ["HIGH_RISK_JURISDICTIONS_LIST"]
+  action: flag
+  priority: 80
+  description: "Flag transactions involving high-risk jurisdictions (FATF blacklist/grey list)"
+  category: "sanctions"
+
+# Flag transactions with PEPs (Politically Exposed Persons)
+- name: flag_pep_involvement
+  when:
+    any:
+      - field: originator.is_pep
+        op: eq
+        value: true
+      - field: beneficiary.is_pep
+        op: eq
+        value: true
+      - field: transaction.involves_pep
+        op: eq
+        value: true
+  action: flag
+  priority: 70
+  description: "Flag transactions involving Politically Exposed Persons (PEPs) for enhanced due diligence"
+  category: "sanctions"
+
+# Flag suspicious transaction patterns (structuring, round numbers)
+- name: flag_suspicious_patterns
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "trade_execution"
+      - any:
+          - field: amount
+            op: eq
+            value: 10000  # Common structuring threshold
+          - field: amount
+            op: eq
+            value: 50000
+          - field: amount
+            op: eq
+            value: 100000
+      - field: transaction.frequency
+        op: gt
+        value: 5  # Multiple transactions in short period
+  action: flag
+  priority: 60
+  description: "Flag suspicious transaction patterns (structuring, frequent round-number transactions)"
+  category: "sanctions"
+
+# Block transactions without proper KYC verification
+- name: block_missing_kyc
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - any:
+          - field: originator.kyc_status
+            op: eq
+            value: false
+          - field: originator.kyc_status
+            op: eq
+            value: null
+          - field: beneficiary.kyc_status
+            op: eq
+            value: false
+          - field: beneficiary.kyc_status
+            op: eq
+            value: null
+  action: block
+  priority: 90
+  description: "Block transactions without proper KYC (Know Your Customer) verification"
+  category: "sanctions"
+
+# Flag high-value transactions requiring additional reporting
+- name: flag_high_value_reporting
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "trade_execution"
+      - field: amount
+        op: gt
+        value: 15000  # Currency Transaction Report (CTR) threshold (varies by jurisdiction)
+      - field: currency
+        op: eq
+        value: "USD"
+  action: flag
+  priority: 50
+  description: "Flag high-value transactions requiring Currency Transaction Report (CTR) filing"
+  category: "sanctions"
+
+# Block virtual asset transfers without proper AML controls
+- name: block_unregulated_virtual_assets
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "trade_execution"
+      - field: asset_type
+        op: eq
+        value: "virtual_asset"
+      - field: originator.aml_compliance_status
+        op: ne
+        value: "verified"
+  action: block
+  priority: 85
+  description: "Block virtual asset transfers from entities without verified AML compliance"
+  category: "sanctions"

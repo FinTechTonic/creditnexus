@@ -1,0 +1,104 @@
+# Internal Ratings-Based (IRB) Approach Rules
+# These rules enforce IRB methodology requirements for credit risk assessment
+
+- name: block_missing_pd_estimate
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: risk_model_approach
+        op: eq
+        value: "irb"
+      - field: probability_of_default
+        op: eq
+        value: null
+  action: block
+  priority: 100
+  description: "Block IRB approach facilities without probability of default (PD) estimate"
+  category: "irb"
+
+- name: block_missing_lgd_estimate
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: risk_model_approach
+        op: eq
+        value: "irb"
+      - field: loss_given_default
+        op: eq
+        value: null
+  action: block
+  priority: 100
+  description: "Block IRB approach facilities without loss given default (LGD) estimate"
+  category: "irb"
+
+- name: flag_invalid_pd_range
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: risk_model_approach
+        op: eq
+        value: "irb"
+      - field: probability_of_default
+        op: gt
+        value: 1.0  # PD must be between 0 and 1
+  action: flag
+  priority: 90
+  description: "Flag if probability of default exceeds valid range (0-1)"
+  category: "irb"
+
+- name: flag_invalid_lgd_range
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: risk_model_approach
+        op: eq
+        value: "irb"
+      - field: loss_given_default
+        op: gt
+        value: 1.0  # LGD must be between 0 and 1
+  action: flag
+  priority: 90
+  description: "Flag if loss given default exceeds valid range (0-1)"
+  category: "irb"
+
+- name: flag_high_pd_facility
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: risk_model_approach
+        op: eq
+        value: "irb"
+      - field: probability_of_default
+        op: gt
+        value: 0.15  # 15% PD threshold
+  action: flag
+  priority: 75
+  description: "Flag facilities with high probability of default (exceeds 15%)"
+  category: "irb"
+
+- name: flag_insufficient_rating_history
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: risk_model_approach
+        op: eq
+        value: "irb"
+      - field: rating_history_years
+        op: lt
+        value: 5  # Minimum 5 years of rating history
+  action: flag
+  priority: 65
+  description: "Flag IRB facilities with insufficient rating history (less than 5 years)"
+  category: "irb"

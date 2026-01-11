@@ -4,80 +4,139 @@ import { DocumentParser } from '@/apps/docu-digitizer/DocumentParser';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentGenerator } from '@/apps/document-generator/DocumentGenerator';
+import { PolicyEditor } from '@/apps/policy-editor/PolicyEditor';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { Dashboard } from '@/components/Dashboard';
 import { GroundTruthDashboard } from '@/components/GroundTruthDashboard';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
+import { AdminSignupDashboard } from '@/components/AdminSignupDashboard';
 import { CalendarView } from '@/components/CalendarView';
+import { DealDashboard } from '@/components/DealDashboard';
+import { DealDetail } from '@/components/DealDetail';
 import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext } from '@/context/FDC3Context';
 import VerificationDashboard from '@/components/VerificationDashboard';
 import RiskWarRoom from '@/components/RiskWarRoom';
+import { usePermissions } from '@/hooks/usePermissions';
+import {
+  PERMISSION_DOCUMENT_VIEW,
+  PERMISSION_DOCUMENT_CREATE,
+  PERMISSION_TEMPLATE_VIEW,
+  PERMISSION_TEMPLATE_GENERATE,
+  PERMISSION_TRADE_VIEW,
+  PERMISSION_SATELLITE_VIEW,
+  PERMISSION_APPLICATION_VIEW,
+  PERMISSION_USER_VIEW,
+  PERMISSION_DEAL_VIEW,
+  PERMISSION_DEAL_VIEW_OWN,
+} from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals';
 
-const mainApps: { id: AppView; name: string; icon: React.ReactNode; description: string }[] = [
+interface AppConfig {
+  id: AppView;
+  name: string;
+  icon: React.ReactNode;
+  description: string;
+  requiredPermission?: string;
+  requiredPermissions?: string[];
+  requireAll?: boolean;
+}
+
+const mainApps: AppConfig[] = [
   {
     id: 'dashboard',
     name: 'Dashboard',
     icon: <LayoutDashboard className="h-5 w-5" />,
     description: 'Portfolio overview & analytics',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
   },
   {
     id: 'document-parser',
     name: 'Document Parser',
     icon: <FileText className="h-5 w-5" />,
     description: 'Extract & digitize credit agreements',
+    requiredPermission: PERMISSION_DOCUMENT_CREATE,
   },
   {
     id: 'library',
     name: 'Library',
     icon: <BookOpen className="h-5 w-5" />,
     description: 'Saved documents & history',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
   },
   {
     id: 'document-generator',
     name: 'Document Generator',
     icon: <Sparkles className="h-5 w-5" />,
     description: 'Generate LMA documents from templates',
+    requiredPermissions: [PERMISSION_TEMPLATE_VIEW, PERMISSION_TEMPLATE_GENERATE],
+    requireAll: false,
   },
 ];
 
-const sidebarApps: { id: AppView; name: string; icon: React.ReactNode; description: string }[] = [
+const sidebarApps: AppConfig[] = [
   {
     id: 'verification-demo',
     name: 'Verification Demo',
     icon: <Sparkles className="h-5 w-5 text-indigo-400" />,
     description: 'Live Verification Workflow',
+    requiredPermission: PERMISSION_SATELLITE_VIEW,
   },
   {
     id: 'ground-truth',
     name: 'Ground Truth',
     icon: <Shield className="h-5 w-5" />,
     description: 'Geospatial verification for sustainability-linked loans',
+    requiredPermission: PERMISSION_SATELLITE_VIEW,
   },
   {
     id: 'trade-blotter',
     name: 'Trade Blotter',
     icon: <ArrowLeftRight className="h-5 w-5" />,
     description: 'LMA trade confirmation & settlement',
+    requiredPermission: PERMISSION_TRADE_VIEW,
   },
   {
     id: 'risk-war-room',
     name: 'Risk War Room',
     icon: <RadioTower className="h-5 w-5 text-red-500" />,
     description: 'Global Portfolio Surveillance',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
   },
   {
     id: 'green-lens',
     name: 'GreenLens',
     icon: <Leaf className="h-5 w-5" />,
     description: 'ESG performance & margin ratchet',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+  },
+  {
+    id: 'policy-editor',
+    name: 'Policy Editor',
+    icon: <Shield className="h-5 w-5 text-purple-400" />,
+    description: 'Create and manage policy rules',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+  },
+  {
+    id: 'admin-signups',
+    name: 'User Signups',
+    icon: <User className="h-5 w-5 text-blue-400" />,
+    description: 'Review platform user account signups (admin only)',
+    requiredPermission: PERMISSION_USER_VIEW,
+  },
+  {
+    id: 'deals',
+    name: 'Deals',
+    icon: <Building2 className="h-5 w-5 text-emerald-400" />,
+    description: 'Deal management & lifecycle',
+    requiredPermissions: [PERMISSION_DEAL_VIEW, PERMISSION_DEAL_VIEW_OWN],
+    requireAll: false,
   },
 ];
 
@@ -121,7 +180,9 @@ export function DesktopAppLayout() {
     const pathToApp: Record<string, AppView> = {
       '/dashboard': 'dashboard',
       '/dashboard/applications': 'applications',
+      '/dashboard/admin-signups': 'admin-signups',
       '/dashboard/calendar': 'calendar',
+      '/dashboard/deals': 'deals',
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
@@ -129,9 +190,19 @@ export function DesktopAppLayout() {
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
       '/app/risk-war-room': 'risk-war-room',
+      '/app/policy-editor': 'policy-editor',
       '/library': 'library',
     };
-    return pathToApp[location.pathname] || 'dashboard';
+    // Handle policy-editor routes with policyId parameter
+    if (location.pathname.startsWith('/app/policy-editor')) {
+      return 'policy-editor';
+    }
+    // Handle deal detail routes
+    if (location.pathname.startsWith('/dashboard/deals/')) {
+      return 'deals';
+    }
+    const result = pathToApp[location.pathname] || 'dashboard';
+    return result;
   };
   
   const [activeApp, setActiveApp] = useState<AppView>(getInitialApp());
@@ -157,8 +228,54 @@ export function DesktopAppLayout() {
   });
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const { isAvailable, pendingIntent, clearPendingIntent, onIntentReceived } = useFDC3();
+  const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
   const isNavigatingRef = useRef(false);
   const lastNavigatedPathRef = useRef<string | null>(null);
+
+  // Filter apps based on permissions
+  const visibleMainApps = useMemo(() => {
+    return mainApps.filter((app) => {
+      if (!app.requiredPermission && !app.requiredPermissions) {
+        return true; // No permission required
+      }
+      
+      if (app.requiredPermission) {
+        return hasPermission(app.requiredPermission);
+      }
+      
+      if (app.requiredPermissions) {
+        if (app.requireAll) {
+          return hasAllPermissions(app.requiredPermissions);
+        } else {
+          return hasAnyPermission(app.requiredPermissions);
+        }
+      }
+      
+      return false;
+    });
+  }, [hasPermission, hasAnyPermission, hasAllPermissions]);
+
+  const visibleSidebarApps = useMemo(() => {
+    return sidebarApps.filter((app) => {
+      if (!app.requiredPermission && !app.requiredPermissions) {
+        return true; // No permission required
+      }
+      
+      if (app.requiredPermission) {
+        return hasPermission(app.requiredPermission);
+      }
+      
+      if (app.requiredPermissions) {
+        if (app.requireAll) {
+          return hasAllPermissions(app.requiredPermissions);
+        } else {
+          return hasAnyPermission(app.requiredPermissions);
+        }
+      }
+      
+      return false;
+    });
+  }, [hasPermission, hasAnyPermission, hasAllPermissions]);
 
 
   // Sync activeApp with route
@@ -175,7 +292,9 @@ export function DesktopAppLayout() {
     const pathToApp: Record<string, AppView> = {
       '/dashboard': 'dashboard',
       '/dashboard/applications': 'applications',
+      '/dashboard/admin-signups': 'admin-signups',
       '/dashboard/calendar': 'calendar',
+      '/dashboard/deals': 'deals',  // Add explicit mapping for deals list
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
@@ -183,10 +302,19 @@ export function DesktopAppLayout() {
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
       '/app/risk-war-room': 'risk-war-room',
+      '/app/policy-editor': 'policy-editor',
       '/library': 'library',
     };
     
-    const app = pathToApp[location.pathname];
+    // Handle policy-editor routes with policyId parameter
+    let app = pathToApp[location.pathname];
+    if (!app && location.pathname.startsWith('/app/policy-editor')) {
+      app = 'policy-editor';
+    }
+    // Handle deal detail routes (must come after checking exact path)
+    if (!app && location.pathname.startsWith('/dashboard/deals/')) {
+      app = 'deals';
+    }
     
     // Only sync if the pathname is actually in our mapping (not a route we don't handle)
     if (!app) {
@@ -196,14 +324,16 @@ export function DesktopAppLayout() {
     if (app !== activeApp) {
       setActiveApp(app);
     }
-  }, [location.pathname]); // Only depend on pathname to avoid loops
+  }, [location.pathname, activeApp]); // Include activeApp to track changes
 
   // Update route when activeApp changes
   const handleAppChange = (app: AppView) => {
     const appToPath: Record<AppView, string> = {
       'dashboard': '/dashboard',
       'applications': '/dashboard/applications',
+      'admin-signups': '/dashboard/admin-signups',
       'calendar': '/dashboard/calendar',
+      'deals': '/dashboard/deals',
       'document-parser': '/app/document-parser',
       'document-generator': '/app/document-generator',
       'trade-blotter': '/app/trade-blotter',
@@ -211,6 +341,7 @@ export function DesktopAppLayout() {
       'ground-truth': '/app/ground-truth',
       'verification-demo': '/app/verification-demo',
       'risk-war-room': '/app/risk-war-room',
+      'policy-editor': '/app/policy-editor',
       'library': '/library',
     };
     const path = appToPath[app];
@@ -332,7 +463,7 @@ export function DesktopAppLayout() {
   };
 
   const breadcrumbItems = useMemo(() => {
-    const currentApp = [...mainApps, ...sidebarApps].find(app => app.id === activeApp);
+    const currentApp = [...visibleMainApps, ...visibleSidebarApps].find(app => app.id === activeApp);
     if (!currentApp) return [];
 
     return [
@@ -341,7 +472,7 @@ export function DesktopAppLayout() {
         icon: currentApp.icon
       }
     ];
-  }, [activeApp]);
+  }, [activeApp, visibleMainApps, visibleSidebarApps]);
 
   const handleBreadcrumbHome = () => {
     handleAppChange('dashboard');
@@ -362,7 +493,7 @@ export function DesktopAppLayout() {
           </div>
 
           <nav className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
-            {mainApps.map((app) => (
+            {visibleMainApps.map((app) => (
               <button
                 key={app.id}
                 onClick={(e) => {
@@ -466,7 +597,7 @@ export function DesktopAppLayout() {
             <p className={`text-xs text-slate-500 uppercase tracking-wider px-2 py-2 ${!sidebarOpen && 'sr-only'}`}>
               Tools
             </p>
-            {sidebarApps.map((app) => (
+            {visibleSidebarApps.map((app) => (
               <button
                 key={app.id}
                 onClick={(e) => {
@@ -509,7 +640,12 @@ export function DesktopAppLayout() {
 
           {activeApp === 'dashboard' && <Dashboard />}
           {activeApp === 'applications' && <ApplicationDashboard />}
+          {activeApp === 'admin-signups' && <AdminSignupDashboard />}
           {activeApp === 'calendar' && <CalendarView />}
+          {activeApp === 'deals' && (() => {
+            const isDetailRoute = location.pathname.startsWith('/dashboard/deals/') && location.pathname !== '/dashboard/deals';
+            return isDetailRoute ? <DealDetail /> : <DealDashboard />;
+          })()}
           {activeApp === 'document-parser' && (
             <DocumentParser
               onBroadcast={handleBroadcast}
@@ -549,6 +685,7 @@ export function DesktopAppLayout() {
           {activeApp === 'ground-truth' && <GroundTruthDashboard />}
           {activeApp === 'verification-demo' && <VerificationDashboard />}
           {activeApp === 'risk-war-room' && <RiskWarRoom />}
+          {activeApp === 'policy-editor' && <PolicyEditor />}
         </main>
       </div>
 

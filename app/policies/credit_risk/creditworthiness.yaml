@@ -1,0 +1,100 @@
+# Creditworthiness Assessment Policies
+# These rules assess borrower creditworthiness and financial strength
+
+- name: block_insufficient_credit_score
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_credit_score
+        op: lt
+        value: 600  # Minimum credit score threshold
+  action: block
+  priority: 95
+  description: "Block facilities for borrowers with credit score below 600"
+  category: "creditworthiness"
+
+- name: flag_low_debt_service_coverage
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: debt_service_coverage_ratio
+        op: lt
+        value: 1.25  # Minimum DSCR of 1.25
+  action: flag
+  priority: 80
+  description: "Flag facilities with debt service coverage ratio below 1.25"
+  category: "creditworthiness"
+
+- name: flag_high_leverage_ratio
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_leverage_ratio
+        op: gt
+        value: 0.70  # 70% debt-to-equity threshold
+  action: flag
+  priority: 75
+  description: "Flag facilities for borrowers with leverage ratio exceeding 70%"
+  category: "creditworthiness"
+
+- name: block_negative_net_worth
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_net_worth
+        op: lt
+        value: 0
+  action: block
+  priority: 100
+  description: "Block facilities for borrowers with negative net worth"
+  category: "creditworthiness"
+
+- name: flag_insufficient_cash_flow
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_free_cash_flow
+        op: lt
+        value: 0
+  action: flag
+  priority: 70
+  description: "Flag facilities for borrowers with negative free cash flow"
+  category: "creditworthiness"
+
+- name: flag_credit_rating_downgrade
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_rating_trend
+        op: eq
+        value: "downgrade"
+  action: flag
+  priority: 65
+  description: "Flag facilities for borrowers with recent credit rating downgrade"
+  category: "creditworthiness"
+
+- name: block_default_history
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_default_history
+        op: eq
+        value: true
+  action: block
+  priority: 90
+  description: "Block facilities for borrowers with recent default history"
+  category: "creditworthiness"

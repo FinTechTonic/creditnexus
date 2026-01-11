@@ -16,6 +16,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useFDC3 } from '@/hooks/useFDC3';
+import { PermissionGate } from '@/components/PermissionGate';
+import { PERMISSION_DOCUMENT_REVIEW, PERMISSION_DOCUMENT_APPROVE } from '@/utils/permissions';
 
 interface CreditAgreement {
   agreement_date: string;
@@ -77,18 +79,30 @@ export function ReviewInterface({
     onReject(rejectionReason || 'Rejected by analyst');
   };
 
-  if (!extractedData) {
-    return (
-      <Card className="shadow-lg border-0">
-        <CardHeader className="text-center py-12">
-          <CardTitle className="text-muted-foreground">No Data to Review</CardTitle>
-          <p className="text-sm text-muted-foreground mt-2">Extract data from a document first</p>
-        </CardHeader>
-      </Card>
-    );
-  }
-
-  const isSuccess = extractedData.extraction_status === 'success' || !extractedData.extraction_status;
+  // Check permissions - only show to users with review permissions
+  return (
+    <PermissionGate 
+      permissions={[PERMISSION_DOCUMENT_REVIEW, PERMISSION_DOCUMENT_APPROVE]} 
+      requireAll={false}
+      fallback={
+        <Card className="shadow-lg border-0">
+          <CardHeader className="text-center py-12">
+            <CardTitle className="text-muted-foreground">Access Denied</CardTitle>
+            <p className="text-sm text-muted-foreground mt-2">You don't have permission to review documents</p>
+          </CardHeader>
+        </Card>
+      }
+    >
+      {!extractedData ? (
+        <Card className="shadow-lg border-0">
+          <CardHeader className="text-center py-12">
+            <CardTitle className="text-muted-foreground">No Data to Review</CardTitle>
+            <p className="text-sm text-muted-foreground mt-2">Extract data from a document first</p>
+          </CardHeader>
+        </Card>
+      ) : (
+        (() => {
+          const isSuccess = extractedData.extraction_status === 'success' || !extractedData.extraction_status;
   const isPartial = extractedData.extraction_status === 'partial_data_missing';
   const isFailure = extractedData.extraction_status === 'irrelevant_document';
 
@@ -333,5 +347,9 @@ export function ReviewInterface({
         </CardContent>
       </Card>
     </div>
+          );
+        })()
+      )}
+    </PermissionGate>
   );
 }

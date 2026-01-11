@@ -1,0 +1,92 @@
+# Risk Rating Classification Policies
+# These rules enforce risk rating standards and classification requirements
+
+- name: block_missing_risk_rating
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_risk_rating
+        op: eq
+        value: null
+  action: block
+  priority: 100
+  description: "Block facilities without assigned risk rating"
+  category: "risk_rating"
+
+- name: block_invalid_risk_rating
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_risk_rating
+        op: not_in
+        value: ["AAA", "AA", "A", "BBB", "BB", "B", "CCC", "CC", "C", "D", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+  action: block
+  priority: 95
+  description: "Block facilities with invalid risk rating (must be AAA-D or 1-10)"
+  category: "risk_rating"
+
+- name: flag_high_risk_rating
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: borrower_risk_rating
+        op: in
+        value: ["CCC", "CC", "C", "D", "8", "9", "10"]
+  action: flag
+  priority: 85
+  description: "Flag facilities for borrowers with high-risk ratings (CCC-D or 8-10)"
+  category: "risk_rating"
+
+- name: flag_rating_agency_mismatch
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: rating_agency_count
+        op: gt
+        value: 1
+      - field: rating_consensus
+        op: eq
+        value: false
+  action: flag
+  priority: 60
+  description: "Flag facilities with conflicting ratings from multiple agencies"
+  category: "risk_rating"
+
+- name: flag_rating_outdated
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: rating_age_months
+        op: gt
+        value: 6  # Rating older than 6 months
+  action: flag
+  priority: 70
+  description: "Flag facilities with outdated risk ratings (older than 6 months)"
+  category: "risk_rating"
+
+- name: block_internal_rating_not_calibrated
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: rating_type
+        op: eq
+        value: "internal"
+      - field: rating_model_calibrated
+        op: eq
+        value: false
+  action: block
+  priority: 90
+  description: "Block facilities using uncalibrated internal rating models"
+  category: "risk_rating"
