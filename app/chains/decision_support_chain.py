@@ -9,8 +9,11 @@ This module implements an AI chatbot that provides decision support for:
 
 import logging
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 try:
     import chromadb
@@ -44,12 +47,14 @@ class DecisionSupportChatbot:
         self,
         kb_collection_name: str = "chatbot_knowledge_base",
         persist_directory: Optional[str] = None,
+        db_session: Optional['Session'] = None,
     ):
         """Initialize decision support chatbot.
         
         Args:
             kb_collection_name: Name of ChromaDB collection for knowledge base
             persist_directory: Directory to persist ChromaDB data
+            db_session: Optional database session for loading deal/user context
         """
         if not CHROMADB_AVAILABLE:
             raise ImportError(
@@ -64,6 +69,7 @@ class DecisionSupportChatbot:
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         
         self.kb_collection_name = kb_collection_name
+        self.db_session = db_session
         self.client = None
         self.collection = None
         self.embeddings_model = None
@@ -148,12 +154,213 @@ class DecisionSupportChatbot:
             logger.error(f"Failed to retrieve context: {e}")
             return []
     
+    def _load_deal_context(
+        self,
+        deal_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Load deal context including deal metadata, documents, and user profile.
+        
+        Args:
+            deal_id: Optional deal ID to load context for
+            user_id: Optional user ID to load profile for
+            
+        Returns:
+            Dictionary with deal context, documents, and user profile
+        """
+        context = {
+            "deal": None,
+            "deal_documents": [],
+            "user_profile": None,
+            "deal_notes": [],
+        }
+        
+        if not self.db_session:
+            return context
+        
+        try:
+            # Load deal information
+            if deal_id:
+                from app.services.deal_service import DealService
+                from app.chains.document_retrieval_chain import DocumentRetrievalService
+                
+                deal_service = DealService(self.db_session)
+                deal = deal_service.get_deal(deal_id)
+                
+                if deal:
+                    context["deal"] = {
+                        "deal_id": deal.deal_id,
+                        "status": deal.status,
+                        "deal_type": deal.deal_type,
+                        "deal_data": deal.deal_data,
+                        "created_at": deal.created_at.isoformat() if deal.created_at else None,
+                    }
+                    
+                    # Load deal documents from database, file storage, and ChromaDB
+                    try:
+                        from app.db.models import Document
+                        from app.services.file_storage_service import FileStorageService
+                        from app.chains.document_retrieval_chain import DocumentRetrievalService
+                        
+                        # Get documents from database
+                        db_docs = self.db_session.query(Document).filter(
+                            Document.deal_id == deal_id
+                        ).order_by(Document.created_at.desc()).limit(10).all()
+                        
+                        # Query ChromaDB for semantically similar deal documents
+                        chroma_docs = []
+                        try:
+                            doc_retrieval = DocumentRetrievalService(collection_name="creditnexus_documents")
+                            # Create a search query from deal metadata
+                            search_query = f"deal {deal.deal_id} {deal.deal_type or ''} {deal.status or ''}"
+                            if deal.deal_data:
+                                # Extract key terms from deal_data for search
+                                if isinstance(deal.deal_data, dict):
+                                    search_terms = []
+                                    for key, value in list(deal.deal_data.items())[:5]:  # First 5 fields
+                                        if value and isinstance(value, (str, int, float)):
+                                            search_terms.append(str(value))
+                                    if search_terms:
+                                        search_query += " " + " ".join(search_terms)
+                            
+                            # Search for similar documents
+                            similar_docs = doc_retrieval.retrieve_similar_documents(
+                                query=search_query,
+                                top_k=5,
+                                filter_metadata={"deal_id": str(deal_id)} if deal_id else None
+                            )
+                            chroma_docs = similar_docs
+                        except Exception as e:
+                            logger.warning(f"Failed to query ChromaDB for deal documents: {e}")
+                        
+                        # Get documents from file storage
+                        file_storage = FileStorageService()
+                        file_docs = []
+                        if deal.applicant_id and deal.deal_id:
+                            file_docs = file_storage.get_deal_documents(
+                                user_id=deal.applicant_id,
+                                deal_id=deal.deal_id
+                            )
+                        
+                        # Combine all document sources
+                        all_docs = []
+                        # Add database documents
+                        for doc in db_docs:
+                            all_docs.append({
+                                "document_id": doc.id,
+                                "title": doc.title,
+                                "filename": doc.title,
+                                "subdirectory": "documents",
+                                "source": "database",
+                                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                            })
+                        # Add ChromaDB documents (semantic search results)
+                        for doc in chroma_docs:
+                            all_docs.append({
+                                "document_id": doc.get("document_id"),
+                                "title": doc.get("title", "Document"),
+                                "filename": doc.get("title", "Document"),
+                                "subdirectory": "documents",
+                                "source": "chromadb",
+                                "similarity": doc.get("similarity"),
+                            })
+                        # Add file storage documents
+                        for doc in file_docs[:5]:  # Limit file storage docs
+                            all_docs.append({
+                                "filename": doc.get("filename", "Unknown"),
+                                "subdirectory": doc.get("subdirectory", "documents"),
+                                "source": "file_storage",
+                                "size": doc.get("size"),
+                                "modified_at": doc.get("modified_at"),
+                            })
+                        
+                        context["deal_documents"] = all_docs[:15]  # Limit to 15 total
+                    except Exception as e:
+                        logger.warning(f"Failed to load deal documents: {e}")
+                    
+                    # Load deal notes
+                    try:
+                        from app.db.models import DealNote
+                        notes = self.db_session.query(DealNote).filter(
+                            DealNote.deal_id == deal_id
+                        ).order_by(DealNote.created_at.desc()).limit(5).all()
+                        
+                        context["deal_notes"] = [
+                            {
+                                "id": note.id,
+                                "content": note.content[:200],  # First 200 chars
+                                "note_type": note.note_type,
+                                "created_at": note.created_at.isoformat() if note.created_at else None,
+                            }
+                            for note in notes
+                        ]
+                    except Exception as e:
+                        logger.warning(f"Failed to load deal notes: {e}")
+            
+            # Load user profile from database and ChromaDB
+            if user_id:
+                try:
+                    from app.db.models import User
+                    from app.chains.document_retrieval_chain import get_user_profile_retrieval_service
+                    
+                    # Get user from database
+                    user = self.db_session.query(User).filter(User.id == user_id).first()
+                    if user:
+                        profile_data = {
+                            "role": user.role,
+                            "display_name": user.display_name,
+                            "email": user.email,
+                            "profile_data": user.profile_data,
+                        }
+                        
+                        # Query ChromaDB for semantically similar user profiles
+                        try:
+                            profile_retrieval = get_user_profile_retrieval_service()
+                            if user.profile_data:
+                                # Create search query from profile data
+                                search_query = f"{user.display_name} {user.role}"
+                                if isinstance(user.profile_data, dict):
+                                    if user.profile_data.get("company", {}).get("name"):
+                                        search_query += f" {user.profile_data['company']['name']}"
+                                    if user.profile_data.get("professional", {}).get("job_title"):
+                                        search_query += f" {user.profile_data['professional']['job_title']}"
+                                
+                                # Search for similar profiles
+                                similar_profiles = profile_retrieval.search_user_profiles(
+                                    query=search_query,
+                                    top_k=3
+                                )
+                                
+                                if similar_profiles:
+                                    profile_data["similar_profiles"] = [
+                                        {
+                                            "user_id": p.get("user_id"),
+                                            "similarity_score": p.get("similarity_score"),
+                                            "profile_text": p.get("profile_text", "")[:200],
+                                            "metadata": p.get("metadata", {}),
+                                        }
+                                        for p in similar_profiles
+                                    ]
+                        except Exception as e:
+                            logger.warning(f"Failed to query ChromaDB for user profiles: {e}")
+                        
+                        context["user_profile"] = profile_data
+                except Exception as e:
+                    logger.warning(f"Failed to load user profile: {e}")
+        
+        except Exception as e:
+            logger.error(f"Failed to load deal context: {e}", exc_info=True)
+        
+        return context
+    
     def chat(
         self,
         message: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         cdm_context: Optional[Dict[str, Any]] = None,
         use_kb: bool = True,
+        deal_id: Optional[int] = None,
+        user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Chat with the decision support chatbot.
         
@@ -162,29 +369,47 @@ class DecisionSupportChatbot:
             conversation_history: Previous conversation messages [{"role": "user"|"assistant", "content": "..."}]
             cdm_context: Current CDM data context
             use_kb: Whether to use knowledge base retrieval
+            deal_id: Optional deal ID to load deal context
+            user_id: Optional user ID to load user profile
             
         Returns:
             Dictionary with response and metadata
         """
         try:
+            # Load deal context if deal_id provided
+            deal_context = self._load_deal_context(deal_id=deal_id, user_id=user_id)
+            
             # Retrieve relevant context from knowledge base
             context_docs = []
             if use_kb:
                 context_docs = self._retrieve_relevant_context(message, top_k=5)
             
-            # Build system prompt
+            # Build system prompt with deal context
             system_prompt = """You are an expert AI assistant for LMA (Loan Market Association) document generation.
 Your role is to help users:
-1. Select appropriate LMA templates based on their credit agreement data (CDM)
+1. Select appropriate LMA templates based on their credit agreement data (CDM) and deal type
 2. Fill missing CDM fields interactively
 3. Answer questions about LMA templates, CDM schema, and document generation
 4. Provide guidance on best practices for credit agreement documentation
+5. Provide context-aware assistance based on the current deal and user profile
+6. Recommend templates based on deal type and explain why they are needed
+7. Help users understand which templates are required vs optional for their deal
 
 You have access to a knowledge base of LMA template metadata and CDM schema documentation.
 Use this knowledge to provide accurate, helpful responses.
 
 Be conversational, helpful, and precise. When suggesting templates, explain why they match the user's needs.
-When helping fill fields, ask clarifying questions if needed."""
+When helping fill fields, ask clarifying questions if needed.
+When deal context is available, use it to provide more relevant and specific assistance.
+
+IMPORTANT CONTEXT AWARENESS:
+- If deal context is provided, reference the deal ID, status, and type in your responses
+- Use information from attached documents to answer questions
+- Consider the user's role and permissions when providing guidance
+- Reference deal notes and recent activity when relevant
+- If template recommendations are provided, prioritize suggesting missing required templates
+- Explain why each recommended template is needed for the deal type
+- Help users understand the completion status of their template generation"""
             
             # Build context from knowledge base
             kb_context = ""
@@ -195,13 +420,83 @@ When helping fill fields, ask clarifying questions if needed."""
                     if doc.get('metadata', {}).get('source'):
                         kb_context += f"  (Source: {doc['metadata']['source']})\n"
             
+            # Load template recommendations if deal_id provided
+            template_recommendations_str = ""
+            if deal_id and self.db_session:
+                try:
+                    from app.services.template_recommendation_service import TemplateRecommendationService
+                    recommendation_service = TemplateRecommendationService(self.db_session)
+                    recommendations = recommendation_service.recommend_templates(deal_id)
+                    
+                    if recommendations and not recommendations.get("error"):
+                        template_recommendations_str = "\n\nTemplate Recommendations:\n"
+                        
+                        # Missing required templates
+                        if recommendations.get("missing_required"):
+                            template_recommendations_str += f"\nMissing Required Templates ({len(recommendations['missing_required'])}):\n"
+                            for template in recommendations["missing_required"][:5]:  # Show first 5
+                                template_recommendations_str += f"- {template.get('name')} ({template.get('category')})\n"
+                                template_recommendations_str += f"  Reason: {template.get('reason')}\n"
+                                template_recommendations_str += f"  Template ID: {template.get('template_id')}\n"
+                        
+                        # Optional templates
+                        if recommendations.get("optional_not_generated"):
+                            template_recommendations_str += f"\nRecommended Optional Templates ({len(recommendations['optional_not_generated'])}):\n"
+                            for template in recommendations["optional_not_generated"][:3]:  # Show first 3
+                                template_recommendations_str += f"- {template.get('name')} ({template.get('category')}) - Priority: {template.get('priority')}\n"
+                                template_recommendations_str += f"  Reason: {template.get('reason')}\n"
+                        
+                        # Generated templates
+                        if recommendations.get("generated_templates"):
+                            template_recommendations_str += f"\nAlready Generated Templates ({len(recommendations['generated_templates'])}):\n"
+                            for template in recommendations["generated_templates"][:5]:  # Show first 5
+                                template_recommendations_str += f"- {template.get('name')} ({template.get('category')})\n"
+                        
+                        # Completion status
+                        completion = recommendations.get("completion_status", {})
+                        if completion:
+                            template_recommendations_str += f"\nTemplate Completion: {completion.get('required_generated', 0)}/{completion.get('required_total', 0)} required templates generated ({completion.get('completion_percentage', 0):.1f}%)\n"
+                except Exception as e:
+                    logger.warning(f"Failed to load template recommendations: {e}")
+            
+            # Build deal context string
+            deal_context_str = ""
+            if deal_context.get("deal"):
+                deal = deal_context["deal"]
+                deal_context_str = f"\n\nCurrent Deal Context:\n"
+                deal_context_str += f"Deal ID: {deal.get('deal_id')}\n"
+                deal_context_str += f"Status: {deal.get('status')}\n"
+                deal_context_str += f"Type: {deal.get('deal_type')}\n"
+                if deal.get('deal_data'):
+                    deal_context_str += f"Deal Data: {json.dumps(deal['deal_data'], indent=2, default=str)}\n"
+                
+                if deal_context.get("deal_documents"):
+                    deal_context_str += f"\nAttached Documents ({len(deal_context['deal_documents'])}):\n"
+                    for doc in deal_context["deal_documents"][:5]:  # Show first 5
+                        deal_context_str += f"- {doc.get('filename', 'Unknown')} ({doc.get('subdirectory', 'documents')})\n"
+                
+                if deal_context.get("deal_notes"):
+                    deal_context_str += f"\nRecent Notes ({len(deal_context['deal_notes'])}):\n"
+                    for note in deal_context["deal_notes"][:3]:  # Show first 3
+                        deal_context_str += f"- [{note.get('note_type', 'note')}] {note.get('content', '')}\n"
+            
+            # Build user profile context
+            user_context_str = ""
+            if deal_context.get("user_profile"):
+                profile = deal_context["user_profile"]
+                user_context_str = f"\n\nUser Profile Context:\n"
+                user_context_str += f"Role: {profile.get('role')}\n"
+                user_context_str += f"Name: {profile.get('display_name')}\n"
+                if profile.get('profile_data'):
+                    user_context_str += f"Profile: {json.dumps(profile['profile_data'], indent=2, default=str)}\n"
+            
             # Build CDM context
             cdm_context_str = ""
             if cdm_context:
                 cdm_context_str = f"\n\nCurrent CDM Data Context:\n{json.dumps(cdm_context, indent=2, default=str)}"
             
             # Build conversation history
-            messages = [SystemMessage(content=system_prompt + kb_context + cdm_context_str)]
+            messages = [SystemMessage(content=system_prompt + kb_context + deal_context_str + template_recommendations_str + user_context_str + cdm_context_str)]
             
             if conversation_history:
                 for msg in conversation_history:
@@ -221,6 +516,8 @@ When helping fill fields, ask clarifying questions if needed."""
                 "response": response_text,
                 "sources": [doc.get('metadata', {}).get('source', 'knowledge_base') for doc in context_docs],
                 "context_used": len(context_docs) > 0,
+                "deal_context_loaded": deal_context.get("deal") is not None,
+                "user_profile_loaded": deal_context.get("user_profile") is not None,
             }
         except Exception as e:
             logger.error(f"Chat failed: {e}", exc_info=True)
@@ -235,17 +532,29 @@ When helping fill fields, ask clarifying questions if needed."""
         self,
         cdm_data: Dict[str, Any],
         available_templates: Optional[List[Dict[str, Any]]] = None,
+        deal_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Suggest appropriate LMA templates based on CDM data.
+        """Suggest appropriate LMA templates based on CDM data and deal type.
         
         Args:
             cdm_data: CDM data dictionary
             available_templates: Optional list of available templates with metadata
+            deal_id: Optional deal ID to get template recommendations based on deal type
             
         Returns:
             Dictionary with template suggestions and reasoning
         """
         try:
+            # Load template recommendations if deal_id provided
+            template_recommendations = None
+            if deal_id and self.db_session:
+                try:
+                    from app.services.template_recommendation_service import TemplateRecommendationService
+                    recommendation_service = TemplateRecommendationService(self.db_session)
+                    template_recommendations = recommendation_service.recommend_templates(deal_id)
+                except Exception as e:
+                    logger.warning(f"Failed to load template recommendations: {e}")
+            
             # Convert CDM data to text for context
             cdm_text = self._cdm_to_text(cdm_data)
             
@@ -255,7 +564,7 @@ When helping fill fields, ask clarifying questions if needed."""
                 top_k=10
             )
             
-            # Build prompt
+            # Build prompt with template recommendations if available
             system_prompt = """You are an expert LMA template selection advisor.
 Analyze the provided CDM data and suggest the most appropriate LMA template(s).
 
@@ -264,11 +573,30 @@ Consider:
 - Governing law requirements
 - Sustainability-linked loan indicators
 - Complexity and specific clauses needed
+- Deal type and required templates (if template recommendations are provided)
 
 Provide:
 1. Primary template recommendation with reasoning
 2. Alternative templates if applicable
-3. Explanation of why each template fits the CDM data"""
+3. Explanation of why each template fits the CDM data
+4. If template recommendations are provided, prioritize missing required templates"""
+            
+            recommendations_context = ""
+            if template_recommendations and not template_recommendations.get("error"):
+                recommendations_context = f"""
+
+Template Recommendations for Deal Type ({template_recommendations.get('deal_type', 'unknown')}):
+- Missing Required Templates: {len(template_recommendations.get('missing_required', []))}
+- Optional Templates Available: {len(template_recommendations.get('optional_not_generated', []))}
+- Already Generated: {len(template_recommendations.get('generated_templates', []))}
+- Completion: {template_recommendations.get('completion_status', {}).get('completion_percentage', 0):.1f}%
+
+Missing Required Templates:
+{json.dumps([{'name': t.get('name'), 'category': t.get('category'), 'reason': t.get('reason')} for t in template_recommendations.get('missing_required', [])[:5]], indent=2, default=str)}
+
+Optional Templates:
+{json.dumps([{'name': t.get('name'), 'category': t.get('category'), 'priority': t.get('priority'), 'reason': t.get('reason')} for t in template_recommendations.get('optional_not_generated', [])[:3]], indent=2, default=str)}
+"""
             
             user_prompt = f"""CDM Data:
 {cdm_text}
@@ -278,8 +606,9 @@ Available Templates:
 
 Template Knowledge Base Context:
 {chr(10).join([doc['content'] for doc in template_context[:5]]) if template_context else 'No specific template context available'}
+{recommendations_context}
 
-Suggest the most appropriate template(s) and explain your reasoning."""
+Suggest the most appropriate template(s) and explain your reasoning. If template recommendations are provided, prioritize the missing required templates."""
             
             messages = [
                 SystemMessage(content=system_prompt),
@@ -315,6 +644,7 @@ Suggest the most appropriate template(s) and explain your reasoning."""
         cdm_data: Dict[str, Any],
         required_fields: List[str],
         conversation_context: Optional[str] = None,
+        deal_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Help fill missing CDM fields interactively.
         
@@ -322,11 +652,27 @@ Suggest the most appropriate template(s) and explain your reasoning."""
             cdm_data: Current CDM data (may be incomplete)
             required_fields: List of required field paths (e.g., ["parties", "facilities[0].facility_name"])
             conversation_context: Optional conversation context about what user is trying to do
+            deal_id: Optional deal ID to provide deal context for field filling
             
         Returns:
             Dictionary with field suggestions, questions, and filled data
         """
         try:
+            # Load deal context if deal_id provided
+            deal_context_str = ""
+            if deal_id and self.db_session:
+                try:
+                    deal_context = self._load_deal_context(deal_id=deal_id)
+                    if deal_context.get("deal"):
+                        deal = deal_context["deal"]
+                        deal_context_str = f"\n\nDeal Context:\n"
+                        deal_context_str += f"Deal Type: {deal.get('deal_type')}\n"
+                        deal_context_str += f"Deal Status: {deal.get('status')}\n"
+                        if deal.get('deal_data'):
+                            deal_context_str += f"Deal Data: {json.dumps(deal['deal_data'], indent=2, default=str)}\n"
+                except Exception as e:
+                    logger.warning(f"Failed to load deal context for field filling: {e}")
+            
             # Identify missing fields
             missing_fields = self._identify_missing_fields(cdm_data, required_fields)
             
@@ -353,6 +699,7 @@ For each missing field:
 2. Ask clarifying questions if needed
 3. Provide example values
 4. Suggest values based on existing CDM data when possible
+5. Consider deal context if provided (deal type, status, etc.)
 
 Be helpful and guide users through the process step by step."""
             
@@ -364,13 +711,14 @@ Missing Required Fields:
 
 Conversation Context:
 {conversation_context or 'No specific context provided'}
+{deal_context_str}
 
 CDM Schema Context:
 {chr(10).join([doc['content'] for doc in schema_context]) if schema_context else 'No schema context available'}
 
 Help fill the missing fields. Provide:
 1. Questions to ask the user for each missing field
-2. Suggested values based on existing data
+2. Suggested values based on existing data and deal context
 3. Example values for reference"""
             
             messages = [

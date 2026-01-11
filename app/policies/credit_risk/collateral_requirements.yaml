@@ -1,0 +1,86 @@
+# Collateral Valuation and Requirements Policies
+# These rules enforce collateral adequacy and valuation standards
+
+- name: block_insufficient_collateral_coverage
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: collateral_coverage_ratio
+        op: lt
+        value: 1.20  # 120% minimum collateral coverage
+  action: block
+  priority: 95
+  description: "Block facilities with insufficient collateral coverage (below 120%)"
+  category: "collateral"
+
+- name: flag_unvalued_collateral
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: collateral_valuation_date
+        op: eq
+        value: null
+  action: flag
+  priority: 85
+  description: "Flag facilities with unvalued or outdated collateral"
+  category: "collateral"
+
+- name: flag_stale_collateral_valuation
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: collateral_valuation_age_months
+        op: gt
+        value: 12  # Valuation older than 12 months
+  action: flag
+  priority: 70
+  description: "Flag facilities with collateral valuation older than 12 months"
+  category: "collateral"
+
+- name: block_ineligible_collateral_type
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: collateral_type
+        op: in
+        value: ["intangible_assets", "goodwill", "speculative_investments"]
+  action: block
+  priority: 90
+  description: "Block facilities secured by ineligible collateral types"
+  category: "collateral"
+
+- name: flag_high_collateral_concentration
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: collateral_concentration_ratio
+        op: gt
+        value: 0.30  # 30% concentration threshold
+  action: flag
+  priority: 60
+  description: "Flag facilities with high collateral concentration risk (exceeds 30%)"
+  category: "collateral"
+
+- name: flag_volatile_collateral_value
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: collateral_value_volatility
+        op: gt
+        value: 0.20  # 20% volatility threshold
+  action: flag
+  priority: 65
+  description: "Flag facilities with highly volatile collateral values (exceeds 20% volatility)"
+  category: "collateral"

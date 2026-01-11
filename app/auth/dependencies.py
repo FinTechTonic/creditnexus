@@ -42,6 +42,11 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
     return user
 
 
+# Alias require_auth for compatibility with routes that expect it
+# This is equivalent to get_current_user but with a different name
+require_auth = get_current_user
+
+
 def require_role(allowed_roles: List[str]):
     """Decorator factory to require specific roles for a route."""
     def decorator(func):
@@ -77,10 +82,18 @@ def require_role(allowed_roles: List[str]):
 
 
 class RoleChecker:
-    """Dependency class for role-based access control."""
+    """Dependency class for role-based access control.
+    
+    Note: This class is maintained for backward compatibility.
+    New code should use PermissionChecker for granular permission control.
+    """
     
     def __init__(self, allowed_roles: List[str]):
         self.allowed_roles = allowed_roles
+        logger.warning(
+            "RoleChecker is deprecated. Use PermissionChecker for granular permission control. "
+            "RoleChecker will continue to work but may be removed in a future version."
+        )
     
     async def __call__(
         self,
@@ -97,3 +110,109 @@ class RoleChecker:
 require_admin = RoleChecker([UserRole.ADMIN.value])
 require_reviewer = RoleChecker([UserRole.ADMIN.value, UserRole.REVIEWER.value])
 require_analyst = RoleChecker([UserRole.ADMIN.value, UserRole.REVIEWER.value, UserRole.ANALYST.value])
+
+
+class PermissionChecker:
+    """Dependency class for permission-based access control."""
+    
+    def __init__(self, required_permissions: List[str]):
+        self.required_permissions = required_permissions
+    
+    async def __call__(
+        self,
+        user: User = Depends(get_current_user)
+    ) -> User:
+        from app.core.permissions import has_permissions
+        
+        if not has_permissions(user, self.required_permissions):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. Required permissions: {', '.join(self.required_permissions)}"
+            )
+        return user
+
+
+def require_permission(permission: str):
+    """Decorator factory to require a specific permission for a route.
+    
+    Usage:
+        @require_permission("DOCUMENT_CREATE")
+        @router.post("/documents")
+        async def create_document(...):
+            ...
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            request = kwargs.get("request")
+            db = kwargs.get("db")
+            
+            if not request or not db:
+                for arg in args:
+                    if isinstance(arg, Request):
+                        request = arg
+            
+            if not request:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Request object not found"
+                )
+            
+            user = await get_current_user(request, db)
+            
+            from app.core.permissions import has_permission
+            
+            if not has_permission(user, permission):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Insufficient permissions. Required permission: {permission}"
+                )
+            
+            kwargs["current_user"] = user
+            return await func(*args, **kwargs)
+        
+        return wrapper
+    return decorator
+
+
+def require_permissions(permissions: List[str]):
+    """Decorator factory to require multiple permissions for a route.
+    
+    Usage:
+        @require_permissions(["DOCUMENT_CREATE", "DEAL_VIEW"])
+        @router.post("/documents")
+        async def create_document(...):
+            ...
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            request = kwargs.get("request")
+            db = kwargs.get("db")
+            
+            if not request or not db:
+                for arg in args:
+                    if isinstance(arg, Request):
+                        request = arg
+            
+            if not request:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Request object not found"
+                )
+            
+            user = await get_current_user(request, db)
+            
+            from app.core.permissions import has_permissions
+            
+            if not has_permissions(user, permissions):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Insufficient permissions. Required permissions: {', '.join(permissions)}"
+                )
+            
+            kwargs["current_user"] = user
+            return await func(*args, **kwargs)
+        
+        return wrapper
+    return decorator

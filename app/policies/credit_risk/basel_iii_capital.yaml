@@ -1,0 +1,73 @@
+# Basel III Capital Adequacy Rules
+# These rules enforce minimum capital requirements per Basel III framework
+# Minimum capital ratio: 8% of risk-weighted assets (RWA)
+
+- name: block_insufficient_capital_coverage
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: calculated_capital_requirement
+        op: gt
+        value: available_tier1_capital
+  action: block
+  priority: 100
+  description: "Block facilities that would breach minimum capital adequacy ratio (8% of RWA)"
+  category: "basel_iii"
+
+- name: flag_high_rwa_concentration
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: sector_concentration
+        op: gt
+        value: 0.25  # 25% of portfolio
+  action: flag
+  priority: 60
+  description: "Flag high sector concentration risk (exceeds 25% of portfolio)"
+  category: "basel_iii"
+
+- name: flag_insufficient_tier1_capital
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: tier1_capital_ratio
+        op: lt
+        value: 0.06  # 6% minimum Tier 1 capital ratio
+  action: flag
+  priority: 80
+  description: "Flag if Tier 1 capital ratio falls below 6% minimum requirement"
+  category: "basel_iii"
+
+- name: block_excessive_leverage
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: leverage_ratio
+        op: gt
+        value: 33  # 3% minimum leverage ratio (1/33)
+  action: block
+  priority: 95
+  description: "Block facilities that would breach leverage ratio requirement (3% minimum)"
+  category: "basel_iii"
+
+- name: flag_liquidity_coverage_ratio_breach
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: liquidity_coverage_ratio
+        op: lt
+        value: 1.0  # 100% minimum LCR
+  action: flag
+  priority: 70
+  description: "Flag if liquidity coverage ratio falls below 100% minimum requirement"
+  category: "basel_iii"

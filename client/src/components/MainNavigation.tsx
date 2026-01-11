@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { 
   LayoutDashboard,
@@ -12,6 +12,16 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
+import {
+  PERMISSION_DOCUMENT_VIEW,
+  PERMISSION_DOCUMENT_CREATE,
+  PERMISSION_TEMPLATE_VIEW,
+  PERMISSION_TEMPLATE_GENERATE,
+  PERMISSION_APPLICATION_VIEW,
+  PERMISSION_DEAL_VIEW,
+  PERMISSION_DEAL_VIEW_OWN,
+} from '@/utils/permissions';
 
 interface NavItem {
   id: string;
@@ -22,13 +32,20 @@ interface NavItem {
   children?: NavItem[];
 }
 
-const mainNavItems: NavItem[] = [
+interface NavItemWithPermission extends NavItem {
+  requiredPermission?: string;
+  requiredPermissions?: string[];
+  requireAll?: boolean;
+}
+
+const mainNavItems: NavItemWithPermission[] = [
   {
     id: 'dashboard',
     label: 'Dashboard',
     path: '/dashboard',
     icon: LayoutDashboard,
     description: 'Portfolio overview & analytics',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
   },
   {
     id: 'document-parser',
@@ -36,6 +53,7 @@ const mainNavItems: NavItem[] = [
     path: '/app/document-parser',
     icon: FileText,
     description: 'Extract & digitize credit agreements',
+    requiredPermission: PERMISSION_DOCUMENT_CREATE,
   },
   {
     id: 'library',
@@ -43,6 +61,7 @@ const mainNavItems: NavItem[] = [
     path: '/library',
     icon: BookOpen,
     description: 'Saved documents & history',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
   },
   {
     id: 'document-generator',
@@ -50,6 +69,8 @@ const mainNavItems: NavItem[] = [
     path: '/app/document-generator',
     icon: Sparkles,
     description: 'Generate LMA documents from templates',
+    requiredPermissions: [PERMISSION_TEMPLATE_VIEW, PERMISSION_TEMPLATE_GENERATE],
+    requireAll: false,
   },
   {
     id: 'applications',
@@ -57,6 +78,16 @@ const mainNavItems: NavItem[] = [
     path: '/dashboard/applications',
     icon: Building2,
     description: 'Loan applications & status',
+    requiredPermission: PERMISSION_APPLICATION_VIEW,
+  },
+  {
+    id: 'deals',
+    label: 'Deals',
+    path: '/dashboard/deals',
+    icon: Building2,
+    description: 'Deal management & lifecycle',
+    requiredPermissions: [PERMISSION_DEAL_VIEW, PERMISSION_DEAL_VIEW_OWN],
+    requireAll: false,
   },
   {
     id: 'calendar',
@@ -64,6 +95,7 @@ const mainNavItems: NavItem[] = [
     path: '/dashboard/calendar',
     icon: Calendar,
     description: 'Meetings & events',
+    // Calendar accessible to all authenticated users
   },
 ];
 
@@ -81,7 +113,31 @@ export function MainNavigation({
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  // Filter nav items based on permissions
+  const visibleNavItems = useMemo(() => {
+    return mainNavItems.filter((item) => {
+      if (!item.requiredPermission && !item.requiredPermissions) {
+        return true; // No permission required
+      }
+      
+      if (item.requiredPermission) {
+        return hasPermission(item.requiredPermission);
+      }
+      
+      if (item.requiredPermissions) {
+        if (item.requireAll) {
+          return hasAllPermissions(item.requiredPermissions);
+        } else {
+          return hasAnyPermission(item.requiredPermissions);
+        }
+      }
+      
+      return false;
+    });
+  }, [hasPermission, hasAnyPermission, hasAllPermissions]);
 
   const isActive = (path: string) => {
     if (path === '/dashboard') {
@@ -114,7 +170,7 @@ export function MainNavigation({
       {/* Desktop Navigation */}
       <nav className={`hidden md:block ${className}`}>
         <ul className="space-y-1">
-          {mainNavItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             const hasChildren = item.children && item.children.length > 0;
@@ -221,7 +277,7 @@ export function MainNavigation({
                 </div>
               </div>
               <ul className="p-4 space-y-2">
-                {mainNavItems.map((item) => {
+                {visibleNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = isActive(item.path);
                   const hasChildren = item.children && item.children.length > 0;

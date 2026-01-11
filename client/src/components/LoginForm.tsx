@@ -201,7 +201,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-3">
             <p className="text-slate-400 text-sm">
               {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
               <button
@@ -211,6 +211,20 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
                 {mode === 'login' ? 'Sign up' : 'Sign in'}
               </button>
             </p>
+            {mode === 'login' && (
+              <p className="text-slate-500 text-xs">
+                Need a full account with role selection?{' '}
+                <button
+                  onClick={() => {
+                    onClose();
+                    navigate('/signup');
+                  }}
+                  className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors underline"
+                >
+                  Complete signup flow
+                </button>
+              </p>
+            )}
           </div>
 
           <div className="mt-6 pt-6 border-t border-slate-700">

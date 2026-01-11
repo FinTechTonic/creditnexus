@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, Facility, CreditNexusLoanContext } from '@/context/FDC3Context';
 import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTriangle, Shield, XCircle, Wallet, Loader2 } from 'lucide-react';
+import { PermissionGate } from '@/components/PermissionGate';
+import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 
 function addBusinessDays(date: Date, days: number): Date {
   const result = new Date(date);
@@ -622,42 +624,46 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
 
                 <div className="mt-6 flex gap-4">
                   {tradeStatus === 'pending' && (
-                    <Button 
-                      onClick={handleConfirmTrade} 
-                      disabled={policyLoading || policyDecision?.decision === 'BLOCK'}
-                      className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {policyLoading ? (
-                        <>
-                          <Clock className="h-4 w-4 mr-2 animate-spin" />
-                          Evaluating Policy...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Confirm Trade
-                        </>
-                      )}
-                    </Button>
+                    <PermissionGate permission={PERMISSION_TRADE_EXECUTE}>
+                      <Button 
+                        onClick={handleConfirmTrade} 
+                        disabled={policyLoading || policyDecision?.decision === 'BLOCK'}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {policyLoading ? (
+                          <>
+                            <Clock className="h-4 w-4 mr-2 animate-spin" />
+                            Evaluating Policy...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Confirm Trade
+                          </>
+                        )}
+                      </Button>
+                    </PermissionGate>
                   )}
                   {tradeStatus === 'confirmed' && (
-                    <Button 
-                      onClick={handleSettleTrade} 
-                      disabled={paymentLoading}
-                      className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {paymentLoading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Processing Payment...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Settle Trade
-                        </>
-                      )}
-                    </Button>
+                    <PermissionGate permission={PERMISSION_TRADE_EXECUTE}>
+                      <Button 
+                        onClick={handleSettleTrade} 
+                        disabled={paymentLoading}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {paymentLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Processing Payment...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Settle Trade
+                          </>
+                        )}
+                      </Button>
+                    </PermissionGate>
                   )}
                   {tradeStatus === 'settled' && (
                     <div className="flex items-center gap-2 text-emerald-400">

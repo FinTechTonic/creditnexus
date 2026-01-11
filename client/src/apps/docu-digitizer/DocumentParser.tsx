@@ -309,26 +309,6 @@ export function DocumentParser({
   };
 
   const handleAudioComplete = (result: TranscriptionResult) => {
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'DocumentParser:handleAudioComplete',
-          message: 'Audio transcription complete',
-          data: { hasTranscription: !!result.transcription, hasAgreement: !!result.agreement },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'initial',
-          hypothesisId: 'A'
-        })
-      }).catch(() => {});
-    } catch (e) {
-      // Ignore logging errors
-    }
-    // #endregion
-
     setMultimodalSources(prev => ({
       ...prev,
       audio: {
@@ -345,26 +325,6 @@ export function DocumentParser({
   };
 
   const handleImageComplete = (result: ExtractionResult) => {
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'DocumentParser:handleImageComplete',
-          message: 'Image OCR complete',
-          data: { hasOcrText: !!result.ocr_text, hasAgreement: !!result.agreement },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'initial',
-          hypothesisId: 'A'
-        })
-      }).catch(() => {});
-    } catch (e) {
-      // Ignore logging errors
-    }
-    // #endregion
-
     setMultimodalSources(prev => ({
       ...prev,
       image: {
@@ -381,26 +341,6 @@ export function DocumentParser({
   };
 
   const handleDocumentSelect = (document: DocumentResult) => {
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'DocumentParser:handleDocumentSelect',
-          message: 'Document selected',
-          data: { documentId: document.document_id, hasCdmData: !!document.cdm_data },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'initial',
-          hypothesisId: 'A'
-        })
-      }).catch(() => {});
-    } catch (e) {
-      // Ignore logging errors
-    }
-    // #endregion
-
     setMultimodalSources(prev => ({
       ...prev,
       document: {
@@ -417,26 +357,6 @@ export function DocumentParser({
   };
 
   const handleTextInput = (text: string, cdmData?: Record<string, unknown>) => {
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'DocumentParser:handleTextInput',
-          message: 'Text input received',
-          data: { textLength: text.length, hasCdmData: !!cdmData },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'initial',
-          hypothesisId: 'A'
-        })
-      }).catch(() => {});
-    } catch (e) {
-      // Ignore logging errors
-    }
-    // #endregion
-
     setMultimodalSources(prev => ({
       ...prev,
       text: {

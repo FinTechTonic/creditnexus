@@ -12,6 +12,9 @@ from fastapi.responses import FileResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routes import router
+from app.api.credit_risk_routes import router as credit_risk_router
+from app.api.policy_editor_routes import router as policy_editor_router
+from app.api.policy_template_routes import router as policy_template_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -245,6 +248,133 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.warning(f"Failed to initialize template seeding: {e}")
                 
+                # Seed permissions if enabled
+                seed_permissions_enabled = os.getenv("SEED_PERMISSIONS", "false").lower() == "true"
+                if seed_permissions_enabled:
+                    try:
+                        from scripts.seed_permissions import seed_permissions, seed_role_permissions
+                        
+                        db = SessionLocal()
+                        try:
+                            # Seed permission definitions
+                            perm_count = seed_permissions(db, force=False)
+                            
+                            # Seed role-permission mappings
+                            role_perm_count = seed_role_permissions(db, force=False)
+                            
+                            db.commit()
+                            
+                            if perm_count > 0 or role_perm_count > 0:
+                                logger.info(
+                                    f"Seeded permissions: {perm_count} permission(s), "
+                                    f"{role_perm_count} role-permission mapping(s)"
+                                )
+                            else:
+                                logger.debug("All permissions already exist in database")
+                        except Exception as e:
+                            logger.warning(f"Failed to seed permissions: {e}")
+                            db.rollback()
+                        finally:
+                            db.close()
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize permission seeding: {e}")
+                else:
+                    logger.debug("Permission seeding is disabled (SEED_PERMISSIONS=false)")
+                
+                # Check if policy templates exist and seed missing ones
+                try:
+                    from app.db.models import PolicyTemplate, User
+                    from scripts.seed_policy_templates import seed_policy_templates
+                    
+                    db = SessionLocal()
+                    try:
+                        existing_templates_count = db.query(PolicyTemplate).count()
+                        if existing_templates_count == 0:
+                            logger.info("No policy templates found. Seeding initial policy templates...")
+                            
+                            # Get admin user ID for template creator
+                            admin = db.query(User).filter(User.role == 'admin').first()
+                            admin_user_id = admin.id if admin else 1
+                            
+                            # Seed templates (recursively finds all YAML files in app/policies/)
+                            total_seeded = seed_policy_templates(db, admin_user_id)
+                            
+                            if total_seeded > 0:
+                                logger.info(f"Seeded {total_seeded} initial policy template(s).")
+                            else:
+                                logger.info("No policy templates were seeded.")
+                        else:
+                            logger.debug(f"Found {existing_templates_count} existing policy template(s). Skipping initial seeding.")
+                    except Exception as e:
+                        logger.warning(f"Failed to check/seed policy templates: {e}")
+                        db.rollback()
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.warning(f"Failed to initialize policy template seeding: {e}")
+                
+                # Seed policies from YAML files (for Policy Editor visibility)
+                try:
+                    from app.db.models import Policy, User
+                    from app.db import SessionLocal
+                    from scripts.seed_policies import seed_policies_from_yaml
+                    
+                    db = SessionLocal()
+                    try:
+                        # Always sync policies from YAML files (updates existing, creates new)
+                        logger.info("Syncing policies from YAML files...")
+                        
+                        # Get admin user ID for policy creator
+                        admin = db.query(User).filter(User.role == 'admin').first()
+                        admin_user_id = admin.id if admin else 1
+                        
+                        # Seed/update policies from YAML files
+                        total_seeded = seed_policies_from_yaml(db, admin_user_id)
+                        
+                        if total_seeded > 0:
+                            logger.info(f"Synced {total_seeded} policy(ies) from YAML files.")
+                        else:
+                            logger.info("No policies were synced from YAML files.")
+                    except Exception as e:
+                        logger.warning(f"Failed to sync policies from YAML files: {e}", exc_info=True)
+                        db.rollback()
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.warning(f"Failed to initialize policy seeding: {e}")
+                
+                # Seed demo users if enabled
+                if settings.SEED_DEMO_USERS or any([
+                    settings.SEED_AUDITOR,
+                    settings.SEED_BANKER,
+                    settings.SEED_LAW_OFFICER,
+                    settings.SEED_ACCOUNTANT,
+                    settings.SEED_APPLICANT,
+                ]):
+                    try:
+                        from scripts.seed_demo_users import seed_demo_users
+                        
+                        db = SessionLocal()
+                        try:
+                            # Seed demo users
+                            user_count = seed_demo_users(db, force=settings.SEED_DEMO_USERS_FORCE)
+                            
+                            db.commit()
+                            
+                            if user_count > 0:
+                                logger.info(f"Seeded {user_count} demo user(s)")
+                            else:
+                                logger.debug("All demo users already exist in database")
+                        except Exception as e:
+                            logger.warning(f"Failed to seed demo users: {e}")
+                            db.rollback()
+                        finally:
+                            db.close()
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize demo user seeding: {e}")
+                else:
+                    logger.debug("Demo user seeding is disabled (SEED_DEMO_USERS=false)")
+                
                 # Load seed documents into ChromaDB if configured
                 if settings.CHROMADB_SEED_DOCUMENTS_DIR:
                     try:
@@ -334,6 +464,9 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(credit_risk_router)
+app.include_router(policy_editor_router)
+app.include_router(policy_template_router)
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
 

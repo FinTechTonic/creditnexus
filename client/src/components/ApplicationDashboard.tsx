@@ -19,7 +19,8 @@ import {
   User,
   Trash2,
   Eye,
-  Download
+  Download,
+  ArrowRightCircle
 } from 'lucide-react';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -55,6 +56,7 @@ export function ApplicationDashboard() {
   const [filterType, setFilterType] = useState<ApplicationType | 'all'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'status'>('date');
   const [searchQuery, setSearchQuery] = useState('');
+  const [creatingDeal, setCreatingDeal] = useState<number | null>(null);
 
   useEffect(() => {
     fetchApplications();
@@ -130,6 +132,39 @@ export function ApplicationDashboard() {
     }
   };
 
+  const handleCreateDeal = async (applicationId: number) => {
+    if (!confirm('Create a deal from this approved application?')) {
+      return;
+    }
+    
+    setCreatingDeal(applicationId);
+    setError(null);
+    
+    try {
+      const response = await fetchWithAuth(`/api/applications/${applicationId}/create-deal`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail?.message || 'Failed to create deal');
+      }
+      
+      const data = await response.json();
+      
+      // Navigate to the created deal
+      if (data.deal?.id) {
+        navigate(`/dashboard/deals/${data.deal.id}`);
+      } else {
+        // Refresh applications list if navigation fails
+        await fetchApplications();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create deal');
+      setCreatingDeal(null);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'draft':
@@ -186,8 +221,19 @@ export function ApplicationDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100">Applications</h1>
-          <p className="text-slate-400 mt-1">Manage your loan and credit applications</p>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30">
+              <FileText className="h-6 w-6 text-emerald-400" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-100">Loan & Credit Applications</h1>
+              <p className="text-slate-400 mt-1">Manage loan and credit applications from prospective borrowers</p>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-sm">
+            <AlertCircle className="h-4 w-4 text-emerald-400" />
+            <span className="text-emerald-300">These are loan/credit applications from borrowers, not platform user signups</span>
+          </div>
         </div>
         <Button
           onClick={() => navigate('/apply')}
@@ -369,6 +415,23 @@ export function ApplicationDashboard() {
                           <Send className="h-4 w-4" />
                         </Button>
                       </>
+                    )}
+                    
+                    {app.status === 'approved' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCreateDeal(app.id)}
+                        disabled={creatingDeal === app.id}
+                        className="text-emerald-400 hover:text-emerald-300"
+                        title="Create Deal"
+                      >
+                        {creatingDeal === app.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ArrowRightCircle className="h-4 w-4" />
+                        )}
+                      </Button>
                     )}
                     
                     {(app.status === 'draft' || app.status === 'submitted') && (

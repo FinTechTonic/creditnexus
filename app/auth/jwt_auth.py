@@ -132,6 +132,60 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class UserSignupStep1(BaseModel):
+    """Step 1 signup request: Basic info and role selection."""
+    email: EmailStr
+    password: str
+    display_name: str
+    role: UserRole  # Selected role
+    
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        """Validate password meets bank-grade security requirements."""
+        errors = []
+        
+        if len(v) < MIN_PASSWORD_LENGTH:
+            errors.append(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+        
+        if not re.search(r"[A-Z]", v):
+            errors.append("Password must contain at least one uppercase letter")
+        
+        if not re.search(r"[a-z]", v):
+            errors.append("Password must contain at least one lowercase letter")
+        
+        if not re.search(r"\d", v):
+            errors.append("Password must contain at least one number")
+        
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+            errors.append("Password must contain at least one special character")
+        
+        if errors:
+            raise ValueError("; ".join(errors))
+        
+        return v
+
+
+class UserSignupStep2(BaseModel):
+    """Step 2 signup request: Profile enrichment data."""
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    job_title: Optional[str] = None
+    address: Optional[str] = None
+    # Additional role-specific fields can be added here
+    # For applicants: business_type, individual/business, etc.
+    # For bankers: bank_name, department, etc.
+    # For law officers: law_firm, bar_number, etc.
+    # For accountants: firm_name, certification_number, etc.
+
+
+class SignupTokenResponse(BaseModel):
+    """Response for step 1 signup with temporary signup token."""
+    signup_token: str
+    expires_in: int  # seconds until expiration
+    message: str = "User created successfully. Please complete profile in step 2."
+
+
 def get_password_hash(password: str) -> str:
     """Hash a password using bcrypt.
     
@@ -389,9 +443,11 @@ async def register(
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name,
         role=UserRole.ANALYST.value,
-        is_active=True,
+        is_active=False,  # Require admin approval
         is_email_verified=False,
-        password_changed_at=datetime.utcnow()
+        password_changed_at=datetime.utcnow(),
+        signup_status="pending",
+        signup_submitted_at=datetime.utcnow()
     )
     db.add(user)
     db.commit()
@@ -409,6 +465,180 @@ async def register(
     db.add(audit_log)
     db.commit()
     
+    access_token = create_access_token({"sub": str(user.id), "email": user.email})
+    refresh_token = create_refresh_token({"sub": str(user.id)}, db)
+    
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
+
+
+@jwt_router.post("/signup/step1", response_model=SignupTokenResponse, status_code=status.HTTP_201_CREATED)
+async def signup_step1(
+    request: Request,
+    user_data: UserSignupStep1,
+    db: Session = Depends(get_db)
+):
+    """Step 1: Create user account with role selection.
+    
+    Creates a user account with basic information and selected role.
+    Returns a temporary signup token (expires in 1 hour) for step 2.
+    """
+    # Check if email already exists
+    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Create user with selected role
+    user = User(
+        email=user_data.email,
+        password_hash=get_password_hash(user_data.password),
+        display_name=user_data.display_name,
+        role=user_data.role.value,
+        is_active=False,  # Require admin approval
+        is_email_verified=False,
+        password_changed_at=datetime.utcnow(),
+        signup_status="pending",
+        signup_submitted_at=datetime.utcnow()
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    # Create audit log
+    audit_log = AuditLog(
+        user_id=user.id,
+        action=AuditAction.CREATE.value,
+        target_type="user",
+        target_id=user.id,
+        action_metadata={"method": "signup_step1", "role": user_data.role.value},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    db.add(audit_log)
+    db.commit()
+    
+    # Create temporary signup token (expires in 1 hour)
+    signup_token_expires = timedelta(hours=1)
+    signup_token = jwt.encode(
+        {
+            "sub": str(user.id),
+            "email": user.email,
+            "type": "signup",
+            "exp": datetime.utcnow() + signup_token_expires,
+            "iat": datetime.utcnow()
+        },
+        JWT_SECRET_KEY,
+        algorithm=JWT_ALGORITHM
+    )
+    
+    return SignupTokenResponse(
+        signup_token=signup_token,
+        expires_in=int(signup_token_expires.total_seconds()),
+        message="User created successfully. Please complete profile in step 2."
+    )
+
+
+@jwt_router.post("/signup/step2", response_model=TokenResponse, status_code=status.HTTP_200_OK)
+async def signup_step2(
+    request: Request,
+    signup_token: str,
+    profile_data: UserSignupStep2,
+    db: Session = Depends(get_db)
+):
+    """Step 2: Complete user profile with enrichment data.
+    
+    Accepts signup token from step 1, profile data, and optional file uploads.
+    Updates user profile and returns full JWT tokens for login.
+    """
+    # Decode and validate signup token
+    try:
+        payload = jwt.decode(signup_token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "signup":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid signup token type"
+            )
+        
+        user_id = int(payload.get("sub"))
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired signup token"
+        )
+    
+    # Update user profile data
+    # Store profile enrichment in profile_data JSONB column
+    profile_dict = {
+        "phone": profile_data.phone,
+        "company": profile_data.company,
+        "job_title": profile_data.job_title,
+        "address": profile_data.address,
+    }
+    
+    # Remove None values
+    profile_dict = {k: v for k, v in profile_dict.items() if v is not None}
+    
+    # Update user profile_data
+    if profile_dict:
+        user.profile_data = profile_dict
+    
+    db.commit()
+    db.refresh(user)
+    
+    # Index user profile in ChromaDB
+    try:
+        from app.chains.document_retrieval_chain import add_user_profile
+        if profile_dict:
+            add_user_profile(
+                user_id=user.id,
+                profile_data=profile_dict,
+                role=user.role,
+                email=user.email
+            )
+            logger.info(f"Indexed user profile {user.id} in ChromaDB after signup step 2")
+    except Exception as e:
+        logger.warning(f"Failed to index user profile in ChromaDB: {e}")
+        # Don't fail signup if indexing fails
+    
+    # Create audit log
+    audit_log = AuditLog(
+        user_id=user.id,
+        action=AuditAction.UPDATE.value,
+        target_type="user",
+        target_id=user.id,
+        action_metadata={"method": "signup_step2"},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
+    db.add(audit_log)
+    db.commit()
+    
+    # Check if user is approved (can log in)
+    if user.signup_status != "approved" or not user.is_active:
+        # User is pending approval, return message instead of tokens
+        from fastapi import status
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "status": "pending_approval",
+                "message": "Your account is pending admin approval. You will be notified once your account is approved."
+            }
+        )
+    
+    # Generate full JWT tokens for login
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
     

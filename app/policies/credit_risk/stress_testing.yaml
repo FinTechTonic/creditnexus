@@ -1,0 +1,84 @@
+# Stress Testing and Scenario Analysis Rules
+# These rules enforce stress testing requirements for credit risk assessment
+
+- name: block_missing_stress_test_results
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: facility_amount
+        op: gt
+        value: 10000000  # Facilities over $10M require stress testing
+      - field: stress_test_completed
+        op: eq
+        value: false
+  action: block
+  priority: 95
+  description: "Block large facilities (over $10M) without stress test results"
+  category: "stress_testing"
+
+- name: flag_adverse_stress_scenario_breach
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: stress_test_scenario
+        op: eq
+        value: "adverse"
+      - field: stress_test_capital_ratio
+        op: lt
+        value: 0.08  # 8% minimum capital ratio under stress
+  action: flag
+  priority: 85
+  description: "Flag facilities that breach minimum capital ratio under adverse stress scenario"
+  category: "stress_testing"
+
+- name: flag_severe_stress_scenario_breach
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: stress_test_scenario
+        op: eq
+        value: "severe"
+      - field: stress_test_capital_ratio
+        op: lt
+        value: 0.08
+  action: flag
+  priority: 90
+  description: "Flag facilities that breach minimum capital ratio under severe stress scenario"
+  category: "stress_testing"
+
+- name: flag_insufficient_stress_scenarios
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: facility_amount
+        op: gt
+        value: 10000000
+      - field: stress_test_scenario_count
+        op: lt
+        value: 3  # Minimum 3 scenarios required
+  action: flag
+  priority: 75
+  description: "Flag large facilities with insufficient stress test scenarios (less than 3)"
+  category: "stress_testing"
+
+- name: flag_high_stress_loss_estimate
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: stress_test_expected_loss
+        op: gt
+        value: facility_amount * 0.20  # 20% of facility amount
+  action: flag
+  priority: 80
+  description: "Flag facilities with high expected loss under stress scenarios (exceeds 20% of facility)"
+  category: "stress_testing"

@@ -175,8 +175,11 @@ export function FieldFillingPanel({
 
       const data = await response.json();
       
-      if (data.field_guidance && data.field_guidance.suggested_values) {
-        setAiSuggestions(data.field_guidance.suggested_values);
+      // Handle both response formats for compatibility
+      const suggestions = data.field_guidance?.suggested_values || data.suggestions || {};
+      
+      if (Object.keys(suggestions).length > 0) {
+        setAiSuggestions(suggestions);
         setSuccess('AI suggestions loaded');
       } else {
         setError('No AI suggestions available');

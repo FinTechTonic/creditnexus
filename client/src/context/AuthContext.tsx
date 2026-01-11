@@ -71,7 +71,9 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     headers.set('Authorization', `Bearer ${token}`);
   }
   
-  return fetch(url, { ...options, headers });
+  const response = await fetch(url, { ...options, headers });
+  
+  return response;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

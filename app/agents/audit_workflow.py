@@ -43,7 +43,8 @@ async def run_full_audit(
     document_text: str,
     db_session=None,  # Optional SQLAlchemy session for persistence
     policy_service: Optional[PolicyService] = None,  # Optional policy service for compliance evaluation
-    credit_agreement=None  # Optional CreditAgreement for policy context
+    credit_agreement=None,  # Optional CreditAgreement for policy context
+    deal_id: Optional[int] = None  # Optional deal ID to update with verification results
 ) -> AuditResult:
     """
     Execute the complete "Securitize & Verify" workflow.
@@ -170,13 +171,40 @@ async def run_full_audit(
             
             if verification.get("success"):
                 ndvi_score = verification["ndvi_score"]
+                # Store previous risk status to detect changes
+                previous_risk_status = loan_asset.risk_status
+                previous_rate = loan_asset.current_interest_rate or loan_asset.base_interest_rate or 5.0
+                
                 loan_asset.update_verification(ndvi_score)
                 result.stages_completed.append("satellite_verification")
+                
+                # Update deal with verification results if deal_id provided
+                if deal_id and db_session:
+                    try:
+                        from app.services.deal_service import DealService
+                        deal_service = DealService(db_session)
+                        deal_service.update_deal_on_verification(
+                            deal_id=deal_id,
+                            verification_result={
+                                "ndvi_score": ndvi_score,
+                                "risk_status": loan_asset.risk_status,
+                                "threshold": loan_asset.spt_threshold or 0.8,
+                                "verified_at": verification.get("verified_at", datetime.utcnow().isoformat()),
+                                "data_source": verification.get("data_source", "unknown"),
+                                "success": True
+                            },
+                            loan_asset_id=loan_asset.id if hasattr(loan_asset, 'id') and loan_asset.id else None,
+                            user_id=None  # Will use deal applicant_id
+                        )
+                        logger.info(f"Updated deal {deal_id} with verification results")
+                    except Exception as e:
+                        logger.warning(f"Failed to update deal {deal_id} with verification results: {e}")
+                        # Don't fail the audit if deal update fails
                 
                 # Policy evaluation after satellite verification (if enabled)
                 if policy_service:
                     try:
-                        from app.models.cdm_events import generate_cdm_observation, generate_cdm_policy_evaluation
+                        from app.models.cdm_events import generate_cdm_observation, generate_cdm_policy_evaluation, generate_cdm_terms_change
                         from app.db.models import PolicyDecision as PolicyDecisionModel
                         
                         # Create CDM Observation event for satellite verification
@@ -194,6 +222,9 @@ async def run_full_audit(
                             status=risk_status_str
                         )
                         
+                        # Get observation event ID for linking
+                        observation_event_id = observation_event.get("meta", {}).get("globalKey", "")
+                        
                         # Evaluate loan asset securitization for compliance
                         policy_result = policy_service.evaluate_loan_asset(
                             loan_asset=loan_asset,
@@ -210,13 +241,72 @@ async def run_full_audit(
                                 "eventIdentifier": {
                                     "issuer": "CreditNexus",
                                     "assignedIdentifier": [{
-                                        "identifier": {"value": observation_event.get("meta", {}).get("globalKey", "")}
+                                        "identifier": {"value": observation_event_id}
                                     }]
                                 }
                             }],
                             evaluation_trace=policy_result.trace,
                             matched_rules=policy_result.matched_rules
                         )
+                        
+                        # Create TermsChange event if breach detected and rate changed
+                        terms_change_event = None
+                        if loan_asset.risk_status == RiskStatus.BREACH and previous_risk_status != RiskStatus.BREACH:
+                            # Breach just detected - trigger TermsChange event
+                            logger.info(
+                                f"Breach detected for loan {loan_id}: "
+                                f"NDVI={ndvi_score:.4f}, threshold={loan_asset.spt_threshold}, "
+                                f"rate change: {previous_rate}% -> {loan_asset.current_interest_rate}%"
+                            )
+                            
+                            terms_change_event = generate_cdm_terms_change(
+                                trade_id=loan_id,
+                                current_rate=previous_rate,
+                                status=risk_status_str,
+                                policy_service=policy_service
+                            )
+                            
+                            if terms_change_event:
+                                # Link TermsChange to Observation event
+                                terms_change_event["relatedEventIdentifier"] = [{
+                                    "eventIdentifier": {
+                                        "issuer": "CreditNexus",
+                                        "assignedIdentifier": [{
+                                            "identifier": {"value": observation_event_id}
+                                        }]
+                                    }
+                                }]
+                                
+                                logger.info(f"Generated TermsChange event for loan {loan_id} breach")
+                            else:
+                                logger.warning(f"TermsChange event was blocked by policy for loan {loan_id}")
+                        
+                        # Also trigger TermsChange if status changed from BREACH to COMPLIANT (penalty removed)
+                        elif previous_risk_status == RiskStatus.BREACH and loan_asset.risk_status == RiskStatus.COMPLIANT:
+                            logger.info(
+                                f"Compliance restored for loan {loan_id}: "
+                                f"NDVI={ndvi_score:.4f}, rate change: {previous_rate}% -> {loan_asset.current_interest_rate}%"
+                            )
+                            
+                            terms_change_event = generate_cdm_terms_change(
+                                trade_id=loan_id,
+                                current_rate=previous_rate,
+                                status=risk_status_str,
+                                policy_service=policy_service
+                            )
+                            
+                            if terms_change_event:
+                                # Link TermsChange to Observation event
+                                terms_change_event["relatedEventIdentifier"] = [{
+                                    "eventIdentifier": {
+                                        "issuer": "CreditNexus",
+                                        "assignedIdentifier": [{
+                                            "identifier": {"value": observation_event_id}
+                                        }]
+                                    }
+                                }]
+                                
+                                logger.info(f"Generated TermsChange event for loan {loan_id} compliance restoration")
                         
                         # Handle BLOCK decision - prevent securitization
                         if policy_result.decision == "BLOCK":
@@ -238,6 +328,9 @@ async def run_full_audit(
                             if db_session:
                                 if not hasattr(loan_asset, '_pending_policy_decisions'):
                                     loan_asset._pending_policy_decisions = []
+                                cdm_events = [policy_evaluation_event]
+                                if terms_change_event:
+                                    cdm_events.append(terms_change_event)
                                 loan_asset._pending_policy_decisions.append({
                                     "transaction_id": loan_id,
                                     "transaction_type": "loan_asset_securitization",
@@ -246,7 +339,7 @@ async def run_full_audit(
                                     "trace_id": policy_result.trace_id,
                                     "trace": policy_result.trace,
                                     "matched_rules": policy_result.matched_rules,
-                                    "cdm_events": [policy_evaluation_event]
+                                    "cdm_events": cdm_events
                                 })
                         
                         # Handle FLAG decision - allow but mark for review
@@ -271,6 +364,9 @@ async def run_full_audit(
                             if db_session:
                                 if not hasattr(loan_asset, '_pending_policy_decisions'):
                                     loan_asset._pending_policy_decisions = []
+                                cdm_events = [policy_evaluation_event]
+                                if terms_change_event:
+                                    cdm_events.append(terms_change_event)
                                 loan_asset._pending_policy_decisions.append({
                                     "transaction_id": loan_id,
                                     "transaction_type": "loan_asset_securitization",
@@ -279,7 +375,7 @@ async def run_full_audit(
                                     "trace_id": policy_result.trace_id,
                                     "trace": policy_result.trace,
                                     "matched_rules": policy_result.matched_rules,
-                                    "cdm_events": [policy_evaluation_event],
+                                    "cdm_events": cdm_events,
                                     "metadata": {"requires_review": True}
                                 })
                         
@@ -294,6 +390,9 @@ async def run_full_audit(
                             if db_session:
                                 if not hasattr(loan_asset, '_pending_policy_decisions'):
                                     loan_asset._pending_policy_decisions = []
+                                cdm_events = [policy_evaluation_event]
+                                if terms_change_event:
+                                    cdm_events.append(terms_change_event)
                                 loan_asset._pending_policy_decisions.append({
                                     "transaction_id": loan_id,
                                     "transaction_type": "loan_asset_securitization",
@@ -302,13 +401,98 @@ async def run_full_audit(
                                     "trace_id": policy_result.trace_id,
                                     "trace": policy_result.trace,
                                     "matched_rules": policy_result.matched_rules,
-                                    "cdm_events": [policy_evaluation_event]
+                                    "cdm_events": cdm_events
                                 })
                     
                     except Exception as e:
                         # Log policy evaluation errors but don't block audit
                         logger.error(f"Policy evaluation failed for loan {loan_id}: {e}", exc_info=True)
                         # Continue with audit even if policy evaluation fails
+                else:
+                    # Even without policy_service, create Observation and TermsChange events if breach detected
+                    try:
+                        from app.models.cdm_events import generate_cdm_observation, generate_cdm_terms_change
+                        
+                        # Create CDM Observation event for satellite verification
+                        satellite_hash = verification.get("hash", "")
+                        risk_status_str = loan_asset.risk_status
+                        if not isinstance(risk_status_str, str):
+                            risk_status_str = str(risk_status_str)
+                        
+                        observation_event = generate_cdm_observation(
+                            trade_id=loan_id,
+                            satellite_hash=satellite_hash,
+                            ndvi_score=ndvi_score,
+                            status=risk_status_str
+                        )
+                        observation_event_id = observation_event.get("meta", {}).get("globalKey", "")
+                        
+                        # Create TermsChange event if breach detected and rate changed
+                        terms_change_event = None
+                        if loan_asset.risk_status == RiskStatus.BREACH and previous_risk_status != RiskStatus.BREACH:
+                            logger.info(
+                                f"Breach detected for loan {loan_id}: "
+                                f"NDVI={ndvi_score:.4f}, threshold={loan_asset.spt_threshold}, "
+                                f"rate change: {previous_rate}% -> {loan_asset.current_interest_rate}%"
+                            )
+                            
+                            terms_change_event = generate_cdm_terms_change(
+                                trade_id=loan_id,
+                                current_rate=previous_rate,
+                                status=risk_status_str,
+                                policy_service=None  # No policy service available
+                            )
+                            
+                            if terms_change_event:
+                                # Link TermsChange to Observation event
+                                terms_change_event["relatedEventIdentifier"] = [{
+                                    "eventIdentifier": {
+                                        "issuer": "CreditNexus",
+                                        "assignedIdentifier": [{
+                                            "identifier": {"value": observation_event_id}
+                                        }]
+                                    }
+                                }]
+                                
+                                logger.info(f"Generated TermsChange event for loan {loan_id} breach")
+                        
+                        # Also trigger TermsChange if status changed from BREACH to COMPLIANT
+                        elif previous_risk_status == RiskStatus.BREACH and loan_asset.risk_status == RiskStatus.COMPLIANT:
+                            logger.info(
+                                f"Compliance restored for loan {loan_id}: "
+                                f"NDVI={ndvi_score:.4f}, rate change: {previous_rate}% -> {loan_asset.current_interest_rate}%"
+                            )
+                            
+                            terms_change_event = generate_cdm_terms_change(
+                                trade_id=loan_id,
+                                current_rate=previous_rate,
+                                status=risk_status_str,
+                                policy_service=None
+                            )
+                            
+                            if terms_change_event:
+                                # Link TermsChange to Observation event
+                                terms_change_event["relatedEventIdentifier"] = [{
+                                    "eventIdentifier": {
+                                        "issuer": "CreditNexus",
+                                        "assignedIdentifier": [{
+                                            "identifier": {"value": observation_event_id}
+                                        }]
+                                    }
+                                }]
+                                
+                                logger.info(f"Generated TermsChange event for loan {loan_id} compliance restoration")
+                        
+                        # Store events for later persistence (if db_session available)
+                        if db_session:
+                            if not hasattr(loan_asset, '_pending_cdm_events'):
+                                loan_asset._pending_cdm_events = []
+                            event_data = {"observation": observation_event}
+                            if terms_change_event:
+                                event_data["terms_change"] = terms_change_event
+                            loan_asset._pending_cdm_events.append(event_data)
+                    except Exception as e:
+                        logger.warning(f"Failed to generate CDM events (no policy service): {e}")
             else:
                 loan_asset.risk_status = RiskStatus.ERROR
                 loan_asset.verification_error = verification.get("error", "Unknown error")

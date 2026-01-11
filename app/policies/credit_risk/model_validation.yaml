@@ -1,0 +1,86 @@
+# Model Validation and Backtesting Rules
+# These rules enforce model validation requirements for credit risk models
+
+- name: block_unvalidated_risk_model
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: risk_model_validation_status
+        op: eq
+        value: "not_validated"
+  action: block
+  priority: 100
+  description: "Block facilities using unvalidated credit risk models"
+  category: "model_validation"
+
+- name: flag_model_validation_expired
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: model_validation_age_months
+        op: gt
+        value: 12  # Validation older than 12 months
+  action: flag
+  priority: 85
+  description: "Flag facilities using models with expired validation (older than 12 months)"
+  category: "model_validation"
+
+- name: flag_failed_backtest
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: model_backtest_status
+        op: eq
+        value: "failed"
+  action: flag
+  priority: 90
+  description: "Flag facilities using models that failed backtesting"
+  category: "model_validation"
+
+- name: flag_high_model_prediction_error
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: model_prediction_error_rate
+        op: gt
+        value: 0.15  # 15% error rate threshold
+  action: flag
+  priority: 75
+  description: "Flag facilities using models with high prediction error rate (exceeds 15%)"
+  category: "model_validation"
+
+- name: block_unauthorized_model_changes
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: model_change_authorized
+        op: eq
+        value: false
+  action: block
+  priority: 95
+  description: "Block facilities using models with unauthorized changes"
+  category: "model_validation"
+
+- name: flag_insufficient_model_documentation
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: model_documentation_completeness
+        op: lt
+        value: 0.90  # 90% minimum documentation completeness
+  action: flag
+  priority: 70
+  description: "Flag facilities using models with insufficient documentation (below 90%)"
+  category: "model_validation"

@@ -34,6 +34,16 @@ import { fetchWithAuth } from '@/context/AuthContext';
 import { SkeletonDashboard, EmptyState } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
 import { ClauseEditor } from '@/components/ClauseEditor';
+import { PermissionGate } from '@/components/PermissionGate';
+import {
+  PERMISSION_DOCUMENT_VIEW,
+  PERMISSION_FINANCIAL_VIEW,
+  PERMISSION_AUDIT_VIEW,
+  PERMISSION_TEMPLATE_VIEW,
+  PERMISSION_TEMPLATE_GENERATE,
+  PERMISSION_DEAL_VIEW,
+  PERMISSION_DEAL_VIEW_OWN,
+} from '@/utils/permissions';
 
 interface PortfolioAnalytics {
   summary: {
@@ -485,13 +495,14 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-slate-400" />
-              <h3 className="text-lg font-medium text-white">Activity Feed</h3>
-            </div>
+      <PermissionGate permission={PERMISSION_AUDIT_VIEW}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1 bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-slate-400" />
+                <h3 className="text-lg font-medium text-white">Activity Feed</h3>
+              </div>
             {dashboardMetrics?.last_updated && (
               <span className="text-xs text-slate-500">
                 Updated {formatTimeAgo(dashboardMetrics.last_updated)}
@@ -547,10 +558,12 @@ export function Dashboard() {
               })}
             </div>
           )}
+          </div>
         </div>
-      </div>
+      </PermissionGate>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <PermissionGate permission={PERMISSION_DOCUMENT_VIEW}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-4">
             <Clock className="h-5 w-5 text-slate-400" />
@@ -639,15 +652,17 @@ export function Dashboard() {
           )}
         </div>
       </div>
+      </PermissionGate>
 
       {/* Template Metrics Section */}
-      {dashboardMetrics?.template_metrics && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="h-5 w-5 text-purple-400" />
-              <h3 className="text-lg font-medium text-white">Template Generation Metrics</h3>
-            </div>
+      <PermissionGate permission={PERMISSION_TEMPLATE_VIEW}>
+        {dashboardMetrics?.template_metrics && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="h-5 w-5 text-purple-400" />
+                <h3 className="text-lg font-medium text-white">Template Generation Metrics</h3>
+              </div>
             
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
@@ -699,28 +714,29 @@ export function Dashboard() {
             )}
           </div>
 
-          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Zap className="h-5 w-5 text-yellow-400" />
-              <h3 className="text-lg font-medium text-white">Quick Generate</h3>
-            </div>
-            
-            <p className="text-sm text-slate-400 mb-4">
-              Start generating LMA documents from templates with your CDM data.
-            </p>
-            
-            <button
-              onClick={() => {
-                // Navigate to document generator
-                const event = new CustomEvent('navigateToApp', { detail: { app: 'document-generator' } });
-                window.dispatchEvent(event);
-              }}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg text-white font-medium transition-all"
-            >
-              <Sparkles className="h-5 w-5" />
-              Open Document Generator
-              <ArrowRight className="h-4 w-4" />
-            </button>
+          <PermissionGate permission={PERMISSION_TEMPLATE_GENERATE}>
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Zap className="h-5 w-5 text-yellow-400" />
+                <h3 className="text-lg font-medium text-white">Quick Generate</h3>
+              </div>
+              
+              <p className="text-sm text-slate-400 mb-4">
+                Start generating LMA documents from templates with your CDM data.
+              </p>
+              
+              <button
+                onClick={() => {
+                  // Navigate to document generator
+                  const event = new CustomEvent('navigateToApp', { detail: { app: 'document-generator' } });
+                  window.dispatchEvent(event);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg text-white font-medium transition-all"
+              >
+                <Sparkles className="h-5 w-5" />
+                Open Document Generator
+                <ArrowRight className="h-4 w-4" />
+              </button>
             
             <div className="mt-4 p-3 bg-slate-700/30 rounded-lg">
               <p className="text-xs text-slate-400 mb-2">Quick Tips:</p>
@@ -730,57 +746,83 @@ export function Dashboard() {
                 <li>• Review and customize generated content</li>
               </ul>
             </div>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Leaf className="h-5 w-5 text-green-400" />
-          <h3 className="text-lg font-medium text-white">ESG Breakdown</h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="flex items-center justify-between p-4 bg-green-500/10 rounded-lg border border-green-500/20">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="h-5 w-5 text-green-400" />
-              <div>
-                <span className="text-sm text-green-300 block">Sustainability-Linked</span>
-                <span className="text-xs text-green-400/70">ESG compliant</span>
-              </div>
             </div>
-            <span className="text-2xl font-bold text-green-400">{esg_breakdown.sustainability_linked}</span>
+          </PermissionGate>
+
+          <PermissionGate permissions={[PERMISSION_DEAL_VIEW, PERMISSION_DEAL_VIEW_OWN]} requireAll={false}>
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Building2 className="h-5 w-5 text-emerald-400" />
+                <h3 className="text-lg font-medium text-white">Deal Management</h3>
+              </div>
+              
+              <p className="text-sm text-slate-400 mb-4">
+                Manage your loan and credit deals, track lifecycle, and view timelines.
+              </p>
+              
+              <button
+                onClick={() => navigate('/dashboard/deals')}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-lg text-white font-medium transition-all"
+              >
+                <Building2 className="h-5 w-5" />
+                View Deals
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </PermissionGate>
+          </div>
+        )}
+      </PermissionGate>
+
+      <PermissionGate permission={PERMISSION_DOCUMENT_VIEW}>
+        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Leaf className="h-5 w-5 text-green-400" />
+            <h3 className="text-lg font-medium text-white">ESG Breakdown</h3>
           </div>
           
-          <div className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600">
-            <div className="flex items-center gap-3">
-              <FileText className="h-5 w-5 text-slate-400" />
-              <div>
-                <span className="text-sm text-slate-300 block">Standard</span>
-                <span className="text-xs text-slate-400/70">Traditional agreements</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center justify-between p-4 bg-green-500/10 rounded-lg border border-green-500/20">
+              <div className="flex items-center gap-3">
+                <CheckCircle className="h-5 w-5 text-green-400" />
+                <div>
+                  <span className="text-sm text-green-300 block">Sustainability-Linked</span>
+                  <span className="text-xs text-green-400/70">ESG compliant</span>
+                </div>
               </div>
+              <span className="text-2xl font-bold text-green-400">{esg_breakdown.sustainability_linked}</span>
             </div>
-            <span className="text-2xl font-bold text-slate-300">{esg_breakdown.non_sustainability}</span>
+            
+            <div className="flex items-center justify-between p-4 bg-slate-700/50 rounded-lg border border-slate-600">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-slate-400" />
+                <div>
+                  <span className="text-sm text-slate-300 block">Standard</span>
+                  <span className="text-xs text-slate-400/70">Traditional agreements</span>
+                </div>
+              </div>
+              <span className="text-2xl font-bold text-slate-300">{esg_breakdown.non_sustainability}</span>
+            </div>
+            
+            {Object.keys(esg_breakdown.esg_score_distribution).length > 0 && (
+              <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-3">ESG Categories</p>
+                <div className="space-y-2">
+                  {Object.entries(esg_breakdown.esg_score_distribution).map(([category, count]) => (
+                    <div key={category} className="flex items-center justify-between">
+                      <span className="text-sm text-slate-400">{category}</span>
+                      <span className="text-sm font-medium text-slate-300">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-          
-          {Object.keys(esg_breakdown.esg_score_distribution).length > 0 && (
-            <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-3">ESG Categories</p>
-              <div className="space-y-2">
-                {Object.entries(esg_breakdown.esg_score_distribution).map(([category, count]) => (
-                  <div key={category} className="flex items-center justify-between">
-                    <span className="text-sm text-slate-400">{category}</span>
-                    <span className="text-sm font-medium text-slate-300">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-      </div>
 
-      {/* Clause Cache Editor */}
-      <ClauseEditor className="mt-6" />
+        {/* Clause Cache Editor */}
+        <ClauseEditor className="mt-6" />
+      </PermissionGate>
     </div>
   );
 }

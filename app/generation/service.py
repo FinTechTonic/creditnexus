@@ -55,6 +55,7 @@ class DocumentGenerationService:
         cdm_data: CreditAgreement,
         user_id: Optional[int] = None,
         source_document_id: Optional[int] = None,
+        deal_id: Optional[int] = None,
         field_overrides: Optional[Dict[str, Any]] = None
     ) -> GeneratedDocument:
         """
@@ -66,6 +67,7 @@ class DocumentGenerationService:
             cdm_data: CreditAgreement instance with CDM data
             user_id: Optional user ID who is generating the document
             source_document_id: Optional source document ID if generated from existing document
+            deal_id: Optional deal ID to load deal context and link generated document to deal
             field_overrides: Optional dictionary of field path -> value to override in CDM data
                 Example: {"parties[role='Borrower'].lei": "12345678901234567890"}
             
@@ -109,13 +111,86 @@ class DocumentGenerationService:
         mapped_fields = field_mapper.map_cdm_to_template(cdm_data)
         logger.debug(f"Mapped {len(mapped_fields)} field(s) from CDM data")
         
-        # Generate AI-populated fields
+        # Load deal context if deal_id provided
+        deal_context = None
+        related_documents = []
+        if deal_id:
+            try:
+                from app.services.deal_service import DealService
+                deal_service = DealService(db)
+                deal = deal_service.get_deal(deal_id)
+                if deal:
+                    deal_context = {
+                        "deal_id": deal.deal_id,
+                        "status": deal.status,
+                        "deal_type": deal.deal_type,
+                        "deal_data": deal.deal_data,
+                    }
+                    
+                    # Load related documents from database
+                    from app.db.models import Document
+                    db_docs = db.query(Document).filter(
+                        Document.deal_id == deal_id
+                    ).order_by(Document.created_at.desc()).limit(5).all()
+                    
+                    for doc in db_docs:
+                        related_documents.append({
+                            "document_id": doc.id,
+                            "title": doc.title,
+                            "subdirectory": "documents",
+                            "source": "database",
+                        })
+                    
+                    # Try to load from ChromaDB for semantically similar documents
+                    try:
+                        from app.chains.document_retrieval_chain import DocumentRetrievalService
+                        doc_retrieval = DocumentRetrievalService(collection_name="creditnexus_documents")
+                        search_query = f"deal {deal.deal_id} {deal.deal_type or ''} {deal.status or ''}"
+                        
+                        similar_docs = doc_retrieval.retrieve_similar_documents(
+                            query=search_query,
+                            top_k=5,
+                            filter_metadata={"deal_id": str(deal_id)} if deal_id else None
+                        )
+                        
+                        # Merge with database documents, avoiding duplicates
+                        existing_ids = {doc["document_id"] for doc in related_documents if "document_id" in doc}
+                        for doc in similar_docs:
+                            if doc.get("document_id") not in existing_ids:
+                                related_documents.append(doc)
+                    except Exception as e:
+                        logger.warning(f"Failed to load related documents from ChromaDB: {e}")
+                    
+                    logger.info(f"Loaded deal context for deal {deal_id}: {deal.deal_id}")
+            except Exception as e:
+                logger.warning(f"Failed to load deal context: {e}")
+        
+        # Load user profile if user_id provided
+        user_profile = None
+        if user_id:
+            try:
+                from app.db.models import User
+                user = db.query(User).filter(User.id == user_id).first()
+                if user:
+                    user_profile = {
+                        "role": user.role,
+                        "display_name": user.display_name,
+                        "profile_data": user.profile_data,
+                    }
+                    logger.debug(f"Loaded user profile for user {user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to load user profile: {e}")
+        
+        # Generate AI-populated fields with context
         ai_populator = AIFieldPopulator(db=db)
         ai_fields = ai_populator.populate_ai_fields(
             cdm_data=cdm_data,
             template=template,
             mapped_fields=mapped_fields,
-            user_id=user_id
+            user_id=user_id,
+            deal_context=deal_context,
+            user_profile=user_profile,
+            related_documents=related_documents
         )
         logger.debug(f"Generated {len(ai_fields)} AI field(s)")
         
@@ -190,6 +265,38 @@ class DocumentGenerationService:
         db.add(generated_doc)
         db.commit()
         db.refresh(generated_doc)
+        
+        # Link generated document to deal if deal_id provided
+        if deal_id:
+            try:
+                from app.db.models import Document
+                from app.services.deal_service import DealService
+                
+                # Create Document record for generated document
+                generated_doc_record = Document(
+                    title=generated_doc.file_path.split('/')[-1] or f"Generated from {template.template_code}",
+                    uploaded_by=user_id,
+                    deal_id=deal_id,
+                    is_generated=True,
+                    template_id=template_id,
+                    source_cdm_data=cdm_data_dict,
+                )
+                db.add(generated_doc_record)
+                db.flush()
+                
+                # Attach to deal via DealService
+                deal_service = DealService(db)
+                deal_service.attach_document_to_deal(
+                    deal_id=deal_id,
+                    document_id=generated_doc_record.id,
+                    user_id=user_id
+                )
+                
+                db.commit()
+                logger.info(f"Linked generated document {generated_doc_record.id} to deal {deal_id}")
+            except Exception as e:
+                logger.warning(f"Failed to link generated document to deal: {e}")
+                # Don't fail the generation if linking fails
         
         logger.info(f"Generated document ID {generated_doc.id} from template {template.template_code}")
         return generated_doc

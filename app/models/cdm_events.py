@@ -199,6 +199,103 @@ def generate_cdm_terms_change(
         }
     }
 
+def generate_cdm_credit_risk_assessment(
+    transaction_id: str,
+    risk_rating: str,
+    probability_of_default: float,
+    loss_given_default: float,
+    exposure_at_default: float,
+    risk_weighted_assets: float,
+    capital_requirement: float,
+    related_event_identifiers: List[Dict[str, Any]] = None,
+    additional_metrics: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Generates CDM-compliant CreditRiskAssessment event.
+    
+    This event represents a credit risk assessment following CDM event model:
+    - eventType: "CreditRiskAssessment"
+    - eventDate: Timestamp
+    - assessment: Risk ratings, PD/LGD/EAD, RWA, capital requirements
+    - relatedEventIdentifier: Links to PolicyEvaluation, TradeExecution, etc.
+    
+    Args:
+        transaction_id: Transaction/deal identifier
+        risk_rating: Risk rating (AAA-D or 1-10)
+        probability_of_default: PD (0-1)
+        loss_given_default: LGD (0-1)
+        exposure_at_default: EAD amount
+        risk_weighted_assets: RWA amount
+        capital_requirement: Capital requirement amount
+        related_event_identifiers: List of related event identifiers
+        additional_metrics: Optional additional credit risk metrics
+        
+    Returns:
+        CDM-compliant CreditRiskAssessment event dictionary
+    """
+    if related_event_identifiers is None:
+        related_event_identifiers = []
+    if additional_metrics is None:
+        additional_metrics = {}
+    
+    return {
+        "eventType": "CreditRiskAssessment",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "creditRiskAssessment": {
+            "transactionIdentifier": {
+                "issuer": "CreditNexus_CreditRiskService",
+                "assignedIdentifier": [{"identifier": {"value": transaction_id}}]
+            },
+            "assessmentDate": {"date": datetime.date.today().isoformat()},
+            "riskRating": {
+                "value": risk_rating,
+                "ratingAgency": additional_metrics.get("rating_agency", "Internal"),
+                "ratingType": additional_metrics.get("rating_type", "internal")
+            },
+            "probabilityOfDefault": {
+                "value": probability_of_default,
+                "unit": "PROBABILITY",
+                "calculationMethod": additional_metrics.get("pd_calculation_method", "IRB")
+            },
+            "lossGivenDefault": {
+                "value": loss_given_default,
+                "unit": "PROBABILITY",
+                "calculationMethod": additional_metrics.get("lgd_calculation_method", "IRB")
+            },
+            "exposureAtDefault": {
+                "value": exposure_at_default,
+                "currency": additional_metrics.get("currency", {"value": "USD"}),
+                "unit": "MONETARY_AMOUNT"
+            },
+            "riskWeightedAssets": {
+                "value": risk_weighted_assets,
+                "currency": additional_metrics.get("currency", {"value": "USD"}),
+                "unit": "MONETARY_AMOUNT",
+                "calculationApproach": additional_metrics.get("risk_model_approach", "IRB")
+            },
+            "capitalRequirement": {
+                "value": capital_requirement,
+                "currency": additional_metrics.get("currency", {"value": "USD"}),
+                "unit": "MONETARY_AMOUNT",
+                "capitalRatio": additional_metrics.get("capital_ratio", 0.08)
+            },
+            "tier1CapitalRequirement": additional_metrics.get("tier1_capital_requirement"),
+            "leverageRatio": additional_metrics.get("leverage_ratio"),
+            "liquidityCoverageRatio": additional_metrics.get("liquidity_coverage_ratio"),
+            "creditScore": additional_metrics.get("credit_score"),
+            "debtServiceCoverageRatio": additional_metrics.get("debt_service_coverage_ratio"),
+            "collateralCoverageRatio": additional_metrics.get("collateral_coverage_ratio"),
+            "assessmentRationale": additional_metrics.get("assessment_rationale")
+        },
+        "relatedEventIdentifier": related_event_identifiers,
+        "meta": {
+            "globalKey": str(uuid.uuid4()),
+            "sourceSystem": "CreditNexus_CreditRiskService_v1",
+            "version": 1
+        }
+    }
+
+
 def generate_cdm_policy_evaluation(
     transaction_id: str,
     transaction_type: str,
