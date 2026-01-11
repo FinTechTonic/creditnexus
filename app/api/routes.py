@@ -6,7 +6,7 @@ import json
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Request, Form
+from fastapi import APIRouter, Body, HTTPException, UploadFile, File, Depends, Query, Request, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
@@ -20,6 +20,8 @@ from app.auth.jwt_auth import get_current_user, require_auth
 from app.services.policy_service import PolicyService
 from app.services.x402_payment_service import X402PaymentService
 from app.services.clause_cache_service import ClauseCacheService
+from app.services.twilio_service import TwilioService
+from app.services.loan_recovery_service import LoanRecoveryService
 from fastapi import Request
 
 logger = logging.getLogger(__name__)
@@ -7758,14 +7760,15 @@ async def wallet_authentication(
     }
 
 
-# Recovery endpoints
+# Recovery
 @router.post("/recovery/send-sms")
 async def send_recovery_sms(
-    phone: str = Field(..., description="Recipient phone number"),
-    message: str = Field(..., description="SMS message content"),
+    phone: str = Body(..., description="Recipient phone number"), # Changed Field to Body
+    message: str = Body(..., description="SMS message content"), # Changed Field to Body
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
+    
     """Send recovery SMS message."""
     from app.services.twilio_service import TwilioService
     
@@ -7791,3 +7794,12 @@ async def send_recovery_sms(
             status_code=500,
             detail={"status": "error", "message": f"Failed to send SMS: {str(e)}"}
         )
+
+
+# Import and include Twilio webhook routes
+from app.api.twilio_routes import router as twilio_router
+router.include_router(twilio_router)
+
+# Import and include recovery API routes
+from app.api.recovery_routes import router as recovery_router
+router.include_router(recovery_router)
