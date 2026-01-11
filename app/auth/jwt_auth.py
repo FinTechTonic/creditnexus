@@ -835,9 +835,34 @@ async def get_current_user_info(user: Optional[User] = Depends(get_current_user)
     if not user:
         return {"authenticated": False, "user": None}
     
+    try:
+        user_dict = user.to_dict()
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error serializing user {user.id}: {e}", exc_info=True)
+        # Return a minimal user dict if to_dict() fails
+        user_dict = {
+            "id": user.id,
+            "email": user.email or "",
+            "display_name": user.display_name or "",
+            "profile_image": user.profile_image,
+            "role": user.role or "viewer",
+            "is_active": user.is_active if user.is_active is not None else True,
+            "last_login": None,
+            "wallet_address": user.wallet_address,
+            "signup_status": user.signup_status,
+            "signup_submitted_at": None,
+            "signup_reviewed_at": None,
+            "signup_reviewed_by": user.signup_reviewed_by,
+            "signup_rejection_reason": user.signup_rejection_reason,
+            "profile_data": user.profile_data,
+            "created_at": None,
+        }
+    
     return {
         "authenticated": True,
-        "user": user.to_dict()
+        "user": user_dict
     }
 
 

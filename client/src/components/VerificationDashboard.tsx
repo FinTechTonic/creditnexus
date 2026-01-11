@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useFDC3 } from '@/context/FDC3Context';
 import { fetchWithAuth } from '@/context/AuthContext';
 import { DropZone } from './DropZone';
 import { AgentTerminal } from './AgentTerminal';
 import { MapView } from './MapView';
 import { Button } from './ui/button';
-import { ShieldCheck, Activity, Code, Map as MapIcon, Globe } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
+import { ShieldCheck, Activity, Code, Map as MapIcon, Globe, FileText, Building2, Loader2, Search } from 'lucide-react';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
@@ -30,14 +32,23 @@ interface LogEntry {
 
 export default function VerificationDashboard() {
     const { broadcast, context } = useFDC3();
+    const [searchParams] = useSearchParams();
     const [file, setFile] = useState<File | null>(null);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isVerified, setIsVerified] = useState(false);
     const [cdmEvents, setCdmEvents] = useState<any>(null);
     const [classification, setClassification] = useState<any>(null);
-
     const [extractedText, setExtractedText] = useState<string>('');
+    
+    // Document and loan selectors
+    const [showDocumentSelector, setShowDocumentSelector] = useState(false);
+    const [showLoanSelector, setShowLoanSelector] = useState(false);
+    const [availableDocuments, setAvailableDocuments] = useState<any[]>([]);
+    const [availableLoans, setAvailableLoans] = useState<any[]>([]);
+    const [loadingDocuments, setLoadingDocuments] = useState(false);
+    const [loadingLoans, setLoadingLoans] = useState(false);
+    const [selectedLoan, setSelectedLoan] = useState<any>(null);
 
     const addLog = (message: string, level: LogEntry['level'] = 'INFO') => {
         setLogs(prev => [...prev, {
@@ -67,6 +78,98 @@ export default function VerificationDashboard() {
             addLog("Verification Protocol Prepared. Ready for Securitization.", 'WARN');
         }
     }, [context]);
+
+    // Load document from URL query param
+    useEffect(() => {
+        const documentId = searchParams.get('documentId');
+        if (documentId && !extractedText) {
+            setLoadingDocuments(true);
+            fetchWithAuth(`/api/documents/${documentId}`)
+                .then(async (response) => {
+                    if (response.ok) {
+                        const data = await response.json();
+                        const doc = data.document;
+                        if (doc.versions && doc.versions[0] && doc.versions[0].original_text) {
+                            setExtractedText(doc.versions[0].original_text);
+                            addLog(`Loaded document: ${doc.title}`, 'SUCCESS');
+                        }
+                    }
+                })
+                .catch((err) => {
+                    console.error('Error loading document:', err);
+                    addLog('Failed to load document', 'ERROR');
+                })
+                .finally(() => {
+                    setLoadingDocuments(false);
+                });
+        }
+    }, [searchParams, extractedText]);
+
+    const fetchDocuments = async () => {
+        setLoadingDocuments(true);
+        try {
+            const response = await fetchWithAuth('/api/documents?limit=100');
+            if (response.ok) {
+                const data = await response.json();
+                setAvailableDocuments(data.documents || []);
+            } else {
+                addLog('Failed to fetch documents', 'ERROR');
+            }
+        } catch (error) {
+            console.error('Error fetching documents:', error);
+            addLog('Failed to fetch documents', 'ERROR');
+        } finally {
+            setLoadingDocuments(false);
+        }
+    };
+
+    const fetchLoanAssets = async () => {
+        setLoadingLoans(true);
+        try {
+            const response = await fetchWithAuth('/api/loan-assets?limit=100');
+            if (response.ok) {
+                const data = await response.json();
+                setAvailableLoans(data.loan_assets || []);
+            } else {
+                addLog('Failed to fetch loan assets', 'ERROR');
+            }
+        } catch (error) {
+            console.error('Error fetching loan assets:', error);
+            addLog('Failed to fetch loan assets', 'ERROR');
+        } finally {
+            setLoadingLoans(false);
+        }
+    };
+
+    const handleDocumentSelect = async (document: any) => {
+        setShowDocumentSelector(false);
+        setLoadingDocuments(true);
+        try {
+            const response = await fetchWithAuth(`/api/documents/${document.id}`);
+            if (response.ok) {
+                const data = await response.json();
+                const doc = data.document;
+                if (doc.versions && doc.versions[0] && doc.versions[0].original_text) {
+                    setExtractedText(doc.versions[0].original_text);
+                    addLog(`Loaded document: ${doc.title}`, 'SUCCESS');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading document:', error);
+            addLog('Failed to load document', 'ERROR');
+        } finally {
+            setLoadingDocuments(false);
+        }
+    };
+
+    const handleLoanSelect = (loan: any) => {
+        setSelectedLoan(loan);
+        setShowLoanSelector(false);
+        if (loan.document_text) {
+            setExtractedText(loan.document_text);
+            addLog(`Loaded loan: ${loan.loan_id}`, 'SUCCESS');
+        }
+    };
 
     const handleFileSelect = async (uploadedFile: File) => {
         setFile(uploadedFile);
@@ -207,7 +310,33 @@ export default function VerificationDashboard() {
 
                 {/* Drop Zone (Hero) */}
                 {!isVerified ? (
-                    <div className={isVerified ? 'hidden' : 'block animate-in fade-in zoom-in duration-500'}>
+                    <div className={isVerified ? 'hidden' : 'block animate-in fade-in zoom-in duration-500 space-y-4'}>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    fetchDocuments();
+                                    setShowDocumentSelector(true);
+                                }}
+                                className="bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border-indigo-600/30"
+                            >
+                                <FileText className="h-4 w-4 mr-2" />
+                                Select from Library
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    fetchLoanAssets();
+                                    setShowLoanSelector(true);
+                                }}
+                                className="bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 border-purple-600/30"
+                            >
+                                <Building2 className="h-4 w-4 mr-2" />
+                                Select Loan
+                            </Button>
+                        </div>
                         <DropZone onFileSelect={handleFileSelect} isProcessing={isAnalyzing} />
                     </div>
                 ) : (
@@ -319,6 +448,82 @@ export default function VerificationDashboard() {
                     </div>
                 )}
             </div>
+
+            {/* Document Selector Modal */}
+            <Dialog open={showDocumentSelector} onOpenChange={setShowDocumentSelector}>
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Select Document from Library</DialogTitle>
+                        <DialogDescription>Choose a document to verify</DialogDescription>
+                    </DialogHeader>
+                    {loadingDocuments ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {availableDocuments.map((doc) => (
+                                <button
+                                    key={doc.id}
+                                    onClick={() => handleDocumentSelect(doc)}
+                                    className="w-full text-left p-4 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-800 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <FileText className="h-5 w-5 text-indigo-400" />
+                                        <div className="flex-1">
+                                            <p className="font-medium">{doc.title}</p>
+                                            {doc.borrower_name && (
+                                                <p className="text-sm text-slate-400">{doc.borrower_name}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                            {availableDocuments.length === 0 && (
+                                <p className="text-center text-slate-400 py-8">No documents found</p>
+                            )}
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Loan Selector Modal */}
+            <Dialog open={showLoanSelector} onOpenChange={setShowLoanSelector}>
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Select Loan Asset</DialogTitle>
+                        <DialogDescription>Choose a loan to verify</DialogDescription>
+                    </DialogHeader>
+                    {loadingLoans ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {availableLoans.map((loan) => (
+                                <button
+                                    key={loan.id}
+                                    onClick={() => handleLoanSelect(loan)}
+                                    className="w-full text-left p-4 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-800 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Building2 className="h-5 w-5 text-purple-400" />
+                                        <div className="flex-1">
+                                            <p className="font-medium">{loan.loan_id}</p>
+                                            {loan.collateral_address && (
+                                                <p className="text-sm text-slate-400">{loan.collateral_address}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                            {availableLoans.length === 0 && (
+                                <p className="text-center text-slate-400 py-8">No loans found</p>
+                            )}
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

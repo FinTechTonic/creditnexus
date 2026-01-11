@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 export function LoginPage() {
   const [isOpen, setIsOpen] = useState(true);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
 
   // Redirect to dashboard if already logged in
   useEffect(() => {

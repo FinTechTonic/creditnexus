@@ -51,9 +51,13 @@ def upgrade() -> None:
         
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(['document_id'], ['documents.id'], name='fk_policy_decisions_document_id'),
-        sa.ForeignKeyConstraint(['loan_asset_id'], ['loan_assets.id'], name='fk_policy_decisions_loan_asset_id'),
+        # NOTE: loan_asset_id has NO ForeignKey because loan_assets uses SQLModel (separate table creation)
+        # The loan_assets table may not exist when PolicyDecision is created
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], name='fk_policy_decisions_user_id'),
     )
+    
+    # Create index for loan_asset_id (without FK constraint)
+    op.create_index('idx_policy_decisions_loan_asset_id', 'policy_decisions', ['loan_asset_id'], unique=False)
     
     # Create indexes for fast queries
     op.create_index('idx_policy_decisions_transaction', 'policy_decisions', ['transaction_id'], unique=False)
@@ -64,6 +68,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop policy_decisions table and indexes."""
+    op.drop_index('idx_policy_decisions_loan_asset_id', table_name='policy_decisions')
     op.drop_index('idx_policy_decisions_trace_id', table_name='policy_decisions')
     op.drop_index('idx_policy_decisions_created_at', table_name='policy_decisions')
     op.drop_index('idx_policy_decisions_decision', table_name='policy_decisions')

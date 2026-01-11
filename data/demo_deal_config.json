@@ -1,0 +1,146 @@
+{
+  "scenarios": {
+    "corporate_lending": {
+      "loan_size_range": "$1M - $50M",
+      "term_range": "1-10 years",
+      "interest_range": "3.5% - 8.5%",
+      "description": "Standard corporate credit facilities for working capital, expansion, or equipment financing"
+    },
+    "sustainability_linked": {
+      "loan_size_range": "$5M - $100M",
+      "term_range": "3-15 years",
+      "interest_range": "2.5% - 7.0%",
+      "description": "ESG-linked loans with performance targets (NDVI, carbon reduction, renewable energy)",
+      "sustainability_note": "Includes ESG KPI targets, verification requirements, and interest rate adjustments based on performance"
+    },
+    "refinancing": {
+      "loan_size_range": "$2M - $75M",
+      "term_range": "2-12 years",
+      "interest_range": "3.0% - 7.5%",
+      "description": "Refinancing existing debt to improve terms, extend maturity, or consolidate obligations",
+      "refinancing_note": "References existing facilities, includes payoff terms, and may include additional borrowing capacity"
+    },
+    "restructuring": {
+      "loan_size_range": "$500K - $30M",
+      "term_range": "1-8 years",
+      "interest_range": "4.0% - 10.0%",
+      "description": "Workout or restructuring agreements for distressed borrowers with modified terms",
+      "restructuring_note": "Includes forbearance provisions, covenant modifications, and may involve multiple tranches"
+    }
+  },
+  "industries": {
+    "Technology": {
+      "weight": 0.25,
+      "typical_loan_size": "$5M - $30M",
+      "common_purposes": ["R&D", "Product development", "Scaling operations", "Acquisitions"]
+    },
+    "Manufacturing": {
+      "weight": 0.20,
+      "typical_loan_size": "$2M - $50M",
+      "common_purposes": ["Equipment", "Working capital", "Facility expansion", "Automation"]
+    },
+    "Energy": {
+      "weight": 0.15,
+      "typical_loan_size": "$10M - $100M",
+      "common_purposes": ["Renewable energy projects", "Infrastructure", "Refinancing", "Sustainability initiatives"]
+    },
+    "Healthcare": {
+      "weight": 0.15,
+      "typical_loan_size": "$3M - $40M",
+      "common_purposes": ["Facility expansion", "Equipment", "Technology upgrades", "Working capital"]
+    },
+    "Agriculture": {
+      "weight": 0.10,
+      "typical_loan_size": "$1M - $20M",
+      "common_purposes": ["Seasonal financing", "Equipment", "Land acquisition", "Sustainability projects"]
+    },
+    "Real Estate": {
+      "weight": 0.10,
+      "typical_loan_size": "$5M - $75M",
+      "common_purposes": ["Property acquisition", "Development", "Refinancing", "Construction"]
+    },
+    "General": {
+      "weight": 0.05,
+      "typical_loan_size": "$1M - $25M",
+      "common_purposes": ["Working capital", "General corporate purposes", "Expansion"]
+    }
+  },
+  "loan_sizes": {
+    "small": {
+      "min": 1000000,
+      "max": 5000000,
+      "description": "Small business loans"
+    },
+    "medium": {
+      "min": 5000000,
+      "max": 25000000,
+      "description": "Mid-market facilities"
+    },
+    "large": {
+      "min": 25000000,
+      "max": 100000000,
+      "description": "Large corporate facilities"
+    }
+  },
+  "terms": {
+    "short": {
+      "min_years": 1,
+      "max_years": 3,
+      "description": "Short-term facilities"
+    },
+    "medium": {
+      "min_years": 3,
+      "max_years": 7,
+      "description": "Medium-term facilities"
+    },
+    "long": {
+      "min_years": 7,
+      "max_years": 15,
+      "description": "Long-term facilities"
+    }
+  },
+  "party_templates": {
+    "borrower": {
+      "roles": ["Borrower"],
+      "required_fields": ["name", "lei"],
+      "optional_fields": ["address", "tax_id", "jurisdiction"]
+    },
+    "lender": {
+      "roles": ["Lender"],
+      "required_fields": ["name", "lei"],
+      "optional_fields": ["address", "jurisdiction"]
+    },
+    "administrative_agent": {
+      "roles": ["Administrative Agent"],
+      "required_fields": ["name", "lei"],
+      "optional_fields": ["address", "jurisdiction"]
+    },
+    "guarantor": {
+      "roles": ["Guarantor"],
+      "required_fields": ["name"],
+      "optional_fields": ["lei", "address", "jurisdiction"]
+    }
+  },
+  "interest_rate_benchmarks": [
+    "SOFR",
+    "LIBOR",
+    "Prime Rate",
+    "EURIBOR",
+    "SONIA"
+  ],
+  "governing_laws": [
+    "NY",
+    "DE",
+    "CA",
+    "TX",
+    "IL",
+    "UK",
+    "EU"
+  ],
+  "currencies": [
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY"
+  ]
+}

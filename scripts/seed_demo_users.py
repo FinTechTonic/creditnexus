@@ -101,13 +101,15 @@ DEMO_USERS = [
 ]
 
 
-def seed_demo_users(db, force: bool = False) -> int:
+def seed_demo_users(db, force: bool = False, seed_all_roles: bool = True) -> int:
     """
     Seed demo users into database.
     
     Args:
         db: Database session
         force: If True, update existing users. If False, skip existing users.
+        seed_all_roles: If True, seed all roles regardless of environment flags. 
+                       If False, check environment flags. Default True for API calls.
         
     Returns:
         Number of users created/updated
@@ -115,13 +117,23 @@ def seed_demo_users(db, force: bool = False) -> int:
     created_count = 0
     updated_count = 0
     
-    # Check which users to seed based on environment flags
-    seed_all = os.getenv("SEED_DEMO_USERS", "false").lower() == "true"
-    seed_auditor = os.getenv("SEED_AUDITOR", "false").lower() == "true"
-    seed_banker = os.getenv("SEED_BANKER", "false").lower() == "true"
-    seed_law_officer = os.getenv("SEED_LAW_OFFICER", "false").lower() == "true"
-    seed_accountant = os.getenv("SEED_ACCOUNTANT", "false").lower() == "true"
-    seed_applicant = os.getenv("SEED_APPLICANT", "false").lower() == "true"
+    # Check which users to seed based on environment flags (only if seed_all_roles=False)
+    if seed_all_roles:
+        # When called from API, seed all users by default
+        seed_all = True
+        seed_auditor = True
+        seed_banker = True
+        seed_law_officer = True
+        seed_accountant = True
+        seed_applicant = True
+    else:
+        # When called from command line, check environment variables
+        seed_all = os.getenv("SEED_DEMO_USERS", "false").lower() == "true"
+        seed_auditor = os.getenv("SEED_AUDITOR", "false").lower() == "true"
+        seed_banker = os.getenv("SEED_BANKER", "false").lower() == "true"
+        seed_law_officer = os.getenv("SEED_LAW_OFFICER", "false").lower() == "true"
+        seed_accountant = os.getenv("SEED_ACCOUNTANT", "false").lower() == "true"
+        seed_applicant = os.getenv("SEED_APPLICANT", "false").lower() == "true"
     
     # Role flag mapping
     role_flags = {

@@ -408,12 +408,72 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
     try {
       // Merge field overrides into existing field_overrides state
       setFieldOverrides(prev => ({ ...prev, ...overrides }));
+      
+      // CRITICAL: Also merge overrides into cdmData so the UI reflects the changes
+      // This ensures validators see the updated data and the CDM object is editable
+      setCdmData(prev => {
+        const updated = { ...prev };
+        for (const [path, value] of Object.entries(overrides)) {
+          // Apply each override to the CDM data using nested path
+          applyNestedValue(updated, path, value);
+        }
+        return updated;
+      });
+      
       setIsFieldEditorOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save field overrides');
     }
     // Don't trigger generation automatically - let user click Generate button
     // The field overrides will be applied during generation
+  };
+  
+  // Helper function to apply a nested path value to an object
+  const applyNestedValue = (obj: any, path: string, value: any): void => {
+    const parts = path.split('.');
+    let current = obj;
+    
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      
+      // Handle array access like parties[0]
+      if (part.includes('[')) {
+        const [key, indexStr] = part.split('[');
+        const indexMatch = indexStr.match(/^(\d+)\]$/);
+        
+        if (!current[key]) {
+          current[key] = [];
+        }
+        
+        if (indexMatch) {
+          const index = parseInt(indexMatch[1], 10);
+          if (!current[key][index]) {
+            current[key][index] = {};
+          }
+          current = current[key][index];
+        }
+      } else {
+        if (!current[part]) {
+          current[part] = {};
+        }
+        current = current[part];
+      }
+    }
+    
+    const lastPart = parts[parts.length - 1];
+    if (lastPart.includes('[')) {
+      const [key, indexStr] = lastPart.split('[');
+      const indexMatch = indexStr.match(/^(\d+)\]$/);
+      if (indexMatch) {
+        const index = parseInt(indexMatch[1], 10);
+        if (!current[key]) {
+          current[key] = [];
+        }
+        current[key][index] = value;
+      }
+    } else {
+      current[lastPart] = value;
+    }
   };
 
   const handleExport = async (format: 'word' | 'pdf') => {
@@ -641,6 +701,14 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
                     missingFields={missingFields}
                     onFieldsFilled={(newOverrides) => {
                       setFieldOverrides(prev => ({ ...prev, ...newOverrides }));
+                      // Also update cdmData so the UI reflects the changes
+                      setCdmData(prev => {
+                        const updated = { ...prev };
+                        for (const [path, value] of Object.entries(newOverrides)) {
+                          applyNestedValue(updated, path, value);
+                        }
+                        return updated;
+                      });
                       setMissingFields([]); // Clear missing fields after filling
                     }}
                   />
@@ -763,7 +831,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
         </DialogContent>
       </Dialog>
 
-      {/* Field Editor Modal */}
+      {/* Field Editor Modal - showAllFields=true to allow editing existing CDM fields */}
       <FieldEditorModal
         isOpen={isFieldEditorOpen}
         onClose={() => setIsFieldEditorOpen(false)}
@@ -771,6 +839,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
         templateId={selectedTemplate?.id || null}
         cdmData={cdmData}
         missingFields={missingFields}
+        showAllFields={true}
       />
     </div>
   );

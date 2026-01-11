@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
+import { fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData, ESGKPITarget } from '@/context/FDC3Context';
-import { Leaf, TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, Target, Droplets, Zap, Recycle } from 'lucide-react';
+import { Leaf, TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, Target, Droplets, Zap, Recycle, Search, Loader2, ChevronDown } from 'lucide-react';
 
 const MOCK_ESG_DATA: ESGKPITarget[] = [
   {
@@ -60,6 +62,10 @@ export function GreenLens() {
   const { context, clearContext } = useFDC3();
   const [loanData, setLoanData] = useState<CreditAgreementData | null>(null);
   const [esgTargets, setEsgTargets] = useState<ESGKPITarget[]>([]);
+  const [showLoanSelector, setShowLoanSelector] = useState(false);
+  const [availableLoans, setAvailableLoans] = useState<any[]>([]);
+  const [loadingLoans, setLoadingLoans] = useState(false);
+  const [loanSearchQuery, setLoanSearchQuery] = useState('');
 
   useEffect(() => {
     if (context?.loan) {
@@ -113,15 +119,147 @@ export function GreenLens() {
 
       {!loanData ? (
         <Card className="border-slate-700 bg-slate-800/50">
-          <CardContent className="p-12 text-center">
+          <CardContent className="p-12">
             <div className="w-20 h-20 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-6">
               <Leaf className="h-10 w-10 text-emerald-500/50" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">Waiting for Loan Context</h3>
-            <p className="text-muted-foreground max-w-md mx-auto">
-              Use the Docu-Digitizer to extract loan data and broadcast it here.
-              ESG performance metrics and margin adjustments will be displayed automatically.
+            <h3 className="text-xl font-semibold mb-2 text-center">Select a Loan for ESG Analysis</h3>
+            <p className="text-muted-foreground max-w-md mx-auto mb-6 text-center">
+              Select a loan asset from your portfolio or use the Docu-Digitizer to extract loan data and broadcast it here.
             </p>
+            <div className="max-w-md mx-auto">
+              <Button
+                onClick={async () => {
+                  setShowLoanSelector(!showLoanSelector);
+                  if (!showLoanSelector && availableLoans.length === 0) {
+                    setLoadingLoans(true);
+                    try {
+                      const response = await fetchWithAuth('/api/loan-assets?limit=20');
+                      if (response.ok) {
+                        const data = await response.json();
+                        setAvailableLoans(data.loan_assets || []);
+                      }
+                    } catch (err) {
+                      console.error('Failed to load loans:', err);
+                    } finally {
+                      setLoadingLoans(false);
+                    }
+                  }
+                }}
+                className="w-full"
+              >
+                <Search className="h-4 w-4 mr-2" />
+                {showLoanSelector ? 'Hide Loans' : 'Select Loan Asset'}
+              </Button>
+              
+              {showLoanSelector && (
+                <div className="mt-4 space-y-2 max-h-96 overflow-y-auto">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search loans..."
+                      value={loanSearchQuery}
+                      onChange={(e) => setLoanSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100"
+                    />
+                  </div>
+                  {loadingLoans ? (
+                    <div className="text-center py-8 text-slate-400">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                      Loading loans...
+                    </div>
+                  ) : (
+                    availableLoans
+                      .filter((loan: any) => 
+                        !loanSearchQuery || 
+                        loan.loan_id?.toLowerCase().includes(loanSearchQuery.toLowerCase()) ||
+                        loan.title?.toLowerCase().includes(loanSearchQuery.toLowerCase())
+                      )
+                      .map((loan: any) => (
+                        <Card
+                          key={loan.id}
+                          className="border-slate-700 bg-slate-900/50 hover:border-emerald-500/50 cursor-pointer transition-colors"
+                          onClick={async () => {
+                            try {
+                              // Try to get CDM data from the loan's associated deal
+                              // Loan assets have loan_id which matches deal.deal_id
+                              const dealsResponse = await fetchWithAuth(`/api/deals?search=${loan.loan_id}&limit=1`);
+                              if (dealsResponse.ok) {
+                                const dealsData = await dealsResponse.json();
+                                const deal = dealsData.deals?.[0];
+                                if (deal) {
+                                  const dealResponse = await fetchWithAuth(`/api/deals/${deal.id}`);
+                                  if (dealResponse.ok) {
+                                    const dealData = await dealResponse.json();
+                                    const documents = dealData.documents || [];
+                                    for (const doc of documents) {
+                                      const docResponse = await fetchWithAuth(`/api/documents/${doc.id}?include_cdm_data=true`);
+                                      if (docResponse.ok) {
+                                        const docData = await docResponse.json();
+                                        if (docData.cdm_data) {
+                                          setLoanData(docData.cdm_data as CreditAgreementData);
+                                          if (docData.cdm_data.esg_kpi_targets && docData.cdm_data.esg_kpi_targets.length > 0) {
+                                            setEsgTargets(docData.cdm_data.esg_kpi_targets);
+                                          } else if (docData.cdm_data.sustainability_linked) {
+                                            setEsgTargets(MOCK_ESG_DATA);
+                                          } else {
+                                            setEsgTargets(MOCK_ESG_DATA);
+                                          }
+                                          setShowLoanSelector(false);
+                                          return;
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                              // If no deal found, create minimal loan data from loan asset
+                              setLoanData({
+                                deal_id: loan.loan_id,
+                                agreement_date: loan.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+                                parties: [],
+                                facilities: [],
+                                sustainability_linked: loan.risk_status !== 'BREACH',
+                              } as CreditAgreementData);
+                              setEsgTargets(MOCK_ESG_DATA);
+                              setShowLoanSelector(false);
+                            } catch (err) {
+                              console.error('Failed to load loan:', err);
+                            }
+                          }}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-slate-100">{loan.loan_id}</p>
+                                {loan.title && (
+                                  <p className="text-sm text-slate-400">{loan.title}</p>
+                                )}
+                                {loan.risk_status && (
+                                  <span className={`text-xs px-2 py-0.5 rounded mt-1 inline-block ${
+                                    loan.risk_status === 'COMPLIANT' ? 'bg-emerald-500/20 text-emerald-400' :
+                                    loan.risk_status === 'WARNING' ? 'bg-yellow-500/20 text-yellow-400' :
+                                    'bg-red-500/20 text-red-400'
+                                  }`}>
+                                    {loan.risk_status}
+                                  </span>
+                                )}
+                              </div>
+                              <ChevronDown className="h-4 w-4 text-slate-400" />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                  )}
+                  {availableLoans.length === 0 && !loadingLoans && (
+                    <div className="text-center py-8 text-slate-400">
+                      No loan assets found. Create loan assets first or use Docu-Digitizer to extract loan data.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : (

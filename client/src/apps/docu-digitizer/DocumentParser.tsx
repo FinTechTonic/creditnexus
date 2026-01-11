@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,6 +29,7 @@ export function DocumentParser({
   const { broadcast } = useFDC3();
   const { isAuthenticated } = useAuth();
   const { addToast } = useToast();
+  const [searchParams] = useSearchParams();
   const [documentText, setDocumentText] = useState(initialContent || '');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extractedData, setExtractedData] = useState<CreditAgreementData | null>(initialData || null);
@@ -40,6 +42,7 @@ export function DocumentParser({
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [sourceFilename, setSourceFilename] = useState<string | null>(null);
+  const [isLoadingDocument, setIsLoadingDocument] = useState(false);
   
   // Multimodal sources state
   const [multimodalSources, setMultimodalSources] = useState<{
@@ -373,6 +376,70 @@ export function DocumentParser({
       setEditableData(agreementData);
     }
   };
+
+  // Track which document ID was last loaded to prevent reloading the same document
+  // Use ref to persist across component re-mounts
+  const loadedDocumentIdRef = useRef<string | null>(null);
+  const [loadedDocumentId, setLoadedDocumentId] = useState<string | null>(null);
+  const isLoadingDocumentRef = useRef(false);
+
+  // Load document from URL query param
+  useEffect(() => {
+    const documentId = searchParams.get('documentId');
+    
+    // Only load if:
+    // 1. documentId exists in URL
+    // 2. It's different from the last loaded document (prevents reload loops)
+    // 3. We're not currently loading (use ref to avoid race conditions)
+    if (documentId && documentId !== loadedDocumentIdRef.current && !isLoadingDocumentRef.current && !isLoadingDocument) {
+      // Set refs immediately to prevent double-loading
+      isLoadingDocumentRef.current = true;
+      loadedDocumentIdRef.current = documentId;
+      setIsLoadingDocument(true);
+      
+      fetchWithAuth(`/api/documents/${documentId}`)
+        .then(async (response) => {
+          if (response.ok) {
+            const data = await response.json();
+            const doc = data.document;
+            if (doc.current_version_id && doc.versions) {
+              const version = doc.versions.find((v: any) => v.id === doc.current_version_id) || doc.versions[0];
+              if (version.extracted_data) {
+                const agreementData = version.extracted_data as CreditAgreementData;
+                setExtractedData(agreementData);
+                setEditableData(agreementData);
+              }
+            } else if (doc.source_cdm_data) {
+              const agreementData = doc.source_cdm_data as CreditAgreementData;
+              setExtractedData(agreementData);
+              setEditableData(agreementData);
+            }
+            if (doc.versions && doc.versions[0] && doc.versions[0].original_text) {
+              setDocumentText(doc.versions[0].original_text);
+            }
+            if (doc.versions && doc.versions[0] && doc.versions[0].source_filename) {
+              setSourceFilename(doc.versions[0].source_filename);
+            }
+            setLoadedDocumentId(documentId);
+            addToast('Document loaded from library', 'success');
+          } else {
+            // Reset refs on failure to allow retry
+            loadedDocumentIdRef.current = null;
+            addToast('Failed to load document', 'error');
+          }
+        })
+        .catch((err) => {
+          console.error('Error loading document:', err);
+          // Reset refs on failure to allow retry
+          loadedDocumentIdRef.current = null;
+          addToast('Failed to load document', 'error');
+        })
+        .finally(() => {
+          isLoadingDocumentRef.current = false;
+          setIsLoadingDocument(false);
+        });
+    }
+  }, [searchParams, isLoadingDocument, addToast]);
 
   const borrower = editableData?.parties?.find(p => p.role.toLowerCase().includes('borrower'));
   const totalCommitment = editableData?.facilities?.reduce((sum, f) => sum + (f.commitment_amount?.amount || 0), 0) || 0;

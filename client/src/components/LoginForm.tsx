@@ -21,12 +21,14 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
   const navigate = useNavigate();
   const { login, register, authError, clearError, user } = useAuth();
 
-  // Navigate to dashboard when user is authenticated
+  // Navigate to dashboard when user is authenticated (only when modal is open)
+  // CRITICAL: Only run this when isOpen is true to prevent redirect loops
+  // when LoginForm is rendered but hidden inside DesktopAppLayout
   useEffect(() => {
-    if (user) {
+    if (isOpen && user) {
       navigate('/dashboard', { replace: true });
     }
-  }, [user, navigate]);
+  }, [isOpen, user, navigate]);
 
   const passwordRequirements = [
     { label: 'At least 12 characters', test: (p: string) => p.length >= 12 },

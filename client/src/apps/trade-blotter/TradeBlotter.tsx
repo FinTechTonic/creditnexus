@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
+import { fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData, Facility, CreditNexusLoanContext } from '@/context/FDC3Context';
-import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTriangle, Shield, XCircle, Wallet, Loader2 } from 'lucide-react';
+import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTriangle, Shield, XCircle, Wallet, Loader2, Search, ChevronDown } from 'lucide-react';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 
@@ -77,6 +78,11 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
     paymentError,
     paymentStatus
   } = state;
+  
+  const [showDealSelector, setShowDealSelector] = useState(false);
+  const [availableDeals, setAvailableDeals] = useState<any[]>([]);
+  const [loadingDeals, setLoadingDeals] = useState(false);
+  const [dealSearchQuery, setDealSearchQuery] = useState('');
 
   useEffect(() => {
     if (context?.loan) {
@@ -363,15 +369,131 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
 
       {!loanData ? (
         <Card className="border-slate-700 bg-slate-800/50">
-          <CardContent className="p-12 text-center">
+          <CardContent className="p-12">
             <div className="w-20 h-20 rounded-full bg-slate-700/50 flex items-center justify-center mx-auto mb-6">
               <FileText className="h-10 w-10 text-slate-500" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">Waiting for Loan Context</h3>
-            <p className="text-muted-foreground max-w-md mx-auto">
-              Use the Docu-Digitizer to extract loan data and broadcast it to this Trade Blotter.
-              The trade ticket will be pre-filled automatically.
+            <h3 className="text-xl font-semibold mb-2 text-center">Select a Deal to Trade</h3>
+            <p className="text-muted-foreground max-w-md mx-auto mb-6 text-center">
+              Select a deal from your portfolio or use the Docu-Digitizer to extract loan data and broadcast it here.
             </p>
+            <div className="max-w-md mx-auto">
+              <Button
+                onClick={async () => {
+                  setShowDealSelector(!showDealSelector);
+                  if (!showDealSelector && availableDeals.length === 0) {
+                    setLoadingDeals(true);
+                    try {
+                      const response = await fetchWithAuth('/api/deals?limit=20');
+                      if (response.ok) {
+                        const data = await response.json();
+                        setAvailableDeals(data.deals || []);
+                      }
+                    } catch (err) {
+                      console.error('Failed to load deals:', err);
+                    } finally {
+                      setLoadingDeals(false);
+                    }
+                  }
+                }}
+                className="w-full"
+              >
+                <Search className="h-4 w-4 mr-2" />
+                {showDealSelector ? 'Hide Deals' : 'Select Deal'}
+              </Button>
+              
+              {showDealSelector && (
+                <div className="mt-4 space-y-2 max-h-96 overflow-y-auto">
+                  <div className="relative mb-2">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search deals..."
+                      value={dealSearchQuery}
+                      onChange={(e) => setDealSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100"
+                    />
+                  </div>
+                  {loadingDeals ? (
+                    <div className="text-center py-8 text-slate-400">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                      Loading deals...
+                    </div>
+                  ) : (
+                    availableDeals
+                      .filter((deal: any) => 
+                        !dealSearchQuery || 
+                        deal.deal_id?.toLowerCase().includes(dealSearchQuery.toLowerCase()) ||
+                        deal.deal_data?.borrower_name?.toLowerCase().includes(dealSearchQuery.toLowerCase())
+                      )
+                      .map((deal: any) => (
+                        <Card
+                          key={deal.id}
+                          className="border-slate-700 bg-slate-900/50 hover:border-emerald-500/50 cursor-pointer transition-colors"
+                          onClick={async () => {
+                            try {
+                              const dealResponse = await fetchWithAuth(`/api/deals/${deal.id}`);
+                              if (dealResponse.ok) {
+                                const dealData = await dealResponse.json();
+                                const documents = dealData.documents || [];
+                                let cdmData = null;
+                                for (const doc of documents) {
+                                  const docResponse = await fetchWithAuth(`/api/documents/${doc.id}?include_cdm_data=true`);
+                                  if (docResponse.ok) {
+                                    const docData = await docResponse.json();
+                                    if (docData.cdm_data) {
+                                      cdmData = docData.cdm_data;
+                                      break;
+                                    }
+                                  }
+                                }
+                                if (cdmData) {
+                                  const today = new Date();
+                                  const settlement = addBusinessDays(today, 5);
+                                  const totalCommitment = cdmData.facilities?.reduce(
+                                    (sum: number, f: any) => sum + (parseFloat(f.commitment_amount?.amount || 0)), 0
+                                  ) || 0;
+                                  setState(prev => ({
+                                    ...prev,
+                                    loanData: cdmData as CreditAgreementData,
+                                    tradeStatus: 'pending',
+                                    settlementDate: formatDate(settlement),
+                                    tradeAmount: totalCommitment.toString(),
+                                    tradeId: null,
+                                    policyDecision: null,
+                                    policyLoading: false,
+                                    policyError: null,
+                                  }));
+                                  setShowDealSelector(false);
+                                }
+                              }
+                            } catch (err) {
+                              console.error('Failed to load deal:', err);
+                            }
+                          }}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-slate-100">{deal.deal_id}</p>
+                                {deal.deal_data?.borrower_name && (
+                                  <p className="text-sm text-slate-400">{deal.deal_data.borrower_name}</p>
+                                )}
+                              </div>
+                              <ChevronDown className="h-4 w-4 text-slate-400" />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                  )}
+                  {availableDeals.length === 0 && !loadingDeals && (
+                    <div className="text-center py-8 text-slate-400">
+                      No deals found. Create deals first or use Docu-Digitizer to extract loan data.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : (

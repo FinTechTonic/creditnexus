@@ -6,11 +6,7 @@ import json
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
-<<<<<<< Updated upstream
 from fastapi import APIRouter, Body, HTTPException, UploadFile, File, Depends, Query, Request, Form
-=======
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Request, Form, Body
->>>>>>> Stashed changes
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
@@ -1209,6 +1205,7 @@ async def list_documents(
     search: Optional[str] = Query(None, description="Search term for title or borrower name"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
+    is_demo: Optional[bool] = Query(None, description="Filter by demo documents (check deal.deal_data['is_demo'])"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1218,6 +1215,7 @@ async def list_documents(
         search: Optional search term.
         limit: Maximum number of results (default 50, max 100).
         offset: Pagination offset.
+        is_demo: Optional filter for demo documents (checks deal.deal_data['is_demo']).
         db: Database session.
         current_user: The current user (optional).
         
@@ -1227,7 +1225,8 @@ async def list_documents(
     try:
         query = db.query(Document).options(
             joinedload(Document.workflow),
-            joinedload(Document.uploaded_by_user)
+            joinedload(Document.uploaded_by_user),
+            joinedload(Document.deal)
         )
         
         if search:
@@ -1236,6 +1235,19 @@ async def list_documents(
                 (Document.title.ilike(search_term)) |
                 (Document.borrower_name.ilike(search_term))
             )
+        
+        # Filter by is_demo if requested (check deal.deal_data['is_demo'])
+        if is_demo is not None:
+            if is_demo:
+                # Only include documents where deal.deal_data['is_demo'] == True
+                query = query.join(Deal).filter(
+                    Deal.deal_data['is_demo'].astext == 'true'
+                )
+            else:
+                # Exclude demo documents
+                query = query.outerjoin(Deal).filter(
+                    (Deal.id.is_(None)) | (Deal.deal_data['is_demo'].astext != 'true')
+                )
         
         total = query.count()
         
@@ -1246,6 +1258,27 @@ async def list_documents(
             doc_dict = doc.to_dict()
             doc_dict["workflow_state"] = doc.workflow.state if doc.workflow else None
             doc_dict["uploaded_by_name"] = doc.uploaded_by_user.display_name if doc.uploaded_by_user else None
+            # Add is_demo flag from deal if available
+            if doc.deal and doc.deal.deal_data:
+                doc_dict["is_demo"] = doc.deal.deal_data.get("is_demo", False)
+            else:
+                doc_dict["is_demo"] = False
+            # Add has_cdm_data flag - check if document has CDM data in any version
+            has_cdm = False
+            if doc.source_cdm_data:
+                has_cdm = True
+            elif doc.current_version_id:
+                version = db.query(DocumentVersion).filter(
+                    DocumentVersion.id == doc.current_version_id
+                ).first()
+                if version and version.extracted_data:
+                    has_cdm = True
+            elif doc.versions:
+                # Check latest version
+                latest_version = sorted(doc.versions, key=lambda v: v.version_number or 0, reverse=True)[0]
+                if latest_version and latest_version.extracted_data:
+                    has_cdm = True
+            doc_dict["has_cdm_data"] = has_cdm
             result.append(doc_dict)
         
         return {
@@ -5235,18 +5268,27 @@ async def settle_trade_with_payment(
         
         payment_payload = payment_request.payment_payload if payment_request else None
         
-        payment_result = await payment_service.process_payment_flow(
-            amount=amount,
-            currency=currency,
-            payer=payer,
-            receiver=receiver,
-            payment_type="trade_settlement",
-            payment_payload=payment_payload,
-            cdm_reference={
-                "trade_id": trade_id,
-                "event_type": "TradeExecution"
-            }
-        )
+        try:
+            payment_result = await payment_service.process_payment_flow(
+                amount=amount,
+                currency=currency,
+                payer=payer,
+                receiver=receiver,
+                payment_type="trade_settlement",
+                payment_payload=payment_payload,
+                cdm_reference={
+                    "trade_id": trade_id,
+                    "event_type": "TradeExecution"
+                }
+            )
+        except HTTPException as e:
+            raise
+        except Exception as e:
+            logger.error(f"Payment flow failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail={"status": "error", "message": f"Payment processing failed: {str(e)}"}
+            )
         
         # Step 5: Handle payment required (402 response)
         if payment_payload is None or payment_result.get("status") != "settled":
@@ -6571,12 +6613,19 @@ async def generate_document(
                     detail=f"Document with ID {request.document_id} not found"
                 )
             
-            # Check if user has access to this document
-            if document.uploaded_by != current_user.id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="You do not have access to this document"
-                )
+            # Check if user has access to this document (skip check for demo documents)
+            # Demo documents may not have uploaded_by set
+            if document.uploaded_by is not None and document.uploaded_by != current_user.id:
+                # Check if this is a demo document by checking deal.is_demo column
+                is_demo = False
+                if document.deal:
+                    is_demo = getattr(document.deal, 'is_demo', False)
+                
+                if not is_demo:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="You do not have access to this document"
+                    )
             
             # Try to get CDM data from document
             if document.source_cdm_data:
@@ -6619,15 +6668,18 @@ async def generate_document(
         
         # Generate document
         generation_service = DocumentGenerationService()
-        generated_doc = generation_service.generate_document(
-            db=db,
-            template_id=request.template_id,
-            cdm_data=cdm_agreement,
-            user_id=current_user.id,
-            source_document_id=source_document_id,
-            deal_id=request.deal_id,
-            field_overrides=request.field_overrides
-        )
+        try:
+            generated_doc = generation_service.generate_document(
+                db=db,
+                template_id=request.template_id,
+                cdm_data=cdm_agreement,
+                user_id=current_user.id,
+                source_document_id=source_document_id,
+                deal_id=request.deal_id,
+                field_overrides=request.field_overrides
+            )
+        except Exception as e:
+            raise
         
         return {
             "id": generated_doc.id,
@@ -7889,27 +7941,36 @@ async def wallet_authentication(
 async def list_deals(
     status: Optional[str] = Query(None, description="Filter by status"),
     deal_type: Optional[str] = Query(None, description="Filter by deal type"),
+    is_demo: Optional[bool] = Query(None, description="Filter by demo status"),
     search: Optional[str] = Query(None, description="Search by deal_id or applicant"),
     limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """List deals with filtering and pagination.
     
     Args:
         status: Optional filter by status.
         deal_type: Optional filter by deal type.
+        is_demo: Optional filter by demo status.
         search: Optional search term for deal_id or applicant.
         limit: Maximum number of results.
         offset: Pagination offset.
         db: Database session.
-        current_user: The current user.
+        current_user: The current user (optional, but required for filtering).
         
     Returns:
         List of deals.
     """
     try:
+        # Require authentication
+        if not current_user:
+            raise HTTPException(
+                status_code=401,
+                detail={"status": "error", "message": "Authentication required"}
+            )
+        
         query = db.query(Deal)
         
         # Filter by user (unless admin)
@@ -7921,6 +7982,8 @@ async def list_deals(
             query = query.filter(Deal.status == status)
         if deal_type:
             query = query.filter(Deal.deal_type == deal_type)
+        if is_demo is not None:
+            query = query.filter(Deal.is_demo == is_demo)
         if search:
             search_term = f"%{search}%"
             # Join with User table for search
@@ -7952,19 +8015,26 @@ async def list_deals(
 async def get_deal(
     deal_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """Get a specific deal with related data.
     
     Args:
         deal_id: The deal ID.
         db: Database session.
-        current_user: The current user.
+        current_user: The current user (optional, but required for authorization).
         
     Returns:
         The deal with documents, notes, and timeline.
     """
     try:
+        # Require authentication
+        if not current_user:
+            raise HTTPException(
+                status_code=401,
+                detail={"status": "error", "message": "Authentication required"}
+            )
+        
         deal = db.query(Deal).filter(Deal.id == deal_id).first()
         
         if not deal:
@@ -8011,19 +8081,26 @@ async def get_deal(
 async def get_deal_template_recommendations(
     deal_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """Get template recommendations for a deal.
     
     Args:
         deal_id: The deal ID.
         db: Database session.
-        current_user: The current user.
+        current_user: The current user (optional, but required for authorization).
         
     Returns:
         Template recommendations with missing required, optional, and generated templates.
     """
     try:
+        # Require authentication
+        if not current_user:
+            raise HTTPException(
+                status_code=401,
+                detail={"status": "error", "message": "Authentication required"}
+            )
+        
         from app.services.template_recommendation_service import TemplateRecommendationService
         
         deal = db.query(Deal).filter(Deal.id == deal_id).first()
@@ -8215,7 +8292,7 @@ async def list_deal_notes(
     limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """List notes for a deal.
     
@@ -8269,7 +8346,7 @@ async def get_deal_note(
     deal_id: int,
     note_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """Get a specific deal note.
     
@@ -9013,11 +9090,347 @@ async def search_users(
         )
 
 
+# ============================================================================
+# Demo Data Seeding Endpoints
+# ============================================================================
+
+class DemoSeedRequest(BaseModel):
+    """Request model for demo data seeding."""
+    seed_users: bool = True
+    seed_templates: bool = True
+    seed_policies: bool = True
+    seed_policy_templates: bool = True
+    generate_deals: bool = False
+    deal_count: int = 12
+    dry_run: bool = False
+
+
+class DemoSeedResponse(BaseModel):
+    """Response model for demo data seeding."""
+    status: str
+    created: Dict[str, int] = {}
+    updated: Dict[str, int] = {}
+    errors: Dict[str, List[str]] = {}
+    preview: Optional[Dict[str, Any]] = None
+    user_credentials: Optional[List[Dict[str, str]]] = None
+
+
+class SeedingStatusResponse(BaseModel):
+    """Response model for seeding status."""
+    stage: Optional[str] = None
+    progress: float = 0.0
+    total: int = 0
+    current: int = 0
+    errors: List[str] = []
+    status: str = "pending"
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    all_stages: Optional[Dict[str, Any]] = None
+
+
+@router.post("/demo/seed", response_model=DemoSeedResponse)
+async def seed_demo_data(
+    request: DemoSeedRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """
+    Seed demo data (users, templates, policies).
+    
+    Requires admin authentication.
+    """
+    # Check admin permission
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    
+    try:
+        from app.services.demo_data_service import DemoDataService
+        
+        service = DemoDataService(db)
+        results = service.seed_all(
+            seed_users=request.seed_users,
+            seed_templates=request.seed_templates,
+            seed_policies=request.seed_policies,
+            seed_policy_templates=request.seed_policy_templates,
+            dry_run=request.dry_run
+        )
+        
+        # Generate deals if requested
+        if request.generate_deals and not request.dry_run:
+            try:
+                # Verify applicant users exist before generating deals
+                from app.db.models import User, UserRole
+                applicant_count = db.query(User).filter(User.role == UserRole.APPLICANT.value).count()
+                if applicant_count == 0:
+                    # Try to seed users with force=True if no applicants exist
+                    logger.warning("No applicant users found. Attempting to seed users with force=True...")
+                    user_result = service.seed_users(force=True, dry_run=False)
+                    applicant_count = db.query(User).filter(User.role == UserRole.APPLICANT.value).count()
+                    if applicant_count == 0:
+                        raise ValueError(
+                            "No applicant users found. Please seed demo users first. "
+                            "User seeding returned 0 created/updated. "
+                            "You may need to manually create users with APPLICANT role."
+                        )
+                    logger.info(f"Seeded users: {user_result['created']} created, {user_result['updated']} updated")
+                    # Update results with user seeding info
+                    if "users" not in results:
+                        results["users"] = user_result
+                    else:
+                        results["users"]["created"] += user_result.get("created", 0)
+                        results["users"]["updated"] += user_result.get("updated", 0)
+                
+                logger.info(f"Generating {request.deal_count} demo deals... (found {applicant_count} applicant users)")
+                deals = service.create_demo_deals(count=request.deal_count)
+                results["deals"] = {
+                    "created": len(deals),
+                    "updated": 0,
+                    "errors": []
+                }
+                logger.info(f"Successfully generated {len(deals)} demo deals")
+            except Exception as e:
+                logger.error(f"Error generating demo deals: {e}", exc_info=True)
+                results["deals"] = {
+                    "created": 0,
+                    "updated": 0,
+                    "errors": [str(e)]
+                }
+        
+        # Format response
+        created = {k: v.get("created", 0) for k, v in results.items()}
+        updated = {k: v.get("updated", 0) for k, v in results.items()}
+        errors = {k: v.get("errors", []) for k, v in results.items()}
+        
+        # Extract user credentials if users were seeded
+        user_credentials = None
+        if "users" in results and "user_credentials" in results["users"]:
+            user_credentials = results["users"]["user_credentials"]
+        
+        # Audit log
+        try:
+            log_audit_action(
+                db=db,
+                action=AuditAction.CREATE,
+                target_type="demo_data",
+                user_id=current_user.id,
+                metadata={
+                    "seed_users": request.seed_users,
+                    "seed_templates": request.seed_templates,
+                    "seed_policies": request.seed_policies,
+                    "seed_policy_templates": request.seed_policy_templates,
+                    "dry_run": request.dry_run,
+                    "created": created,
+                    "updated": updated,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log demo data seeding audit: {e}")
+        
+        return DemoSeedResponse(
+            status="success" if not any(errors.values()) else "partial",
+            created=created,
+            updated=updated,
+            errors=errors,
+            preview=results if request.dry_run else None,
+            user_credentials=user_credentials
+        )
+        
+    except Exception as e:
+        logger.error(f"Error seeding demo data: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to seed demo data: {str(e)}"}
+        )
+
+
+@router.get("/demo/seed/status", response_model=SeedingStatusResponse)
+async def get_seeding_status(
+    stage: Optional[str] = Query(None, description="Specific stage to get status for"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current seeding status.
+    
+    Returns status for a specific stage or all stages.
+    """
+    try:
+        from app.services.demo_data_service import DemoDataService
+        
+        service = DemoDataService(db)
+        status = service.get_seeding_status(stage=stage)
+        
+        if stage:
+            if status:
+                return SeedingStatusResponse(**status)
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"status": "error", "message": f"Status not found for stage: {stage}"}
+                )
+        else:
+            return SeedingStatusResponse(all_stages=status)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting seeding status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to get seeding status: {str(e)}"}
+        )
+
+
+@router.post("/demo/seed/users", response_model=DemoSeedResponse)
+async def seed_users(
+    force: bool = Query(False, description="Force update existing users"),
+    dry_run: bool = Query(False, description="Preview without committing"),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """Seed demo users only."""
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        from app.services.demo_data_service import DemoDataService
+        
+        service = DemoDataService(db)
+        result = service.seed_users(force=force, dry_run=dry_run)
+        
+        return DemoSeedResponse(
+            status="success" if not result["errors"] else "partial",
+            created={"users": result["created"]},
+            updated={"users": result["updated"]},
+            errors={"users": result["errors"]},
+            user_credentials=result.get("user_credentials")
+        )
+    except Exception as e:
+        logger.error(f"Error seeding users: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to seed users: {str(e)}")
+
+
+@router.post("/demo/seed/templates", response_model=DemoSeedResponse)
+async def seed_templates(
+    dry_run: bool = Query(False, description="Preview without committing"),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """Seed templates only."""
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        from app.services.demo_data_service import DemoDataService
+        
+        service = DemoDataService(db)
+        result = service.seed_templates(dry_run=dry_run)
+        
+        return DemoSeedResponse(
+            status="success" if not result["errors"] else "partial",
+            created={"templates": result["created"]},
+            updated={"templates": result["updated"]},
+            errors={"templates": result["errors"]}
+        )
+    except Exception as e:
+        logger.error(f"Error seeding templates: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to seed templates: {str(e)}")
+
+
+@router.post("/demo/seed/policies", response_model=DemoSeedResponse)
+async def seed_policies(
+    dry_run: bool = Query(False, description="Preview without committing"),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """Seed policies only."""
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        from app.services.demo_data_service import DemoDataService
+        
+        service = DemoDataService(db)
+        result = service.seed_policies(dry_run=dry_run)
+        
+        return DemoSeedResponse(
+            status="success" if not result["errors"] else "partial",
+            created={"policies": result["created"]},
+            updated={"policies": result["updated"]},
+            errors={"policies": result["errors"]}
+        )
+    except Exception as e:
+        logger.error(f"Error seeding policies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to seed policies: {str(e)}")
+
+
+@router.delete("/demo/seed/reset")
+async def reset_demo_data(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """
+    Reset demo data (delete all demo deals, documents, etc.).
+    
+    WARNING: This will delete all demo data. Use with caution.
+    """
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Delete demo deals and related data
+        # This is a placeholder - implement actual deletion logic
+        demo_deals = db.query(Deal).filter(Deal.deal_data["is_demo"].astext == "true").all()
+        
+        deleted_count = 0
+        for deal in demo_deals:
+            # Delete related documents, workflows, etc.
+            db.query(Document).filter(Document.deal_id == deal.id).delete()
+            db.query(DealNote).filter(DealNote.deal_id == deal.id).delete()
+            db.delete(deal)
+            deleted_count += 1
+        
+        db.commit()
+        
+        # Audit log
+        try:
+            log_audit_action(
+                db=db,
+                action=AuditAction.DELETE,
+                target_type="demo_data",
+                user_id=current_user.id,
+                metadata={"deleted_deals": deleted_count}
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log demo data reset audit: {e}")
+        
+        return {
+            "status": "success",
+            "message": f"Reset {deleted_count} demo deal(s) and related data"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error resetting demo data: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to reset demo data: {str(e)}")
+
 # Recovery endpoints
+class RecoverySMSRequest(BaseModel):
+    """Request model for sending recovery SMS."""
+    phone: str = Field(..., description="Recipient phone number")
+    message: str = Field(..., description="SMS message content")
+
 @router.post("/recovery/send-sms")
 async def send_recovery_sms(
+<<<<<<< HEAD
     phone: str = Body(..., description="Recipient phone number"), # Changed Field to Body
     message: str = Body(..., description="SMS message content"), # Changed Field to Body
+=======
+    request: RecoverySMSRequest,
+>>>>>>> origin/main
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
@@ -9027,7 +9440,7 @@ async def send_recovery_sms(
     
     try:
         twilio_service = TwilioService()
-        result = twilio_service.send_sms(phone, message)
+        result = twilio_service.send_sms(request.phone, request.message)
         
         # Log the action
         log_audit_action(
@@ -9035,7 +9448,7 @@ async def send_recovery_sms(
             action=AuditAction.CREATE,
             target_type="recovery_sms",
             user_id=current_user.id,
-            metadata={"phone": phone, "status": result["status"]}
+            metadata={"phone": request.phone, "status": result["status"]}
         )
         db.commit()
         

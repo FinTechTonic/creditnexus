@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -24,7 +25,8 @@ import {
   Sparkles,
   Filter,
   GitCompare,
-  X
+  X,
+  Edit2
 } from 'lucide-react';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
 import { WorkflowActions } from './WorkflowActions';
@@ -102,6 +104,7 @@ interface DocumentHistoryProps {
 
 export function DocumentHistory({ onViewData, onGenerateFromTemplate }: DocumentHistoryProps) {
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<DocumentDetail | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<DocumentVersion | null>(null);
@@ -564,6 +567,18 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
                           Open in Digitizer
                         </Button>
                       )}
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border-emerald-600/30"
+                        onClick={() => {
+                          // Navigate to document parser with document ID
+                          window.location.href = `/app/document-parser?documentId=${selectedDocument.id}`;
+                        }}
+                      >
+                        <Edit2 className="h-4 w-4 mr-2" />
+                        Edit CDM Data
+                      </Button>
                     </div>
                   </div>
                   <pre className="text-xs font-mono bg-slate-900 p-4 rounded-lg overflow-auto max-h-96 text-slate-300">
@@ -757,7 +772,21 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
                       </div>
                     </div>
                   </div>
-                  <ChevronRight className="h-5 w-5 text-slate-400" />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/app/document-parser?documentId=${doc.id}`);
+                      }}
+                      className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                      title="Edit CDM Data"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <ChevronRight className="h-5 w-5 text-slate-400" />
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DocumentParser } from '@/apps/docu-digitizer/DocumentParser';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
@@ -16,11 +16,12 @@ import { DealDetail } from '@/components/DealDetail';
 import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2 } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext } from '@/context/FDC3Context';
 import VerificationDashboard from '@/components/VerificationDashboard';
+import { DemoDataDashboard } from '@/components/DemoDataDashboard';
 import RiskWarRoom from '@/components/RiskWarRoom';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
@@ -36,7 +37,7 @@ import {
   PERMISSION_DEAL_VIEW_OWN,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals';
 
 interface AppConfig {
   id: AppView;
@@ -81,6 +82,13 @@ const mainApps: AppConfig[] = [
 ];
 
 const sidebarApps: AppConfig[] = [
+  {
+    id: 'demo-data',
+    name: 'Demo Data',
+    icon: <Database className="h-5 w-5 text-indigo-400" />,
+    description: 'Seed and manage demo data',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+  },
   {
     id: 'verification-demo',
     name: 'Verification Demo',
@@ -175,8 +183,34 @@ export function DesktopAppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   
+  // Track component instance to detect re-mounts
+  const componentInstanceRef = useRef<string>(Math.random().toString(36).substring(7));
+  const mountCountRef = useRef(0);
+  const previousPathnameRef = useRef<string>(location.pathname);
+  
+  // Track unexpected route changes
+  // NOTE: This useEffect is moved after activeApp declaration to avoid TDZ error
+  
   // Initialize activeApp from current route to avoid mismatches
+  // CRITICAL: Persist activeApp in sessionStorage to survive component re-mounts
   const getInitialApp = (): AppView => {
+    // Valid app names for validation
+    const validApps: AppView[] = [
+      'dashboard', 'applications', 'admin-signups', 'calendar', 'deals',
+      'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
+      'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
+      'policy-editor', 'library'
+    ];
+    
+    // Try to restore from sessionStorage first
+    if (typeof window !== 'undefined') {
+      const persisted = sessionStorage.getItem('creditnexus_activeApp');
+      if (persisted && validApps.includes(persisted as AppView)) {
+        return persisted as AppView;
+      }
+    }
+    
+    // Fall back to route-based detection
     const pathToApp: Record<string, AppView> = {
       '/dashboard': 'dashboard',
       '/dashboard/applications': 'applications',
@@ -189,6 +223,7 @@ export function DesktopAppLayout() {
       '/app/green-lens': 'green-lens',
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
+      '/app/demo-data': 'demo-data',
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
       '/library': 'library',
@@ -205,7 +240,30 @@ export function DesktopAppLayout() {
     return result;
   };
   
-  const [activeApp, setActiveApp] = useState<AppView>(getInitialApp());
+  const [activeAppState, setActiveAppState] = useState<AppView>(getInitialApp());
+  
+  // Wrap setActiveApp to persist to sessionStorage
+  const setActiveApp = useCallback((value: AppView | ((prev: AppView) => AppView)) => {
+    setActiveAppState((prev) => {
+      const newValue = typeof value === 'function' ? value(prev) : value;
+      // Persist to sessionStorage
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('creditnexus_activeApp', newValue);
+      }
+      return newValue;
+    });
+  }, []);
+  
+  const activeApp = activeAppState;
+  
+  // Track unexpected route changes (moved here to avoid TDZ error)
+  // NOTE: Do NOT update previousPathnameRef here - let the sync useEffect handle it
+  useEffect(() => {
+    if (location.pathname !== previousPathnameRef.current) {
+      // DO NOT update previousPathnameRef here - the sync useEffect will handle it
+    }
+  }, [location.pathname, activeApp]);
+  
   const [hasBroadcast, setHasBroadcast] = useState(false);
   const [viewData, setViewData] = useState<CreditAgreementData | null>(null);
   const [extractionContent, setExtractionContent] = useState<string | null>(null);
@@ -231,6 +289,8 @@ export function DesktopAppLayout() {
   const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
   const isNavigatingRef = useRef(false);
   const lastNavigatedPathRef = useRef<string | null>(null);
+  const visibleMainAppsRef = useRef<typeof mainApps>([]);
+  const visibleSidebarAppsRef = useRef<typeof sidebarApps>([]);
 
   // Filter apps based on permissions
   const visibleMainApps = useMemo(() => {
@@ -277,17 +337,51 @@ export function DesktopAppLayout() {
     });
   }, [hasPermission, hasAnyPermission, hasAllPermissions]);
 
+  // Keep refs in sync with current values
+  useEffect(() => {
+    visibleMainAppsRef.current = visibleMainApps;
+    visibleSidebarAppsRef.current = visibleSidebarApps;
+  }, [visibleMainApps, visibleSidebarApps]);
+
+  // Helper function to check if user has permission for an app
+  const hasPermissionForApp = useCallback((appId: AppView): boolean => {
+    const allApps = [...mainApps, ...sidebarApps];
+    const appConfig = allApps.find(a => a.id === appId);
+    if (!appConfig) {
+      return false;
+    }
+    
+    if (!appConfig.requiredPermission && !appConfig.requiredPermissions) {
+      return true; // No permission required
+    }
+    
+    let hasPerm = false;
+    if (appConfig.requiredPermission) {
+      hasPerm = hasPermission(appConfig.requiredPermission);
+      return hasPerm;
+    }
+    
+    if (appConfig.requiredPermissions) {
+      if (appConfig.requireAll) {
+        hasPerm = hasAllPermissions(appConfig.requiredPermissions);
+      } else {
+        hasPerm = hasAnyPermission(appConfig.requiredPermissions);
+      }
+      return hasPerm;
+    }
+    
+    return false;
+  }, [hasPermission, hasAnyPermission, hasAllPermissions]);
 
   // Sync activeApp with route
   useEffect(() => {
-    // Skip sync if we're in the middle of a navigation
-    if (isNavigatingRef.current) {
-      // Only sync if we've reached the target path
-      if (lastNavigatedPathRef.current && location.pathname !== lastNavigatedPathRef.current) {
-        return;
-      }
-      // If we've reached the target path, allow sync to proceed
+    // Skip if pathname hasn't actually changed (prevents unnecessary re-runs)
+    if (location.pathname === previousPathnameRef.current) {
+      return;
     }
+    
+    // Update ref to track previous pathname
+    previousPathnameRef.current = location.pathname;
     
     const pathToApp: Record<string, AppView> = {
       '/dashboard': 'dashboard',
@@ -301,19 +395,28 @@ export function DesktopAppLayout() {
       '/app/green-lens': 'green-lens',
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
+      '/app/demo-data': 'demo-data',
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
       '/library': 'library',
     };
     
+    // Get base pathname (without query parameters)
+    const basePathname = location.pathname.split('?')[0];
+    
     // Handle policy-editor routes with policyId parameter
-    let app = pathToApp[location.pathname];
-    if (!app && location.pathname.startsWith('/app/policy-editor')) {
+    let app = pathToApp[basePathname];
+    if (!app && basePathname.startsWith('/app/policy-editor')) {
       app = 'policy-editor';
     }
+    // Handle routes that start with /app/ (for query parameters) - use basePathname
+    if (!app && basePathname.startsWith('/app/')) {
+      app = pathToApp[basePathname];
+    }
     // Handle deal detail routes (must come after checking exact path)
-    if (!app && location.pathname.startsWith('/dashboard/deals/')) {
-      app = 'deals';
+    // IMPORTANT: Check for deal detail routes BEFORE checking exact path matches
+    if (!app && basePathname.startsWith('/dashboard/deals/') && basePathname !== '/dashboard/deals') {
+      app = 'deals';  // Set app to 'deals' but don't navigate away from detail page
     }
     
     // Only sync if the pathname is actually in our mapping (not a route we don't handle)
@@ -321,13 +424,89 @@ export function DesktopAppLayout() {
       return; // Don't update activeApp if pathname doesn't map to an app
     }
     
-    if (app !== activeApp) {
-      setActiveApp(app);
+    // CRITICAL: Skip sync only if we're still navigating AND haven't reached the target path yet
+    // This allows sync to proceed once we've reached the target path
+    if (isNavigatingRef.current && lastNavigatedPathRef.current) {
+      const targetBasePath = lastNavigatedPathRef.current.split('?')[0];
+      if (basePathname !== targetBasePath) {
+        return; // Still navigating to target, don't sync yet
+      }
+      // We've reached the target path, clear the flag and proceed with sync
+      // Clear flags BEFORE proceeding with sync to avoid race conditions
+      isNavigatingRef.current = false;
+      lastNavigatedPathRef.current = null;
     }
-  }, [location.pathname, activeApp]); // Include activeApp to track changes
+    
+    // CRITICAL: Check permissions before syncing - redirect to dashboard if user doesn't have permission
+    const hasPerm = hasPermissionForApp(app);
+    if (!hasPerm) {
+      if (location.pathname !== '/dashboard') {
+        isNavigatingRef.current = true;
+        lastNavigatedPathRef.current = '/dashboard';
+        navigate('/dashboard', { replace: true });
+      }
+      if (activeApp !== 'dashboard') {
+        setActiveApp('dashboard');
+      }
+      return;
+    }
+    
+    // CRITICAL: If we're on a route with query parameters that matches the app, just update activeApp
+    // This prevents redirects when navigating to routes with query parameters
+    if (location.pathname.includes('?') && basePathname in pathToApp && pathToApp[basePathname] === app) {
+      // We're on a route with query parameters that matches the app - just update activeApp without navigation
+      if (app !== activeApp) {
+        setActiveApp(app);
+      }
+      return; // Don't proceed with normal sync logic
+    }
+    
+    // Only update if different to avoid unnecessary re-renders and potential loops
+    // CRITICAL: Don't trigger navigation when on a deal detail page
+    if (app !== activeApp) {
+      // CRITICAL: Check if app is in visible apps before setting (permission check)
+      // Use refs to avoid dependency on visibleMainApps/visibleSidebarApps which change on re-render
+      const allVisibleApps = [...visibleMainAppsRef.current, ...visibleSidebarAppsRef.current];
+      const isAppVisible = allVisibleApps.some(visibleApp => visibleApp.id === app);
+      if (!isAppVisible) {
+        if (location.pathname !== '/dashboard') {
+          isNavigatingRef.current = true;
+          lastNavigatedPathRef.current = '/dashboard';
+          navigate('/dashboard', { replace: true });
+        }
+        if (activeApp !== 'dashboard') {
+          setActiveApp('dashboard');
+        }
+        return;
+      }
+      // CRITICAL: Use functional update to ensure we're using the latest state
+      setActiveApp((prevApp) => {
+        return app;
+      });
+    }
+  }, [location.pathname, navigate, activeApp, hasPermissionForApp]); // CRITICAL: Include activeApp and hasPermissionForApp since they're used in the effect
 
   // Update route when activeApp changes
   const handleAppChange = (app: AppView) => {
+    // CRITICAL: Check permissions before navigating - redirect to dashboard if user doesn't have permission
+    if (!hasPermissionForApp(app)) {
+      if (location.pathname !== '/dashboard') {
+        isNavigatingRef.current = true;
+        lastNavigatedPathRef.current = '/dashboard';
+        navigate('/dashboard', { replace: true });
+      }
+      if (activeApp !== 'dashboard') {
+        setActiveApp('dashboard');
+      }
+      return;
+    }
+    
+    // Don't navigate if we're on a deal detail route and trying to go to deals list
+    // This prevents redirecting away from deal detail pages
+    if (app === 'deals' && location.pathname.startsWith('/dashboard/deals/') && location.pathname !== '/dashboard/deals') {
+      return; // Stay on the detail page
+    }
+    
     const appToPath: Record<AppView, string> = {
       'dashboard': '/dashboard',
       'applications': '/dashboard/applications',
@@ -340,24 +519,33 @@ export function DesktopAppLayout() {
       'green-lens': '/app/green-lens',
       'ground-truth': '/app/ground-truth',
       'verification-demo': '/app/verification-demo',
+      'demo-data': '/app/demo-data',
       'risk-war-room': '/app/risk-war-room',
       'policy-editor': '/app/policy-editor',
       'library': '/library',
     };
     const path = appToPath[app];
     
+    // CRITICAL: Don't navigate if we're already on the correct base path (even with query params)
+    // This prevents redirects when navigating to routes with query parameters
+    const currentBasePath = location.pathname.split('?')[0];
+    if (path && path === currentBasePath) {
+      // We're already on the correct route (possibly with query params) - just update activeApp
+      if (app !== activeApp) {
+        setActiveApp(app);
+      }
+      return; // Don't navigate
+    }
+    
     if (path && path !== location.pathname) {
+      // CRITICAL FIX: Set activeApp BEFORE navigating to ensure UI updates immediately
+      // This fixes the issue where the sync effect was skipping due to ref timing
+      setActiveApp(app);
+      
       isNavigatingRef.current = true;
       lastNavigatedPathRef.current = path;
       navigate(path, { replace: false });
-      // Reset flag after navigation completes
-      setTimeout(() => {
-        isNavigatingRef.current = false;
-        // Clear the last navigated path if we've reached it
-        if (lastNavigatedPathRef.current === location.pathname) {
-          lastNavigatedPathRef.current = null;
-        }
-      }, 300);
+      // Flags will be cleared by the useEffect when the route changes
     }
   };
 
@@ -684,6 +872,7 @@ export function DesktopAppLayout() {
           )}
           {activeApp === 'ground-truth' && <GroundTruthDashboard />}
           {activeApp === 'verification-demo' && <VerificationDashboard />}
+          {activeApp === 'demo-data' && <DemoDataDashboard />}
           {activeApp === 'risk-war-room' && <RiskWarRoom />}
           {activeApp === 'policy-editor' && <PolicyEditor />}
         </main>

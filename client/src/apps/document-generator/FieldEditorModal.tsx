@@ -21,6 +21,7 @@ interface FieldEditorModalProps {
   templateId: number | null;
   cdmData: CreditAgreementData;
   missingFields?: string[];
+  showAllFields?: boolean; // If true, show all fields not just missing ones
 }
 
 interface FieldDefinition {
@@ -39,6 +40,7 @@ export function FieldEditorModal({
   templateId,
   cdmData,
   missingFields = [],
+  showAllFields = false,
 }: FieldEditorModalProps) {
   const [fields, setFields] = useState<FieldDefinition[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, any>>({});
@@ -82,17 +84,17 @@ export function FieldEditorModal({
         };
       });
 
-      // Filter to only show missing fields
-      const missingFieldDefs = fieldDefs.filter(f => 
-        f.value === null || f.value === undefined || f.value === ''
-      );
+      // Filter fields based on showAllFields prop
+      const fieldsToShow = showAllFields 
+        ? fieldDefs 
+        : fieldDefs.filter(f => f.value === null || f.value === undefined || f.value === '');
 
-      setFields(missingFieldDefs);
+      setFields(fieldsToShow);
       
       // Initialize field values
       const initialValues: Record<string, any> = {};
-      missingFieldDefs.forEach(field => {
-        initialValues[field.path] = field.value || '';
+      fieldsToShow.forEach(field => {
+        initialValues[field.path] = field.value ?? '';
       });
       setFieldValues(initialValues);
     } catch (err) {
@@ -321,8 +323,8 @@ export function FieldEditorModal({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-800 border-slate-700">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-slate-100">
-            <AlertCircle className="w-5 h-5 text-yellow-400" />
-            Fill Missing Required Fields
+            <AlertCircle className={`w-5 h-5 ${showAllFields ? 'text-emerald-400' : 'text-yellow-400'}`} />
+            {showAllFields ? 'Edit CDM Fields' : 'Fill Missing Required Fields'}
           </DialogTitle>
         </DialogHeader>
 

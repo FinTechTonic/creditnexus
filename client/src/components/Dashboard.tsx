@@ -43,7 +43,9 @@ import {
   PERMISSION_TEMPLATE_GENERATE,
   PERMISSION_DEAL_VIEW,
   PERMISSION_DEAL_VIEW_OWN,
+  PERMISSION_SATELLITE_VIEW,
 } from '@/utils/permissions';
+import { VerificationWidget } from '@/components/VerificationWidget';
 
 interface PortfolioAnalytics {
   summary: {
@@ -822,6 +824,24 @@ export function Dashboard() {
 
         {/* Clause Cache Editor */}
         <ClauseEditor className="mt-6" />
+      </PermissionGate>
+
+      {/* Asset Verification Widget */}
+      <PermissionGate permission={PERMISSION_SATELLITE_VIEW}>
+        <div className="mt-6">
+          <VerificationWidget
+            embedded={true}
+            defaultCollapsed={false}
+            onViewFull={() => {
+              // Navigate to full verification dashboard
+              navigate('/app/ground-truth');
+            }}
+            onVerificationComplete={(result) => {
+              // Optional: Handle verification completion
+              console.log('Verification completed:', result);
+            }}
+          />
+        </div>
       </PermissionGate>
     </div>
   );

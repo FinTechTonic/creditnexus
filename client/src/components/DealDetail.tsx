@@ -19,7 +19,8 @@ import {
   Eye,
   Edit,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  ChevronRight
 } from 'lucide-react';
 import { SkeletonDocumentList } from '@/components/ui/skeleton';
 import { DealTimeline, type TimelineEvent as DealTimelineEvent } from '@/components/DealTimeline';
@@ -411,14 +412,35 @@ export function DealDetail() {
                         Created: {new Date(doc.created_at).toLocaleDateString()}
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate(`/dashboard/documents/${doc.id}`)}
-                      className="text-slate-400 hover:text-slate-100"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/app/document-parser?documentId=${doc.id}`)}
+                        className="text-slate-400 hover:text-slate-100"
+                        title="View extraction"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/app/ground-truth?documentId=${doc.id}`)}
+                        className="text-slate-400 hover:text-slate-100"
+                        title="Verify document"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/dashboard/documents/${doc.id}`)}
+                        className="text-slate-400 hover:text-slate-100"
+                        title="View document details"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

@@ -569,15 +569,15 @@ class PolicyDecision(Base):
     
     # Foreign keys to CreditNexus entities
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
-    loan_asset_id = Column(Integer, ForeignKey("loan_assets.id"), nullable=True)
+    # Note: loan_asset_id is NOT a foreign key because LoanAsset uses SQLModel (separate table creation)
+    # The loan_assets table may not exist when PolicyDecision is created
+    loan_asset_id = Column(Integer, nullable=True, index=True)  # Reference without FK constraint
     deal_id = Column(Integer, ForeignKey("deals.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     # Relationships
     document = relationship("Document", backref="policy_decisions")
     deal = relationship("Deal", backref="policy_decisions")
-    # Note: LoanAsset is a SQLModel in app.models.loan_asset, not in app.db.models
-    # Relationship will work if loan_assets table exists
     user = relationship("User", backref="policy_decisions")
     
     def to_dict(self):
@@ -1322,6 +1322,8 @@ class Deal(Base):
     
     deal_type = Column(String(50), nullable=True, index=True)  # loan_application, debt_sale, loan_purchase, etc.
     
+    is_demo = Column(Boolean, default=False, nullable=False, index=True)  # Flag for demo/seed data
+    
     deal_data = Column(JSONB, nullable=True)  # Deal parameters, metadata
     
     folder_path = Column(String(500), nullable=True)  # File system path for deal documents
@@ -1345,6 +1347,7 @@ class Deal(Base):
             "application_id": self.application_id,
             "status": self.status,
             "deal_type": self.deal_type,
+            "is_demo": self.is_demo,
             "deal_data": self.deal_data,
             "folder_path": self.folder_path,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -1542,6 +1545,50 @@ class PolicyTemplate(Base):
             "metadata": self.metadata_,
             "is_system_template": self.is_system_template,
             "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DemoSeedingStatus(Base):
+    """Model for tracking demo data seeding progress."""
+    
+    __tablename__ = "demo_seeding_status"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    stage = Column(String(50), nullable=False, index=True)  # users, templates, deals, documents, etc.
+    
+    progress = Column(Numeric(5, 2), nullable=False, default=0.00)  # 0.00 to 100.00
+    
+    total = Column(Integer, nullable=False, default=0)
+    
+    current = Column(Integer, nullable=False, default=0)
+    
+    status = Column(String(20), nullable=False, default="pending", index=True)  # pending, running, completed, failed
+    
+    errors = Column(JSONB, nullable=True)  # List of error messages
+    
+    started_at = Column(DateTime, nullable=True)
+    
+    completed_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "stage": self.stage,
+            "progress": float(self.progress) if self.progress else 0.0,
+            "total": self.total,
+            "current": self.current,
+            "status": self.status,
+            "errors": self.errors,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
