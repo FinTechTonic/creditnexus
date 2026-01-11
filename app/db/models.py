@@ -956,6 +956,192 @@ class Inquiry(Base):
         }
 
 
+class LoanDefaultSeverity(str, enum.Enum):
+    """Severity levels for loan defaults."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class LoanDefaultStatus(str, enum.Enum):
+    """Status of loan defaults."""
+    OPEN = "open"
+    IN_RECOVERY = "in_recovery"
+    RESOLVED = "resolved"
+    WRITTEN_OFF = "written_off"
+
+
+class RecoveryActionStatus(str, enum.Enum):
+    """Status of recovery actions."""
+    PENDING = "pending"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    RESPONDED = "responded"
+
+
+class RecoveryActionType(str, enum.Enum):
+    """Types of recovery actions."""
+    SMS_REMINDER = "sms_reminder"
+    VOICE_CALL = "voice_call"
+    EMAIL = "email"
+    ESCALATION = "escalation"
+    LEGAL_NOTICE = "legal_notice"
+
+
+class CommunicationMethod(str, enum.Enum):
+    """Communication methods for recovery actions."""
+    SMS = "sms"
+    VOICE = "voice"
+    EMAIL = "email"
+
+
+class LoanDefault(Base):
+    """Model for tracking loan defaults and infractions."""
+    
+    __tablename__ = "loan_defaults"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    loan_id = Column(String, index=True)
+    deal_id = Column(Integer, nullable=True)  # Will reference deals.id when Deal model is created
+    default_type = Column(String)  # payment_default, covenant_breach, infraction
+    default_date = Column(DateTime)
+    default_reason = Column(String, nullable=True)
+    amount_overdue = Column(Numeric(20, 2), nullable=True)
+    days_past_due = Column(Integer)
+    severity = Column(String, default=LoanDefaultSeverity.LOW.value)
+    status = Column(String, default=LoanDefaultStatus.OPEN.value)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    cdm_events = Column(JSONB, nullable=True)
+    extra_data = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    recovery_actions = relationship("RecoveryAction", back_populates="loan_default", cascade="all, delete-orphan")
+    resolved_by_user = relationship("User", foreign_keys=[resolved_by])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "loan_id": self.loan_id,
+            "deal_id": self.deal_id,
+            "default_type": self.default_type,
+            "default_date": self.default_date.isoformat() if self.default_date else None,
+            "default_reason": self.default_reason,
+            "amount_overdue": float(self.amount_overdue) if self.amount_overdue else None,
+            "days_past_due": self.days_past_due,
+            "severity": self.severity,
+            "status": self.status,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "resolved_by": self.resolved_by,
+            "cdm_events": self.cdm_events,
+            "extra_data": self.extra_data,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class RecoveryAction(Base):
+    """Model for tracking recovery actions taken on loan defaults."""
+    
+    __tablename__ = "recovery_actions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    loan_default_id = Column(Integer, ForeignKey("loan_defaults.id"))
+    action_type = Column(String, default=RecoveryActionType.SMS_REMINDER.value)
+    communication_method = Column(String, default=CommunicationMethod.SMS.value)
+    recipient_phone = Column(String, nullable=True)
+    recipient_email = Column(String, nullable=True)
+    message_template = Column(String, nullable=True)  # template name or custom message
+    message_content = Column(String)
+    twilio_message_sid = Column(String, nullable=True)
+    twilio_call_sid = Column(String, nullable=True)
+    status = Column(String, default=RecoveryActionStatus.PENDING.value)
+    scheduled_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+    response_received_at = Column(DateTime, nullable=True)
+    error_message = Column(String, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    extra_data = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    loan_default = relationship("LoanDefault", back_populates="recovery_actions")
+    created_by_user = relationship("User", foreign_keys=[created_by])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "loan_default_id": self.loan_default_id,
+            "action_type": self.action_type,
+            "communication_method": self.communication_method,
+            "recipient_phone": self.recipient_phone,
+            "recipient_email": self.recipient_email,
+            "message_template": self.message_template,
+            "message_content": self.message_content,
+            "twilio_message_sid": self.twilio_message_sid,
+            "twilio_call_sid": self.twilio_call_sid,
+            "status": self.status,
+            "scheduled_at": self.scheduled_at.isoformat() if self.scheduled_at else None,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
+            "response_received_at": self.response_received_at.isoformat() if self.response_received_at else None,
+            "error_message": self.error_message,
+            "created_by": self.created_by,
+            "extra_data": self.extra_data,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class BorrowerContact(Base):
+    """Model for borrower contact information and preferences."""
+    
+    __tablename__ = "borrower_contacts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    deal_id = Column(Integer, nullable=False)  # Will reference deals.id when Deal model is created
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    contact_name = Column(String, nullable=False)
+    phone_number = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    preferred_contact_method = Column(String, default=CommunicationMethod.SMS.value)
+    contact_preferences = Column(JSONB, nullable=True)  # timezone, preferred_hours, etc.
+    is_primary = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True)
+    extra_data = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "deal_id": self.deal_id,
+            "user_id": self.user_id,
+            "contact_name": self.contact_name,
+            "phone_number": self.phone_number,
+            "email": self.email,
+            "preferred_contact_method": self.preferred_contact_method,
+            "contact_preferences": self.contact_preferences,
+            "is_primary": self.is_primary,
+            "is_active": self.is_active,
+            "extra_data": self.extra_data,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Meeting(Base):
     """Meeting model for calendar and meeting management."""
     
