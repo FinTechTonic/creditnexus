@@ -1,0 +1,60 @@
+# Sustainable Infrastructure Policy Rules
+# Green infrastructure verification
+# Based on EU Taxonomy infrastructure activities and Green Loan Principles
+
+- name: require_green_infrastructure_urban
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: eq
+        value: "urban"
+      - field: green_infrastructure_coverage
+        op: lt
+        value: 0.20  # Less than 20% green space
+      - field: composite_sustainability_score
+        op: lt
+        value: 0.55
+  action: flag
+  priority: 75
+  description: "Require green infrastructure for urban developments with low sustainability scores"
+  category: "green_finance"
+
+- name: flag_missing_green_roofs
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: eq
+        value: "urban"
+      - field: building_density
+        op: gt
+        value: 0.4
+      - field: green_roofs_detected
+        op: eq
+        value: false
+  action: flag
+  priority: 60
+  description: "Flag urban developments without green roofs in dense areas"
+  category: "green_finance"
+
+- name: promote_sustainable_infrastructure
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: green_infrastructure_coverage
+        op: gt
+        value: 0.30  # More than 30% green space
+      - field: composite_sustainability_score
+        op: gt
+        value: 0.70
+  action: allow
+  priority: 50
+  description: "Promote facilities with high green infrastructure coverage"
+  category: "green_finance"

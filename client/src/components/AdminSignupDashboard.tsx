@@ -16,7 +16,7 @@ import {
   Mail,
   Calendar
 } from 'lucide-react';
-import { fetchWithAuth } from '@/context/AuthContext';
+import { fetchWithAuth, useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface SignupUser {
@@ -46,6 +46,7 @@ interface SignupListResponse {
 
 export function AdminSignupDashboard() {
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
   const [signups, setSignups] = useState<SignupUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export function AdminSignupDashboard() {
   const [isRejecting, setIsRejecting] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
 
   useEffect(() => {
     fetchSignups();
@@ -82,7 +84,8 @@ export function AdminSignupDashboard() {
       const response = await fetchWithAuth(`/api/admin/signups?${params.toString()}`);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch signups');
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch signups: ${response.status} ${errorText}`);
       }
       
       const data: SignupListResponse = await response.json();
@@ -193,11 +196,12 @@ export function AdminSignupDashboard() {
     return true;
   });
 
-  if (!hasPermission('USER_APPROVE') && !hasPermission('USER_REJECT')) {
+  // Check if user is admin (backend enforces this, but frontend should also check)
+  if (!user || user.role !== 'admin') {
     return (
       <div className="p-8 text-center">
         <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-4" />
-        <p className="text-slate-400">You don't have permission to view this page.</p>
+        <p className="text-slate-400">You don't have permission to view this page. Admin access required.</p>
       </div>
     );
   }
@@ -348,7 +352,10 @@ export function AdminSignupDashboard() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setSelectedSignup(signup)}
+                      onClick={() => {
+                        setSelectedSignup(signup);
+                        setShowViewModal(true);
+                      }}
                       className="border-slate-600 text-slate-300 hover:bg-slate-700"
                     >
                       <Eye className="h-4 w-4 mr-2" />
@@ -466,6 +473,104 @@ export function AdminSignupDashboard() {
                   ) : (
                     'Reject'
                   )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* View Signup Modal */}
+      {showViewModal && selectedSignup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <Card className="w-full max-w-2xl bg-slate-800 border-slate-700 max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-slate-100">Signup Details</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowViewModal(false);
+                    setSelectedSignup(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-100"
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Display Name</label>
+                  <p className="text-slate-100 font-medium">{selectedSignup.display_name}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Email</label>
+                  <p className="text-slate-100 font-medium">{selectedSignup.email}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Role</label>
+                  <p className="text-slate-100 font-medium">{selectedSignup.role.replace('_', ' ')}</p>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Status</label>
+                  <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getStatusColor(selectedSignup.signup_status)}`}>
+                    {selectedSignup.signup_status}
+                  </span>
+                </div>
+                {selectedSignup.signup_submitted_at && (
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Submitted At</label>
+                    <p className="text-slate-100 font-medium">
+                      {new Date(selectedSignup.signup_submitted_at).toLocaleString()}
+                    </p>
+                  </div>
+                )}
+                {selectedSignup.signup_reviewed_at && (
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Reviewed At</label>
+                    <p className="text-slate-100 font-medium">
+                      {new Date(selectedSignup.signup_reviewed_at).toLocaleString()}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {selectedSignup.profile_data && Object.keys(selectedSignup.profile_data).length > 0 && (
+                <div>
+                  <label className="text-xs text-slate-400 mb-2 block">Profile Data</label>
+                  <div className="p-3 bg-slate-900 rounded-lg space-y-2">
+                    {Object.entries(selectedSignup.profile_data).map(([key, value]) => (
+                      <div key={key} className="flex justify-between">
+                        <span className="text-sm text-slate-400 capitalize">{key.replace('_', ' ')}:</span>
+                        <span className="text-sm text-slate-100">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedSignup.signup_rejection_reason && (
+                <div>
+                  <label className="text-xs text-slate-400 mb-2 block">Rejection Reason</label>
+                  <p className="text-sm text-slate-100 p-3 bg-red-900/30 border border-red-700 rounded-lg">
+                    {selectedSignup.signup_rejection_reason}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-slate-700">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowViewModal(false);
+                    setSelectedSignup(null);
+                  }}
+                  className="border-slate-600 text-slate-300"
+                >
+                  Close
                 </Button>
               </div>
             </CardContent>

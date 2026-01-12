@@ -366,3 +366,81 @@ def generate_cdm_policy_evaluation(
             "version": 1
         }
     }
+
+
+def generate_green_finance_assessment(
+    transaction_id: str,
+    location_lat: float,
+    location_lon: float,
+    location_type: str,
+    air_quality_index: float,
+    composite_sustainability_score: float,
+    sustainability_components: Dict[str, float],
+    sdg_alignment: Optional[Dict[str, float]] = None,
+    related_event_identifiers: Optional[List[Dict[str, Any]]] = None,
+    additional_metrics: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Generate CDM-compliant GreenFinanceAssessment event.
+    
+    This event represents a green finance assessment following CDM event model:
+    - eventType: "GreenFinanceAssessment"
+    - eventDate: Timestamp
+    - greenFinanceAssessment: Environmental metrics, sustainability scores, SDG alignment
+    - relatedEventIdentifier: Links to PolicyEvaluation, TradeExecution, etc.
+    
+    Args:
+        transaction_id: Transaction/deal identifier
+        location_lat: Location latitude
+        location_lon: Location longitude
+        location_type: Location classification ("urban", "suburban", "rural")
+        air_quality_index: Air Quality Index (AQI) value
+        composite_sustainability_score: Composite sustainability score (0.0-1.0)
+        sustainability_components: Dictionary of component scores
+        sdg_alignment: Optional SDG alignment scores per goal
+        related_event_identifiers: List of related event identifiers
+        additional_metrics: Optional additional green finance metrics
+        
+    Returns:
+        CDM-compliant GreenFinanceAssessment event dictionary
+    """
+    if related_event_identifiers is None:
+        related_event_identifiers = []
+    if sdg_alignment is None:
+        sdg_alignment = {}
+    if additional_metrics is None:
+        additional_metrics = {}
+    
+    return {
+        "eventType": "GreenFinanceAssessment",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "greenFinanceAssessment": {
+            "transactionIdentifier": {
+                "issuer": "CreditNexus_GreenFinanceService",
+                "assignedIdentifier": [{"identifier": {"value": transaction_id}}]
+            },
+            "assessmentDate": {"date": datetime.date.today().isoformat()},
+            "location": {
+                "latitude": location_lat,
+                "longitude": location_lon,
+                "locationType": location_type
+            },
+            "environmentalMetrics": {
+                "airQualityIndex": air_quality_index,
+                "compositeSustainabilityScore": composite_sustainability_score,
+                "sustainabilityComponents": sustainability_components,
+                "pm25": additional_metrics.get("pm25"),
+                "pm10": additional_metrics.get("pm10"),
+                "no2": additional_metrics.get("no2")
+            },
+            "sdgAlignment": sdg_alignment,
+            "osmMetrics": additional_metrics.get("osm_metrics", {}),
+            "greenInfrastructureCoverage": additional_metrics.get("green_infrastructure_coverage")
+        },
+        "relatedEventIdentifier": related_event_identifiers,
+        "meta": {
+            "globalKey": str(uuid.uuid4()),
+            "sourceSystem": "CreditNexus_GreenFinanceService_v1",
+            "version": 1
+        }
+    }

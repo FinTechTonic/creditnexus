@@ -1,0 +1,54 @@
+# Pollution Compliance Policy Rules
+# Pollution threshold and compliance rules
+# Based on EU Air Quality Directive, WHO guidelines, and local regulations
+
+- name: block_critical_pollution_areas
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: air_quality_index
+        op: gt
+        value: 300  # Hazardous AQI
+      - field: pm25
+        op: gt
+        value: 250  # µg/m³ - Emergency level
+  action: block
+  priority: 100
+  description: "Block facilities in areas with critical pollution levels"
+  category: "green_finance"
+
+- name: flag_pollution_hotspots
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: air_quality_index
+        op: gt
+        value: 150  # Unhealthy
+      - field: no2
+        op: gt
+        value: 200  # µg/m³ - EU hourly limit
+  action: flag
+  priority: 85
+  description: "Flag facilities in pollution hotspots requiring enhanced monitoring"
+  category: "green_finance"
+
+- name: require_pollution_mitigation
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: air_quality_index
+        op: gt
+        value: 100  # Unhealthy for Sensitive Groups
+      - field: composite_sustainability_score
+        op: lt
+        value: 0.4
+  action: flag
+  priority: 70
+  description: "Require pollution mitigation measures for facilities in moderate-high pollution areas"
+  category: "green_finance"

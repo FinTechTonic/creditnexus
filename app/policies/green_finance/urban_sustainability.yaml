@@ -1,0 +1,66 @@
+# Urban Sustainability Policy Rules
+# Evaluates sustainability of urban development projects
+# Based on EU Taxonomy, SFDR PAI, and local urban planning regulations
+
+- name: block_high_emission_urban_development
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: eq
+        value: "urban"
+      - field: estimated_vehicle_emissions
+        op: gt
+        value: 100  # tons CO2/year per km²
+      - field: air_quality_index
+        op: gt
+        value: 150  # Unhealthy AQI threshold
+  action: block
+  priority: 90
+  description: "Block facilities in high-emission urban areas exceeding air quality thresholds"
+  category: "green_finance"
+
+- name: flag_low_green_infrastructure_urban
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: eq
+        value: "urban"
+      - field: green_infrastructure_coverage
+        op: lt
+        value: 0.15  # Less than 15% green space coverage
+      - field: composite_sustainability_score
+        op: lt
+        value: 0.5  # Low overall sustainability score
+  action: flag
+  priority: 70
+  description: "Flag urban developments with insufficient green infrastructure"
+  category: "green_finance"
+
+- name: require_urban_sustainability_mitigation
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: eq
+        value: "urban"
+      - field: road_density
+        op: gt
+        value: 8.0  # km/km² - high road density
+      - field: building_density
+        op: gt
+        value: 0.5  # High building density
+      - field: composite_sustainability_score
+        op: lt
+        value: 0.6
+  action: flag
+  priority: 75
+  description: "Require sustainability mitigation measures for dense urban developments"
+  category: "green_finance"

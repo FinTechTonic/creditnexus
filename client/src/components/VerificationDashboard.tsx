@@ -7,7 +7,12 @@ import { AgentTerminal } from './AgentTerminal';
 import { MapView } from './MapView';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
-import { ShieldCheck, Activity, Code, Map as MapIcon, Globe, FileText, Building2, Loader2, Search } from 'lucide-react';
+import { ShieldCheck, Activity, Code, Map as MapIcon, Globe, FileText, Building2, Loader2, Search, Leaf } from 'lucide-react';
+import { GreenFinanceMetricsCard } from './green-finance/GreenFinanceMetricsCard';
+import { LocationTypeBadge } from './green-finance/LocationTypeBadge';
+import { AirQualityIndicator } from './green-finance/AirQualityIndicator';
+import { SustainabilityScoreCard } from './green-finance/SustainabilityScoreCard';
+import { SDGAlignmentPanel } from './green-finance/SDGAlignmentPanel';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
@@ -49,6 +54,7 @@ export default function VerificationDashboard() {
     const [loadingDocuments, setLoadingDocuments] = useState(false);
     const [loadingLoans, setLoadingLoans] = useState(false);
     const [selectedLoan, setSelectedLoan] = useState<any>(null);
+    const [loanAsset, setLoanAsset] = useState<any>(null);
 
     const addLog = (message: string, level: LogEntry['level'] = 'INFO') => {
         setLogs(prev => [...prev, {
@@ -162,12 +168,52 @@ export default function VerificationDashboard() {
         }
     };
 
-    const handleLoanSelect = (loan: any) => {
+    const handleLoanSelect = async (loan: any) => {
         setSelectedLoan(loan);
         setShowLoanSelector(false);
-        if (loan.document_text) {
-            setExtractedText(loan.document_text);
-            addLog(`Loaded loan: ${loan.loan_id}`, 'SUCCESS');
+        
+        // If loan has an ID, fetch full loan asset data
+        if (loan.id) {
+            try {
+                const response = await fetchWithAuth(`/api/loan-assets/${loan.id}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    const fullLoan = data.loan_asset || loan;
+                    setLoanAsset(fullLoan);
+                    // Try multiple possible text fields
+                    const text = fullLoan.original_text || loan.original_text || loan.document_text || loan.text || '';
+                    if (text) {
+                        setExtractedText(text);
+                        addLog(`Loaded loan: ${fullLoan.loan_id}`, 'SUCCESS');
+                    } else {
+                        addLog(`Loan ${fullLoan.loan_id} selected but no document text found`, 'WARN');
+                    }
+                } else {
+                    // Fallback to provided loan data
+                    const text = loan.original_text || loan.document_text || loan.text || '';
+                    if (text) {
+                        setExtractedText(text);
+                        addLog(`Loaded loan: ${loan.loan_id}`, 'SUCCESS');
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching loan asset:', error);
+                // Fallback to provided loan data
+                const text = loan.original_text || loan.document_text || loan.text || '';
+                if (text) {
+                    setExtractedText(text);
+                    addLog(`Loaded loan: ${loan.loan_id}`, 'SUCCESS');
+                }
+            }
+        } else {
+            // No ID, use provided loan data
+            const text = loan.original_text || loan.document_text || loan.text || '';
+            if (text) {
+                setExtractedText(text);
+                addLog(`Loaded loan: ${loan.loan_id}`, 'SUCCESS');
+            } else {
+                addLog(`Loan ${loan.loan_id} selected but no document text found`, 'WARN');
+            }
         }
     };
 
@@ -275,7 +321,7 @@ export default function VerificationDashboard() {
                 setIsVerified(true);
                 setIsAnalyzing(false);
 
-                // 3. FDC3 Broadcast with REAL data
+                // 3. FDC3 Broadcast - Land Use
                 broadcast({
                     type: 'finos.cdm.landUse',
                     id: { internalID: loan_asset.loan_id },
@@ -285,6 +331,38 @@ export default function VerificationDashboard() {
                     cloudCover: 0.05
                 });
                 addLog(`FDC3 Context Broadcast: 'finos.cdm.landUse' -> [network]`, 'INFO');
+
+                // 4. FDC3 Broadcast - Green Finance Assessment (if metrics available)
+                if (loan_asset.location_type && loan_asset.air_quality_index !== undefined && loan_asset.geo_lat && loan_asset.geo_lon) {
+                    try {
+                        broadcast({
+                            type: 'finos.cdm.greenFinanceAssessment',
+                            id: { transactionId: loan_asset.loan_id },
+                            location: {
+                                lat: loan_asset.geo_lat,
+                                lon: loan_asset.geo_lon,
+                                type: loan_asset.location_type as 'urban' | 'suburban' | 'rural'
+                            },
+                            environmentalMetrics: {
+                                airQualityIndex: loan_asset.air_quality_index,
+                                pm25: loan_asset.green_finance_metrics?.air_quality?.pm25,
+                                pm10: loan_asset.green_finance_metrics?.air_quality?.pm10,
+                                no2: loan_asset.green_finance_metrics?.air_quality?.no2
+                            },
+                            sustainabilityScore: loan_asset.composite_sustainability_score || 0.5,
+                            sdgAlignment: loan_asset.green_finance_metrics?.sdg_alignment ? {
+                                sdg_11: loan_asset.green_finance_metrics.sdg_alignment.sdg_11,
+                                sdg_13: loan_asset.green_finance_metrics.sdg_alignment.sdg_13,
+                                sdg_15: loan_asset.green_finance_metrics.sdg_alignment.sdg_15,
+                                overall_alignment: loan_asset.green_finance_metrics.sdg_alignment.overall_alignment
+                            } : undefined,
+                            assessedAt: loan_asset.last_verified_at?.toISOString() || new Date().toISOString()
+                        });
+                        addLog(`FDC3 Context Broadcast: 'finos.cdm.greenFinanceAssessment' -> [network]`, 'INFO');
+                    } catch (err) {
+                        console.warn('Failed to broadcast green finance assessment:', err);
+                    }
+                }
 
             }, 1000);
 
@@ -405,6 +483,7 @@ export default function VerificationDashboard() {
                         <div className="absolute top-4 right-4 z-10 bg-black/80 backdrop-blur rounded p-1 border border-zinc-700">
                             <TabsList className="bg-transparent h-8">
                                 <TabsTrigger value="map" className="data-[state=active]:bg-zinc-800 text-xs px-3 py-1"><MapIcon className="w-3 h-3 mr-1" /> Geospatial</TabsTrigger>
+                                <TabsTrigger value="green" className="data-[state=active]:bg-zinc-800 text-xs px-3 py-1"><Leaf className="w-3 h-3 mr-1" /> Green Finance</TabsTrigger>
                                 <TabsTrigger value="cdm" className="data-[state=active]:bg-zinc-800 text-xs px-3 py-1"><Code className="w-3 h-3 mr-1" /> CDM JSON</TabsTrigger>
                             </TabsList>
                         </div>
@@ -421,6 +500,35 @@ export default function VerificationDashboard() {
                                         <span className="font-mono text-white text-sm">Sentinel-2B L2A</span>
                                     </div>
                                 </div>
+                            </div>
+                        </TabsContent>
+
+                        <TabsContent value="green" className="flex-1 m-0 h-full overflow-auto p-6">
+                            <div className="space-y-4">
+                                {(loanAsset?.green_finance_metrics || loanAsset?.location_type || loanAsset?.air_quality_index) ? (
+                                    <>
+                                        <GreenFinanceMetricsCard 
+                                            metrics={loanAsset.green_finance_metrics || {
+                                                location_type: loanAsset.location_type,
+                                                air_quality_index: loanAsset.air_quality_index,
+                                                composite_sustainability_score: loanAsset.composite_sustainability_score,
+                                                sustainability_components: loanAsset.green_finance_metrics?.sustainability_components,
+                                                osm_metrics: loanAsset.green_finance_metrics?.osm_metrics,
+                                                air_quality: loanAsset.green_finance_metrics?.air_quality,
+                                                sdg_alignment: loanAsset.green_finance_metrics?.sdg_alignment
+                                            }} 
+                                        />
+                                        {loanAsset.green_finance_metrics?.sdg_alignment && (
+                                            <SDGAlignmentPanel sdgAlignment={loanAsset.green_finance_metrics.sdg_alignment} />
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="text-center text-zinc-500 py-12">
+                                        <Leaf className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                                        <p className="text-sm">No green finance metrics available</p>
+                                        <p className="text-xs mt-2 opacity-70">Enhanced satellite verification required</p>
+                                    </div>
+                                )}
                             </div>
                         </TabsContent>
 

@@ -1,0 +1,57 @@
+# SDG Alignment Policy Rules
+# Sustainable Development Goals alignment
+# Based on UN SDGs, GRI Standards, and industry best practices
+
+- name: promote_sdg_aligned_projects
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: composite_sustainability_score
+        op: gt
+        value: 0.75
+      - field: air_quality_index
+        op: lt
+        value: 50  # Good AQI
+      - field: green_infrastructure_coverage
+        op: gt
+        value: 0.25
+  action: allow
+  priority: 40
+  description: "Promote projects with strong SDG alignment indicators"
+  category: "green_finance"
+
+- name: flag_low_sdg_alignment
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: composite_sustainability_score
+        op: lt
+        value: 0.40
+      - field: air_quality_index
+        op: gt
+        value: 100
+  action: flag
+  priority: 60
+  description: "Flag projects with low SDG alignment requiring improvement"
+  category: "green_finance"
+
+- name: require_sdg_improvement_plan
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: composite_sustainability_score
+        op: lt
+        value: 0.50
+      - field: location_type
+        op: eq
+        value: "urban"
+  action: flag
+  priority: 55
+  description: "Require SDG improvement plan for urban projects with moderate sustainability scores"
+  category: "green_finance"

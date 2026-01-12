@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 from decimal import Decimal
 from functools import lru_cache
+import asyncio
 
 from app.models.cdm import CreditAgreement
 from app.models.loan_asset import LoanAsset
@@ -251,6 +252,35 @@ class PolicyService:
             "regulatory_framework": self._infer_regulatory_framework(credit_agreement),
             "context": "CreditAgreement_Creation"
         }
+        
+        # Add green finance metrics if available from loan assets
+        if credit_agreement.loan_assets:
+            # Get enhanced metrics from first loan asset with location
+            for loan_asset in credit_agreement.loan_assets:
+                if hasattr(loan_asset, 'geo_lat') and loan_asset.geo_lat and loan_asset.geo_lon:
+                    # Get green finance metrics from loan asset
+                    if hasattr(loan_asset, 'green_finance_metrics') and loan_asset.green_finance_metrics:
+                        green_metrics = loan_asset.green_finance_metrics
+                        tx.update({
+                            "location_type": green_metrics.get("location_type") or loan_asset.location_type if hasattr(loan_asset, 'location_type') else None,
+                            "air_quality_index": green_metrics.get("air_quality_index") or loan_asset.air_quality_index if hasattr(loan_asset, 'air_quality_index') else None,
+                            "composite_sustainability_score": green_metrics.get("composite_sustainability_score") or loan_asset.composite_sustainability_score if hasattr(loan_asset, 'composite_sustainability_score') else None,
+                            "road_density": green_metrics.get("osm_metrics", {}).get("road_density"),
+                            "building_density": green_metrics.get("osm_metrics", {}).get("building_density"),
+                            "green_infrastructure_coverage": green_metrics.get("osm_metrics", {}).get("green_infrastructure_coverage"),
+                            "pm25": green_metrics.get("air_quality", {}).get("pm25"),
+                            "pm10": green_metrics.get("air_quality", {}).get("pm10"),
+                            "no2": green_metrics.get("air_quality", {}).get("no2"),
+                            "sustainability_components": green_metrics.get("sustainability_components")
+                        })
+                    elif hasattr(loan_asset, 'location_type'):
+                        # Fallback to direct fields if green_finance_metrics not populated
+                        tx.update({
+                            "location_type": loan_asset.location_type,
+                            "air_quality_index": loan_asset.air_quality_index if hasattr(loan_asset, 'air_quality_index') else None,
+                            "composite_sustainability_score": loan_asset.composite_sustainability_score if hasattr(loan_asset, 'composite_sustainability_score') else None
+                        })
+                    break
     
     def _cdm_trade_event_to_policy_transaction(
         self,
@@ -705,4 +735,263 @@ class PolicyService:
         }
         
         return event_type_map.get(event_type, "unknown")
+    
+    # Green Finance Evaluation Methods
+    
+    def evaluate_green_finance_compliance(
+        self,
+        credit_agreement: CreditAgreement,
+        loan_asset: Optional[LoanAsset] = None,
+        document_id: Optional[int] = None
+    ) -> PolicyDecision:
+        """
+        Evaluate green finance compliance for a credit agreement.
+        
+        Loads all green finance policy rules and evaluates against enhanced
+        satellite metrics (OSM, air quality, sustainability score).
+        
+        Args:
+            credit_agreement: CDM CreditAgreement
+            loan_asset: Optional LoanAsset with enhanced metrics
+            document_id: Optional document ID for audit trail
+            
+        Returns:
+            PolicyDecision with comprehensive compliance assessment
+        """
+        # Get enhanced metrics from loan asset if available
+        enhanced_metrics = {}
+        if loan_asset and hasattr(loan_asset, 'green_finance_metrics') and loan_asset.green_finance_metrics:
+            enhanced_metrics = loan_asset.green_finance_metrics
+        
+        # Convert CDM to policy transaction with green finance metrics
+        tx = self._cdm_to_policy_transaction(
+            credit_agreement=credit_agreement,
+            transaction_type="facility_creation"
+        )
+        
+        # Add green finance metrics if available
+        if enhanced_metrics:
+            tx.update({
+                "location_type": enhanced_metrics.get("location_type"),
+                "air_quality_index": enhanced_metrics.get("air_quality_index"),
+                "composite_sustainability_score": enhanced_metrics.get("composite_sustainability_score"),
+                "road_density": enhanced_metrics.get("osm_metrics", {}).get("road_density"),
+                "building_density": enhanced_metrics.get("osm_metrics", {}).get("building_density"),
+                "green_infrastructure_coverage": enhanced_metrics.get("osm_metrics", {}).get("green_infrastructure_coverage"),
+                "pm25": enhanced_metrics.get("air_quality", {}).get("pm25") if isinstance(enhanced_metrics.get("air_quality"), dict) else None,
+                "pm10": enhanced_metrics.get("air_quality", {}).get("pm10") if isinstance(enhanced_metrics.get("air_quality"), dict) else None,
+                "no2": enhanced_metrics.get("air_quality", {}).get("no2") if isinstance(enhanced_metrics.get("air_quality"), dict) else None
+            })
+        
+        # Evaluate against all policy rules (including green finance)
+        result = self.engine.evaluate(tx)
+        
+        return PolicyDecision(
+            decision=result["decision"],
+            rule_applied=result.get("rule"),
+            trace_id=f"green_finance_{document_id}_{datetime.utcnow().isoformat()}" if document_id else f"green_finance_{datetime.utcnow().isoformat()}",
+            trace=result.get("trace", []),
+            matched_rules=result.get("matched_rules", []),
+            metadata={
+                "document_id": document_id,
+                "green_finance_assessment": True,
+                "enhanced_metrics_used": bool(enhanced_metrics)
+            }
+        )
+    
+    async def assess_urban_sustainability(
+        self,
+        location_lat: float,
+        location_lon: float,
+        osm_data: Optional[Dict[str, Any]] = None,
+        air_quality: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Assess urban sustainability for a location.
+        
+        Args:
+            location_lat: Location latitude
+            location_lon: Location longitude
+            osm_data: Optional pre-fetched OSM data
+            air_quality: Optional pre-fetched air quality data
+            
+        Returns:
+            Dictionary with sustainability metrics and compliance status
+        """
+        from app.services.osm_service import OSMService
+        from app.services.location_classifier import LocationClassifier
+        from app.services.air_quality_service import AirQualityService
+        
+        osm_service = OSMService()
+        location_classifier = LocationClassifier()
+        air_quality_service = AirQualityService()
+        
+        # Get OSM data if not provided
+        if osm_data is None:
+            osm_data = await osm_service.get_osm_features(location_lat, location_lon)
+        
+        # Classify location
+        location_type, confidence = await location_classifier.classify(location_lat, location_lon, osm_data)
+        
+        # Get air quality if not provided
+        if air_quality is None:
+            air_quality = await air_quality_service.get_air_quality(location_lat, location_lon)
+        
+        # Calculate urban sustainability score
+        road_density = osm_data.get("road_density", 0.0)
+        building_density = osm_data.get("building_density", 0.0)
+        green_coverage = osm_data.get("green_coverage", 0.0)
+        aqi = air_quality.get("aqi", 50.0)
+        
+        # Urban sustainability scoring (0.0-1.0)
+        # Factors: green infrastructure, air quality, moderate activity
+        green_score = green_coverage * 0.4
+        aqi_score = max(0.0, 1.0 - (aqi / 200.0)) * 0.3
+        activity_score = min(1.0, (road_density + building_density) / 10.0) * 0.3
+        
+        urban_sustainability_score = green_score + aqi_score + activity_score
+        
+        return {
+            "location_type": location_type,
+            "location_confidence": confidence,
+            "urban_sustainability_score": urban_sustainability_score,
+            "metrics": {
+                "road_density": road_density,
+                "building_density": building_density,
+                "green_coverage": green_coverage,
+                "air_quality_index": aqi
+            },
+            "compliance_status": "compliant" if urban_sustainability_score >= 0.6 else "needs_improvement"
+        }
+    
+    async def monitor_emissions_compliance(
+        self,
+        location_lat: float,
+        location_lon: float,
+        air_quality: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Monitor emissions and air quality compliance.
+        
+        Args:
+            location_lat: Location latitude
+            location_lon: Location longitude
+            air_quality: Optional pre-fetched air quality data
+            
+        Returns:
+            Dictionary with compliance status and violation details
+        """
+        from app.services.air_quality_service import AirQualityService
+        
+        air_quality_service = AirQualityService()
+        
+        # Get air quality if not provided
+        if air_quality is None:
+            air_quality = await air_quality_service.get_air_quality(location_lat, location_lon)
+        
+        aqi = air_quality.get("aqi", 50.0)
+        pm25 = air_quality.get("pm25", 0.0)
+        pm10 = air_quality.get("pm10", 0.0)
+        no2 = air_quality.get("no2", 0.0)
+        
+        # EU Air Quality Directive limits
+        violations = []
+        compliance_status = "compliant"
+        
+        if pm25 and pm25 > 25:  # EU annual limit: 25 µg/m³
+            violations.append({"parameter": "PM2.5", "value": pm25, "limit": 25, "unit": "µg/m³"})
+            compliance_status = "non_compliant"
+        elif pm25 and pm25 > 20:  # WHO guideline: 20 µg/m³
+            violations.append({"parameter": "PM2.5", "value": pm25, "limit": 20, "unit": "µg/m³ (WHO guideline)"})
+            compliance_status = "warning"
+        
+        if pm10 and pm10 > 40:  # EU annual limit: 40 µg/m³
+            violations.append({"parameter": "PM10", "value": pm10, "limit": 40, "unit": "µg/m³"})
+            compliance_status = "non_compliant"
+        
+        if no2 and no2 > 200:  # EU hourly limit: 200 µg/m³
+            violations.append({"parameter": "NO2", "value": no2, "limit": 200, "unit": "µg/m³"})
+            compliance_status = "non_compliant"
+        
+        if aqi > 150:  # Unhealthy AQI
+            violations.append({"parameter": "AQI", "value": aqi, "limit": 150, "unit": "AQI"})
+            compliance_status = "non_compliant"
+        elif aqi > 100:  # Unhealthy for Sensitive Groups
+            violations.append({"parameter": "AQI", "value": aqi, "limit": 100, "unit": "AQI (sensitive groups)"})
+            if compliance_status == "compliant":
+                compliance_status = "warning"
+        
+        return {
+            "compliance_status": compliance_status,
+            "air_quality_index": aqi,
+            "violations": violations,
+            "measurements": {
+                "pm25": pm25,
+                "pm10": pm10,
+                "no2": no2
+            }
+        }
+    
+    def evaluate_sdg_alignment(
+        self,
+        location_lat: float,
+        location_lon: float,
+        sustainability_components: Optional[Dict[str, float]] = None,
+        green_finance_metrics: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Evaluate SDG alignment for a location.
+        
+        Maps environmental metrics to SDG targets and calculates alignment scores.
+        
+        Args:
+            location_lat: Location latitude
+            location_lon: Location longitude
+            sustainability_components: Optional sustainability component scores
+            green_finance_metrics: Optional comprehensive green finance metrics
+            
+        Returns:
+            Dictionary with SDG alignment scores per goal and overall alignment
+        """
+        # Map to relevant SDGs
+        sdg_scores = {}
+        
+        if sustainability_components:
+            # SDG 11: Sustainable Cities and Communities
+            # Based on urban activity, green infrastructure
+            urban_activity = sustainability_components.get("urban_activity", 0.5)
+            green_infra = sustainability_components.get("green_infrastructure", 0.5)
+            sdg_scores["SDG_11"] = (urban_activity + green_infra) / 2.0
+            
+            # SDG 13: Climate Action
+            # Based on air quality, pollution levels
+            air_quality = sustainability_components.get("air_quality", 0.5)
+            pollution = sustainability_components.get("pollution_levels", 0.5)
+            sdg_scores["SDG_13"] = (air_quality + pollution) / 2.0
+            
+            # SDG 15: Life on Land
+            # Based on vegetation health
+            vegetation = sustainability_components.get("vegetation_health", 0.5)
+            sdg_scores["SDG_15"] = vegetation
+        
+        if green_finance_metrics:
+            # Additional SDG mapping from comprehensive metrics
+            osm_metrics = green_finance_metrics.get("osm_metrics", {})
+            green_coverage = osm_metrics.get("green_infrastructure_coverage", 0.0)
+            
+            # SDG 11: Enhance with green coverage
+            if "SDG_11" not in sdg_scores:
+                sdg_scores["SDG_11"] = green_coverage
+            else:
+                sdg_scores["SDG_11"] = (sdg_scores["SDG_11"] + green_coverage) / 2.0
+        
+        # Calculate overall SDG alignment (average of all SDG scores)
+        overall_alignment = sum(sdg_scores.values()) / len(sdg_scores) if sdg_scores else 0.0
+        
+        return {
+            "sdg_alignment": sdg_scores,
+            "overall_alignment": overall_alignment,
+            "aligned_goals": [goal for goal, score in sdg_scores.items() if score >= 0.7],
+            "needs_improvement": [goal for goal, score in sdg_scores.items() if score < 0.5]
+        }
 

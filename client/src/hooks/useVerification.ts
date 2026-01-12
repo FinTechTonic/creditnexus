@@ -15,6 +15,32 @@ interface CreateLoanAssetRequest {
   document_text: string;
 }
 
+interface GreenFinanceMetrics {
+  location_type?: string;
+  air_quality_index?: number;
+  composite_sustainability_score?: number;
+  sustainability_components?: {
+    vegetation_health?: number;
+    air_quality?: number;
+    urban_activity?: number;
+    green_infrastructure?: number;
+    pollution_levels?: number;
+  };
+  osm_metrics?: {
+    building_count?: number;
+    road_density?: number;
+    building_density?: number;
+    green_infrastructure_coverage?: number;
+  };
+  air_quality?: {
+    pm25?: number;
+    pm10?: number;
+    no2?: number;
+    data_source?: string;
+  };
+  location_confidence?: number;
+}
+
 interface LoanAsset {
   id: number;
   loan_id: string;
@@ -25,6 +51,11 @@ interface LoanAsset {
   last_verified_score?: number;
   spt_threshold?: number;
   current_interest_rate?: number;
+  // Green Finance Metrics (Enhanced Satellite Verification)
+  location_type?: string;
+  air_quality_index?: number;
+  composite_sustainability_score?: number;
+  green_finance_metrics?: GreenFinanceMetrics;
 }
 
 interface AuditResult {

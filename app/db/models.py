@@ -1550,6 +1550,69 @@ class PolicyTemplate(Base):
         }
 
 
+class GreenFinanceAssessment(Base):
+    """Green Finance Assessment model for storing comprehensive green finance assessments."""
+    
+    __tablename__ = "green_finance_assessments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Transaction/Deal reference
+    transaction_id = Column(String(255), nullable=False, index=True)  # Deal ID or transaction ID
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
+    loan_asset_id = Column(Integer, ForeignKey("loan_assets.id"), nullable=True, index=True)
+    
+    # Location
+    location_lat = Column(Numeric(10, 7), nullable=False)
+    location_lon = Column(Numeric(10, 7), nullable=False)
+    location_type = Column(String(50), nullable=True)  # "urban", "suburban", "rural"
+    location_confidence = Column(Numeric(5, 4), nullable=True)  # 0.0-1.0
+    
+    # Environmental metrics (stored as JSONB for flexibility)
+    environmental_metrics = Column(JSONB, nullable=True)  # Air quality, emissions, pollution
+    urban_activity_metrics = Column(JSONB, nullable=True)  # Vehicle counts, traffic, OSM-based indicators
+    sustainability_score = Column(Numeric(5, 4), nullable=True)  # Composite score 0.0-1.0
+    sustainability_components = Column(JSONB, nullable=True)  # Component breakdown
+    sdg_alignment = Column(JSONB, nullable=True)  # SDG alignment scores
+    
+    # Policy decisions and CDM events
+    policy_decisions = Column(JSONB, nullable=True)  # List of policy decisions
+    cdm_events = Column(JSONB, nullable=True)  # List of CDM events
+    
+    # Metadata
+    assessed_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    deal = relationship("Deal", backref="green_finance_assessments")
+    # Note: LoanAsset is a SQLModel, so we can't use a string reference here
+    # Access via loan_asset_id foreign key instead, or configure relationship after models load
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "transaction_id": self.transaction_id,
+            "deal_id": self.deal_id,
+            "loan_asset_id": self.loan_asset_id,
+            "location_lat": float(self.location_lat) if self.location_lat else None,
+            "location_lon": float(self.location_lon) if self.location_lon else None,
+            "location_type": self.location_type,
+            "location_confidence": float(self.location_confidence) if self.location_confidence else None,
+            "environmental_metrics": self.environmental_metrics,
+            "urban_activity_metrics": self.urban_activity_metrics,
+            "sustainability_score": float(self.sustainability_score) if self.sustainability_score else None,
+            "sustainability_components": self.sustainability_components,
+            "sdg_alignment": self.sdg_alignment,
+            "policy_decisions": self.policy_decisions,
+            "cdm_events": self.cdm_events,
+            "assessed_at": self.assessed_at.isoformat() if self.assessed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class DemoSeedingStatus(Base):
     """Model for tracking demo data seeding progress."""
     
@@ -1592,3 +1655,8 @@ class DemoSeedingStatus(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+# Note: LoanAsset is a SQLModel and cannot have a direct relationship with SQLAlchemy Base models
+# Access LoanAsset via loan_asset_id foreign key using queries instead
+# Example: db.query(LoanAsset).filter(LoanAsset.id == assessment.loan_asset_id).first()

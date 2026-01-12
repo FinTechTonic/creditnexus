@@ -1,0 +1,43 @@
+# Climate Resilience Policy Rules
+# Climate risk and resilience policies
+# Based on EU Climate Adaptation Strategy and TCFD recommendations
+
+- name: flag_high_climate_risk_areas
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: in
+        value: ["urban", "suburban"]
+      - field: composite_sustainability_score
+        op: lt
+        value: 0.45
+      - field: green_infrastructure_coverage
+        op: lt
+        value: 0.15
+  action: flag
+  priority: 70
+  description: "Flag facilities in areas with low climate resilience indicators"
+  category: "green_finance"
+
+- name: require_climate_adaptation_measures
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: eq
+        value: "urban"
+      - field: air_quality_index
+        op: gt
+        value: 100
+      - field: green_infrastructure_coverage
+        op: lt
+        value: 0.20
+  action: flag
+  priority: 65
+  description: "Require climate adaptation measures for vulnerable urban locations"
+  category: "green_finance"

@@ -1,0 +1,54 @@
+# Emissions Monitoring Policy Rules
+# Monitors CO2 and air quality compliance
+# Based on EU ETS, Carbon Border Adjustment Mechanism (CBAM), and EU Air Quality Directive
+
+- name: block_facilities_exceeding_air_quality_limits
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: air_quality_index
+        op: gt
+        value: 200  # Very Unhealthy AQI threshold
+      - field: pm25
+        op: gt
+        value: 55  # µg/m³ - EU daily limit
+  action: block
+  priority: 95
+  description: "Block facilities in areas exceeding EU air quality limits"
+  category: "green_finance"
+
+- name: flag_high_emission_areas
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: air_quality_index
+        op: gt
+        value: 100  # Unhealthy for Sensitive Groups
+      - field: estimated_vehicle_emissions
+        op: gt
+        value: 50  # tons CO2/year per km²
+  action: flag
+  priority: 80
+  description: "Flag facilities in high-emission areas requiring mitigation"
+  category: "green_finance"
+
+- name: require_emissions_monitoring
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: in
+        value: ["urban", "suburban"]
+      - field: air_quality_index
+        op: gt
+        value: 75  # Moderate AQI
+  action: flag
+  priority: 60
+  description: "Require ongoing emissions monitoring for facilities in moderate pollution areas"
+  category: "green_finance"

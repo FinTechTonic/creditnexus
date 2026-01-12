@@ -41,9 +41,32 @@ else:
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-target_metadata = Base.metadata
+# Import SQLModel models so Alembic can detect them
+# SQLModel uses its own metadata, so we need to combine both
+try:
+    from sqlmodel import SQLModel
+    from app.models.loan_asset import LoanAsset  # noqa: F401 - needed for model registration
+    
+    # Combine both metadata objects for Alembic
+    # Create a new metadata that includes both
+    from sqlalchemy import MetaData
+    combined_metadata = MetaData()
+    
+    # Reflect all tables from Base.metadata
+    for table in Base.metadata.tables.values():
+        combined_metadata._add_table(table.name, table.schema, table)
+    
+    # Reflect all tables from SQLModel.metadata
+    if hasattr(SQLModel, 'registry') and hasattr(SQLModel.registry, 'metadata'):
+        sqlmodel_metadata = SQLModel.registry.metadata
+        for table in sqlmodel_metadata.tables.values():
+            if table.name not in combined_metadata.tables:
+                combined_metadata._add_table(table.name, table.schema, table)
+    
+    target_metadata = combined_metadata
+except (ImportError, AttributeError):
+    # SQLModel not available or different structure, use Base.metadata only
+    target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

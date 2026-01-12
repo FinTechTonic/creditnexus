@@ -165,6 +165,8 @@ export function FieldEditorModal({
     // Infer from field name
     const lowerPath = path.toLowerCase();
     if (lowerPath.includes('date')) return 'date';
+    // Currency fields should be string, not number
+    if (lowerPath.includes('currency')) return 'string';
     if (lowerPath.includes('amount') || lowerPath.includes('bps') || lowerPath.includes('spread')) return 'number';
     if (lowerPath.includes('lei') || lowerPath.includes('id')) return 'string';
     

@@ -15,7 +15,7 @@ import pandas as pd
 from app.chains.extraction_chain import extract_data, extract_data_smart
 from app.models.cdm import ExtractionResult, CreditAgreement
 from app.db import get_db
-from app.db.models import StagedExtraction, ExtractionStatus, Document, DocumentVersion, Workflow, WorkflowState, User, AuditLog, AuditAction, PolicyDecision as PolicyDecisionModel, ClauseCache, LMATemplate, Deal, DealNote
+from app.db.models import StagedExtraction, ExtractionStatus, Document, DocumentVersion, Workflow, WorkflowState, User, AuditLog, AuditAction, PolicyDecision as PolicyDecisionModel, PolicyDecision, ClauseCache, LMATemplate, Deal, DealNote, GreenFinanceAssessment
 from app.auth.jwt_auth import get_current_user, require_auth
 from app.services.policy_service import PolicyService
 from app.services.x402_payment_service import X402PaymentService
@@ -5177,11 +5177,21 @@ class PaymentPayloadRequest(BaseModel):
 @router.post("/trades/{trade_id}/settle")
 async def settle_trade_with_payment(
     trade_id: str,
-    payment_request: Optional[PaymentPayloadRequest] = None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     payment_service: Optional[X402PaymentService] = Depends(get_x402_payment_service)
 ):
+    # Parse request body manually to handle optional payment payload
+    payment_request = None
+    try:
+        body = await request.json()
+        if body and "payment_payload" in body:
+            payment_request = PaymentPayloadRequest(**body)
+    except Exception:
+        # No body or invalid JSON - payment_request remains None
+        pass
+    
     """
     Settle trade with x402 payment.
     
@@ -8003,6 +8013,8 @@ async def list_deals(
             "offset": offset,
             "deals": [deal.to_dict() for deal in deals]
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing deals: {e}")
         raise HTTPException(
@@ -9382,14 +9394,40 @@ async def reset_demo_data(
     
     try:
         # Delete demo deals and related data
-        # This is a placeholder - implement actual deletion logic
-        demo_deals = db.query(Deal).filter(Deal.deal_data["is_demo"].astext == "true").all()
+        demo_deals = db.query(Deal).filter(Deal.is_demo == True).all()
         
         deleted_count = 0
         for deal in demo_deals:
-            # Delete related documents, workflows, etc.
-            db.query(Document).filter(Document.deal_id == deal.id).delete()
-            db.query(DealNote).filter(DealNote.deal_id == deal.id).delete()
+            # Delete related data in correct order (respecting foreign key constraints)
+            # 1. Get all documents for this deal
+            doc_ids = [d.id for d in db.query(Document).filter(Document.deal_id == deal.id).all()]
+            
+            # 2. Delete policy decisions that reference documents (must be before document deletion)
+            if doc_ids:
+                db.query(PolicyDecision).filter(PolicyDecision.document_id.in_(doc_ids)).delete(synchronize_session=False)
+            
+            # 3. Delete document versions first (they reference documents)
+            if doc_ids:
+                db.query(DocumentVersion).filter(DocumentVersion.document_id.in_(doc_ids)).delete(synchronize_session=False)
+            
+            # 4. Delete workflows (they reference documents)
+            if doc_ids:
+                db.query(Workflow).filter(Workflow.document_id.in_(doc_ids)).delete(synchronize_session=False)
+            
+            # 5. Delete documents (now safe since policy_decisions referencing them are deleted)
+            if doc_ids:
+                db.query(Document).filter(Document.id.in_(doc_ids)).delete(synchronize_session=False)
+            
+            # 6. Delete green finance assessments (no CASCADE, must delete explicitly)
+            db.query(GreenFinanceAssessment).filter(GreenFinanceAssessment.deal_id == deal.id).delete(synchronize_session=False)
+            
+            # 7. Delete policy decisions by deal_id (for any remaining that reference deal but not documents)
+            db.query(PolicyDecision).filter(PolicyDecision.deal_id == deal.id).delete(synchronize_session=False)
+            
+            # 8. DealNote has CASCADE, but delete explicitly to be safe
+            db.query(DealNote).filter(DealNote.deal_id == deal.id).delete(synchronize_session=False)
+            
+            # 9. Finally delete the deal
             db.delete(deal)
             deleted_count += 1
         

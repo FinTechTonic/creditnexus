@@ -8,6 +8,9 @@ import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './ui/collapsible';
 import { ShieldCheck, ChevronDown, ChevronUp, ExternalLink, Globe } from 'lucide-react';
+import { LocationTypeBadge } from './green-finance/LocationTypeBadge';
+import { AirQualityIndicator } from './green-finance/AirQualityIndicator';
+import { GreenFinanceMetricsCard } from './green-finance/GreenFinanceMetricsCard';
 
 // Mock asset for demo visualization
 const DEMO_ASSET = {
@@ -212,7 +215,7 @@ export function VerificationWidget({
             setIsVerified(true);
             setIsAnalyzing(false);
 
-            // FDC3 Broadcast
+            // FDC3 Broadcast - Land Use
             broadcast({
                 type: 'finos.cdm.landUse',
                 id: { internalID: loan_asset.loan_id },
@@ -222,6 +225,38 @@ export function VerificationWidget({
                 cloudCover: 0.05
             });
             addLog(`FDC3 Context Broadcast: 'finos.cdm.landUse' -> [network]`, 'INFO');
+
+            // FDC3 Broadcast - Green Finance Assessment (if metrics available)
+            if (loan_asset.location_type && loan_asset.air_quality_index !== undefined && loan_asset.geo_lat && loan_asset.geo_lon) {
+                try {
+                    broadcast({
+                        type: 'finos.cdm.greenFinanceAssessment',
+                        id: { transactionId: loan_asset.loan_id },
+                        location: {
+                            lat: loan_asset.geo_lat,
+                            lon: loan_asset.geo_lon,
+                            type: loan_asset.location_type as 'urban' | 'suburban' | 'rural'
+                        },
+                        environmentalMetrics: {
+                            airQualityIndex: loan_asset.air_quality_index,
+                            pm25: loan_asset.green_finance_metrics?.air_quality?.pm25,
+                            pm10: loan_asset.green_finance_metrics?.air_quality?.pm10,
+                            no2: loan_asset.green_finance_metrics?.air_quality?.no2
+                        },
+                        sustainabilityScore: loan_asset.composite_sustainability_score || 0.5,
+                        sdgAlignment: loan_asset.green_finance_metrics?.sdg_alignment ? {
+                            sdg_11: loan_asset.green_finance_metrics.sdg_alignment.sdg_11,
+                            sdg_13: loan_asset.green_finance_metrics.sdg_alignment.sdg_13,
+                            sdg_15: loan_asset.green_finance_metrics.sdg_alignment.sdg_15,
+                            overall_alignment: loan_asset.green_finance_metrics.sdg_alignment.overall_alignment
+                        } : undefined,
+                        assessedAt: loan_asset.last_verified_at?.toISOString() || new Date().toISOString()
+                    });
+                    addLog(`FDC3 Context Broadcast: 'finos.cdm.greenFinanceAssessment' -> [network]`, 'INFO');
+                } catch (err) {
+                    console.warn('Failed to broadcast green finance assessment:', err);
+                }
+            }
 
             // Call completion callback
             if (onVerificationComplete) {
@@ -243,11 +278,27 @@ export function VerificationWidget({
                         <ShieldCheck className="w-5 h-5 text-indigo-500" />
                         <h3 className="font-semibold">Asset Verification</h3>
                         {isVerified && (
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                                classification?.ndvi < 0.75 ? 'bg-red-500/20 text-red-500' : 'bg-green-500/20 text-green-500'
-                            }`}>
-                                {classification?.ndvi < 0.75 ? 'BREACH' : 'VERIFIED'}
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-xs px-2 py-0.5 rounded ${
+                                    classification?.ndvi < 0.75 ? 'bg-red-500/20 text-red-500' : 'bg-green-500/20 text-green-500'
+                                }`}>
+                                    {classification?.ndvi < 0.75 ? 'BREACH' : 'VERIFIED'}
+                                </span>
+                                {loanAsset?.location_type && (
+                                    <LocationTypeBadge 
+                                        locationType={loanAsset.location_type}
+                                        confidence={loanAsset.green_finance_metrics?.location_confidence}
+                                        compact
+                                    />
+                                )}
+                                {loanAsset?.air_quality_index && (
+                                    <AirQualityIndicator 
+                                        aqi={loanAsset.air_quality_index}
+                                        pm25={loanAsset.green_finance_metrics?.air_quality?.pm25}
+                                        compact
+                                    />
+                                )}
+                            </div>
                         )}
                     </div>
                     <Button variant="ghost" size="sm" onClick={() => setIsCollapsed(false)}>
@@ -267,11 +318,27 @@ export function VerificationWidget({
                         <ShieldCheck className="w-5 h-5 text-indigo-500" />
                         <h3 className="font-semibold">Asset Verification</h3>
                         {isVerified && (
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                                classification?.ndvi < 0.75 ? 'bg-red-500/20 text-red-500' : 'bg-green-500/20 text-green-500'
-                            }`}>
-                                {classification?.ndvi < 0.75 ? 'BREACH' : 'VERIFIED'}
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-xs px-2 py-0.5 rounded ${
+                                    classification?.ndvi < 0.75 ? 'bg-red-500/20 text-red-500' : 'bg-green-500/20 text-green-500'
+                                }`}>
+                                    {classification?.ndvi < 0.75 ? 'BREACH' : 'VERIFIED'}
+                                </span>
+                                {loanAsset?.location_type && (
+                                    <LocationTypeBadge 
+                                        locationType={loanAsset.location_type}
+                                        confidence={loanAsset.green_finance_metrics?.location_confidence}
+                                        compact
+                                    />
+                                )}
+                                {loanAsset?.air_quality_index && (
+                                    <AirQualityIndicator 
+                                        aqi={loanAsset.air_quality_index}
+                                        pm25={loanAsset.green_finance_metrics?.air_quality?.pm25}
+                                        compact
+                                    />
+                                )}
+                            </div>
                         )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -296,31 +363,41 @@ export function VerificationWidget({
                             {!isVerified ? (
                                 <DropZone onFileSelect={handleFileSelect} isProcessing={isAnalyzing} />
                             ) : (
-                                <Card className="bg-zinc-900 border-red-500/30 p-4">
-                                    <div className="flex items-center gap-4 mb-4">
-                                        <div className="p-3 rounded-full bg-red-500/10">
-                                            <ShieldCheck className="w-6 h-6 text-red-500" />
+                                <>
+                                    <Card className="bg-zinc-900 border-red-500/30 p-4">
+                                        <div className="flex items-center gap-4 mb-4">
+                                            <div className="p-3 rounded-full bg-red-500/10">
+                                                <ShieldCheck className="w-6 h-6 text-red-500" />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-white">Covenant Breached</h4>
+                                                <p className="text-red-400 text-sm">Risk Detected: Vegetation Below Threshold</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h4 className="font-bold text-white">Covenant Breached</h4>
-                                            <p className="text-red-400 text-sm">Risk Detected: Vegetation Below Threshold</p>
+                                        <div className="grid grid-cols-2 gap-2 text-sm">
+                                            <div className="bg-black/50 p-2 rounded">
+                                                <span className="text-zinc-500 block text-xs">Classified As</span>
+                                                <span className={`font-mono font-bold text-sm ${classification?.classification === 'AnnualCrop' ? 'text-yellow-400' : 'text-green-400'}`}>
+                                                    {classification?.classification || 'Unknown'}
+                                                </span>
+                                            </div>
+                                            <div className="bg-black/50 p-2 rounded">
+                                                <span className="text-zinc-500 block text-xs">NDVI Score</span>
+                                                <span className={`font-mono font-bold text-sm ${classification?.ndvi < 0.75 ? 'text-red-500' : 'text-green-500'}`}>
+                                                    {classification?.ndvi?.toFixed(2) || 'N/A'}
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-sm">
-                                        <div className="bg-black/50 p-2 rounded">
-                                            <span className="text-zinc-500 block text-xs">Classified As</span>
-                                            <span className={`font-mono font-bold text-sm ${classification?.classification === 'AnnualCrop' ? 'text-yellow-400' : 'text-green-400'}`}>
-                                                {classification?.classification || 'Unknown'}
-                                            </span>
-                                        </div>
-                                        <div className="bg-black/50 p-2 rounded">
-                                            <span className="text-zinc-500 block text-xs">NDVI Score</span>
-                                            <span className={`font-mono font-bold text-sm ${classification?.ndvi < 0.75 ? 'text-red-500' : 'text-green-500'}`}>
-                                                {classification?.ndvi?.toFixed(2) || 'N/A'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </Card>
+                                    </Card>
+                                    
+                                    {/* Green Finance Metrics */}
+                                    {loanAsset?.green_finance_metrics && (
+                                        <GreenFinanceMetricsCard 
+                                            metrics={loanAsset.green_finance_metrics}
+                                            compact
+                                        />
+                                    )}
+                                </>
                             )}
 
                             {/* Compact Agent Terminal */}
@@ -379,6 +456,25 @@ export function VerificationWidget({
                                             <Globe className="w-3 h-3 text-indigo-400" />
                                             <span className="font-mono text-white text-xs">Sentinel-2B L2A</span>
                                         </div>
+                                        {loanAsset?.location_type && (
+                                            <div className="mt-2 pt-2 border-t border-zinc-700">
+                                                <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Enhanced Metrics</div>
+                                                <div className="flex items-center gap-1.5 text-xs">
+                                                    {loanAsset.location_type && (
+                                                        <LocationTypeBadge 
+                                                            locationType={loanAsset.location_type}
+                                                            compact
+                                                        />
+                                                    )}
+                                                    {loanAsset.air_quality_index && (
+                                                        <AirQualityIndicator 
+                                                            aqi={loanAsset.air_quality_index}
+                                                            compact
+                                                        />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </>
                             ) : (

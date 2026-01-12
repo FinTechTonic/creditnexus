@@ -148,6 +148,88 @@ class DealService:
         self.db.commit()
         self.db.refresh(deal)
         
+        # Auto-evaluate green finance on deal creation (if enabled and location data available)
+        if settings.ENHANCED_SATELLITE_ENABLED:
+            try:
+                from app.services.policy_service import PolicyService
+                from app.services.policy_engine_factory import get_policy_engine
+                from app.models.cdm import CreditAgreement
+                from app.models.loan_asset import LoanAsset
+                
+                # Check if deal has loan assets with location data
+                # Note: Loan assets may be created later, so this is optional
+                loan_assets = self.db.query(LoanAsset).filter(
+                    LoanAsset.loan_id.like(f"%{deal.deal_id}%")
+                ).all()
+                
+                if loan_assets:
+                    # Get first loan asset with location
+                    loan_asset_with_location = next(
+                        (la for la in loan_assets if la.geo_lat and la.geo_lon),
+                        None
+                    )
+                    
+                    if loan_asset_with_location:
+                        policy_service = PolicyService(get_policy_engine())
+                        
+                        # Create basic CreditAgreement for evaluation
+                        # In production, this would come from extracted documents
+                        credit_agreement = CreditAgreement(
+                            deal_id=deal.deal_id,
+                            loan_identification_number=deal.deal_id,
+                            sustainability_linked=deal.deal_data.get("sustainability_linked", False) if deal.deal_data else False
+                        )
+                        
+                        # Evaluate green finance compliance
+                        green_finance_result = policy_service.evaluate_green_finance_compliance(
+                            credit_agreement=credit_agreement,
+                            loan_asset=loan_asset_with_location,
+                            document_id=None
+                        )
+                        
+                        # Store green finance assessment in deal metadata
+                        if deal.deal_data is None:
+                            deal.deal_data = {}
+                        deal.deal_data["green_finance_assessment"] = {
+                            "decision": green_finance_result.decision,
+                            "rule_applied": green_finance_result.rule_applied,
+                            "trace_id": green_finance_result.trace_id,
+                            "matched_rules": green_finance_result.matched_rules,
+                            "assessed_at": datetime.utcnow().isoformat()
+                        }
+                        
+                        # Create PolicyDecision for green finance
+                        green_policy_decision = PolicyDecision(
+                            transaction_id=deal.deal_id,
+                            transaction_type="green_finance_assessment",
+                            decision=green_finance_result.decision,
+                            rule_applied=green_finance_result.rule_applied,
+                            trace_id=green_finance_result.trace_id,
+                            trace=green_finance_result.trace,
+                            matched_rules=green_finance_result.matched_rules,
+                            cdm_events=[generate_cdm_policy_evaluation(
+                                transaction_id=deal.deal_id,
+                                transaction_type="green_finance_assessment",
+                                decision=green_finance_result.decision,
+                                rule_applied=green_finance_result.rule_applied,
+                                related_event_identifiers=[],
+                                evaluation_trace=green_finance_result.trace,
+                                matched_rules=green_finance_result.matched_rules
+                            )],
+                            deal_id=deal.id,
+                            user_id=application.user_id
+                        )
+                        self.db.add(green_policy_decision)
+                        self.db.commit()
+                        
+                        logger.info(
+                            f"Green finance assessment for deal {deal.id}: "
+                            f"{green_finance_result.decision} (rule: {green_finance_result.rule_applied})"
+                        )
+            except Exception as e:
+                logger.warning(f"Green finance evaluation failed for deal {deal.id}: {e}", exc_info=True)
+                # Don't fail deal creation if green finance evaluation fails
+        
         # Index deal in ChromaDB
         try:
             from app.chains.document_retrieval_chain import add_deal
@@ -563,6 +645,14 @@ class DealService:
         
         if "verification_history" not in deal.deal_data:
             deal.deal_data["verification_history"] = []
+        
+        # Extract enhanced metrics if available
+        location_type = verification_result.get("location_type")
+        air_quality_index = verification_result.get("air_quality_index")
+        composite_sustainability_score = verification_result.get("composite_sustainability_score")
+        sustainability_components = verification_result.get("sustainability_components")
+        osm_metrics = verification_result.get("osm_metrics", {})
+        air_quality = verification_result.get("air_quality", {})
         
         verification_entry = {
             "ndvi_score": ndvi_score,

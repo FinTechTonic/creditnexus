@@ -436,10 +436,11 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
       
-      // Handle array access like parties[0]
+      // Handle array access like parties[0] or parties[role='Borrower']
       if (part.includes('[')) {
         const [key, indexStr] = part.split('[');
         const indexMatch = indexStr.match(/^(\d+)\]$/);
+        const roleMatch = indexStr.match(/^role=['"](.+)['"]\]$/);
         
         if (!current[key]) {
           current[key] = [];
@@ -451,6 +452,14 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
             current[key][index] = {};
           }
           current = current[key][index];
+        } else if (roleMatch) {
+          const role = roleMatch[1];
+          let item = current[key].find((item: any) => item.role === role);
+          if (!item) {
+            item = { role };
+            current[key].push(item);
+          }
+          current = item;
         }
       } else {
         if (!current[part]) {
@@ -464,12 +473,26 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
     if (lastPart.includes('[')) {
       const [key, indexStr] = lastPart.split('[');
       const indexMatch = indexStr.match(/^(\d+)\]$/);
+      const roleMatch = indexStr.match(/^role=['"](.+)['"]\]$/);
       if (indexMatch) {
         const index = parseInt(indexMatch[1], 10);
         if (!current[key]) {
           current[key] = [];
         }
         current[key][index] = value;
+      } else if (roleMatch) {
+        const role = roleMatch[1];
+        let item = current[key]?.find((item: any) => item.role === role);
+        if (!item) {
+          if (!current[key]) {
+            current[key] = [];
+          }
+          item = { role };
+          current[key].push(item);
+        }
+        // Apply value to the found item's property (if path continues)
+        // For now, we'll set it directly on the item
+        Object.assign(item, value);
       }
     } else {
       current[lastPart] = value;

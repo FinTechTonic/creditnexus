@@ -211,14 +211,14 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
     
     try {
       // Call trade settlement endpoint (without payment payload first to get payment request)
+      // FastAPI Optional[PaymentPayloadRequest] = None means we can send empty body or omit it
       const response = await fetch(`/api/trades/${tradeId}/settle`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          payment_payload: null  // Request payment instructions
-        }),
+        // Send empty body or omit body entirely - FastAPI will treat payment_request as None
+        body: JSON.stringify({}),
       });
       
       if (response.status === 402) {

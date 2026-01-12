@@ -127,11 +127,31 @@ class LoanAsset(SQLModel, table=True):
         description="Additional metadata including penalty payment flags"
     )
     
+    # --- Green Finance Metrics (Enhanced Satellite Verification) ---
+    location_type: Optional[str] = Field(
+        default=None,
+        description="Location classification: urban, suburban, or rural"
+    )
+    air_quality_index: Optional[float] = Field(
+        default=None,
+        description="Air Quality Index (AQI) value"
+    )
+    composite_sustainability_score: Optional[float] = Field(
+        default=None,
+        description="Composite sustainability score (0.0 to 1.0)"
+    )
+    green_finance_metrics: Optional[dict] = Field(
+        default=None,
+        sa_column=Column(JSONB),
+        description="Comprehensive green finance metrics (OSM, air quality, sustainability, etc.)"
+    )
+    
     def to_dict(self) -> dict:
         """Convert model to dictionary for API responses."""
         return {
             "id": self.id,
             "loan_id": self.loan_id,
+            "original_text": self.original_text,  # Include original_text for verification dashboard
             "collateral_address": self.collateral_address,
             "geo_lat": self.geo_lat,
             "geo_lon": self.geo_lon,
@@ -146,6 +166,10 @@ class LoanAsset(SQLModel, table=True):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_verified_at": self.last_verified_at.isoformat() if self.last_verified_at else None,
             "verification_error": self.verification_error,
+            "location_type": self.location_type,
+            "air_quality_index": self.air_quality_index,
+            "composite_sustainability_score": self.composite_sustainability_score,
+            "green_finance_metrics": self.green_finance_metrics,
         }
     
     def update_verification(self, ndvi_score: float) -> None:

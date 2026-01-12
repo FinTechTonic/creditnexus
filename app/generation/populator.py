@@ -325,6 +325,58 @@ User Context:
                 doc_subdir = doc.get('subdirectory', 'documents')
                 documents_info += f"- {doc_title} ({doc_subdir})\n"
         
+        # Asset-based lending specific variables
+        collateral_valuation = "Standard market valuation methodology"
+        borrowing_base = f"Eligible assets up to {total_commitment:,.2f} {currency}"
+        monitoring_frequency = "Monthly"
+        advance_rates = "Receivables: 85%, Inventory: 50%, Equipment: 60%"
+        examination_frequency = "Quarterly"
+        
+        # Acquisition finance specific variables
+        target_company = "Target Company Name"
+        acquisition_structure = "Share purchase agreement"
+        equity_funding_amount = f"{total_commitment * Decimal('0.3'):,.2f} {currency}"  # Assume 30% equity
+        equity_sources = "Private equity funds and management equity"
+        
+        # Infrastructure finance specific variables
+        project_name = facility_name
+        infrastructure_type = "Infrastructure project"
+        regulatory_framework = "Applicable regulatory framework"
+        concession_agreement = "Concession agreement details"
+        
+        # Try to extract from mapped_fields or deal_context if available
+        if mapped_fields:
+            collateral_valuation = mapped_fields.get("collateral_valuation", collateral_valuation)
+            borrowing_base = mapped_fields.get("borrowing_base", borrowing_base)
+            monitoring_frequency = mapped_fields.get("monitoring_frequency", monitoring_frequency)
+            advance_rates = mapped_fields.get("advance_rates", advance_rates)
+            examination_frequency = mapped_fields.get("examination_frequency", examination_frequency)
+            target_company = mapped_fields.get("target_company", target_company)
+            acquisition_structure = mapped_fields.get("acquisition_structure", acquisition_structure)
+            equity_funding_amount = mapped_fields.get("equity_funding_amount", equity_funding_amount)
+            equity_sources = mapped_fields.get("equity_sources", equity_sources)
+            project_name = mapped_fields.get("project_name", project_name)
+            infrastructure_type = mapped_fields.get("infrastructure_type", infrastructure_type)
+            regulatory_framework = mapped_fields.get("regulatory_framework", regulatory_framework)
+            concession_agreement = mapped_fields.get("concession_agreement", concession_agreement)
+        
+        if deal_context and deal_context.get("deal_data"):
+            deal_data = deal_context["deal_data"]
+            if isinstance(deal_data, dict):
+                collateral_valuation = deal_data.get("collateral_valuation", collateral_valuation)
+                borrowing_base = deal_data.get("borrowing_base", borrowing_base)
+                monitoring_frequency = deal_data.get("monitoring_frequency", monitoring_frequency)
+                advance_rates = deal_data.get("advance_rates", advance_rates)
+                examination_frequency = deal_data.get("examination_frequency", examination_frequency)
+                target_company = deal_data.get("target_company", target_company)
+                acquisition_structure = deal_data.get("acquisition_structure", acquisition_structure)
+                equity_funding_amount = deal_data.get("equity_funding_amount", equity_funding_amount)
+                equity_sources = deal_data.get("equity_sources", equity_sources)
+                project_name = deal_data.get("project_name", project_name)
+                infrastructure_type = deal_data.get("infrastructure_type", infrastructure_type)
+                regulatory_framework = deal_data.get("regulatory_framework", regulatory_framework)
+                concession_agreement = deal_data.get("concession_agreement", concession_agreement)
+        
         return {
             "borrower_name": borrower_name,
             "borrower_lei": borrower_lei or "Not provided",
@@ -342,6 +394,22 @@ User Context:
             "deal_context": deal_info or "Not applicable",
             "user_context": user_info or "Not applicable",
             "related_documents": documents_info or "Not applicable",
+            # Asset-based lending variables
+            "collateral_valuation": collateral_valuation,
+            "borrowing_base": borrowing_base,
+            "monitoring_frequency": monitoring_frequency,
+            "advance_rates": advance_rates,
+            "examination_frequency": examination_frequency,
+            # Acquisition finance variables
+            "target_company": target_company,
+            "acquisition_structure": acquisition_structure,
+            "equity_funding_amount": equity_funding_amount,
+            "equity_sources": equity_sources,
+            # Infrastructure finance variables
+            "project_name": project_name,
+            "infrastructure_type": infrastructure_type,
+            "regulatory_framework": regulatory_framework,
+            "concession_agreement": concession_agreement,
         }
     
     def _generate_representations(

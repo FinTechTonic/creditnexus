@@ -1603,8 +1603,7 @@ export function DemoDataDashboard() {
           setSelectedDeal(null);
         }}
         onViewDocument={(documentId) => {
-          // TODO: Navigate to document viewer
-          console.log('View document:', documentId);
+          navigate(`/dashboard/documents/${documentId}`);
         }}
         onDownloadDocument={(documentId) => {
           // TODO: Download document

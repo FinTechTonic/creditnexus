@@ -4,7 +4,10 @@ import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
 import { fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData, ESGKPITarget } from '@/context/FDC3Context';
-import { Leaf, TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, Target, Droplets, Zap, Recycle, Search, Loader2, ChevronDown } from 'lucide-react';
+import { Leaf, TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, Target, Droplets, Zap, Recycle, Search, Loader2, ChevronDown, MapPin, Building2, Wind } from 'lucide-react';
+import { LocationTypeBadge } from '@/components/green-finance/LocationTypeBadge';
+import { AirQualityIndicator } from '@/components/green-finance/AirQualityIndicator';
+import { SustainabilityScoreCard } from '@/components/green-finance/SustainabilityScoreCard';
 
 const MOCK_ESG_DATA: ESGKPITarget[] = [
   {
@@ -66,6 +69,7 @@ export function GreenLens() {
   const [availableLoans, setAvailableLoans] = useState<any[]>([]);
   const [loadingLoans, setLoadingLoans] = useState(false);
   const [loanSearchQuery, setLoanSearchQuery] = useState('');
+  const [selectedLoanAsset, setSelectedLoanAsset] = useState<any>(null);
 
   useEffect(() => {
     if (context?.loan) {
@@ -263,6 +267,7 @@ export function GreenLens() {
           </CardContent>
         </Card>
       ) : (
+        <>
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="border-slate-700 bg-slate-800/50">
@@ -463,6 +468,81 @@ export function GreenLens() {
             </Card>
           </div>
         </div>
+
+        {/* Geospatial ESG Metrics */}
+        {(selectedLoanAsset && (selectedLoanAsset.location_type || selectedLoanAsset.air_quality_index || selectedLoanAsset.composite_sustainability_score)) && (
+          <Card className="border-slate-700 bg-slate-800/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-blue-400" />
+                Geospatial ESG Metrics
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {selectedLoanAsset.location_type && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">Location Type</div>
+                    <LocationTypeBadge 
+                      locationType={selectedLoanAsset.location_type}
+                      confidence={selectedLoanAsset.green_finance_metrics?.location_confidence}
+                    />
+                  </div>
+                )}
+                {selectedLoanAsset.air_quality_index && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">Air Quality</div>
+                    <AirQualityIndicator 
+                      aqi={selectedLoanAsset.air_quality_index}
+                      pm25={selectedLoanAsset.green_finance_metrics?.air_quality?.pm25}
+                      compact
+                    />
+                  </div>
+                )}
+                {selectedLoanAsset.composite_sustainability_score !== undefined && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">Sustainability Score</div>
+                    <SustainabilityScoreCard 
+                      compositeScore={selectedLoanAsset.composite_sustainability_score}
+                      components={selectedLoanAsset.green_finance_metrics?.sustainability_components}
+                      compact
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Add geospatial KPIs to ESG targets */}
+              {selectedLoanAsset.composite_sustainability_score !== undefined && (
+                <div className="pt-4 border-t border-slate-700">
+                  <div className="text-xs text-muted-foreground mb-2">Geospatial ESG KPIs</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-300 flex items-center gap-2">
+                        <Leaf className="h-4 w-4" />
+                        Location Sustainability Score
+                      </span>
+                      <span className={selectedLoanAsset.composite_sustainability_score >= 0.7 ? 'text-emerald-400' : 'text-yellow-400'}>
+                        {(selectedLoanAsset.composite_sustainability_score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    {selectedLoanAsset.air_quality_index && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-300 flex items-center gap-2">
+                          <Wind className="h-4 w-4" />
+                          Air Quality Index
+                        </span>
+                        <span className={selectedLoanAsset.air_quality_index <= 100 ? 'text-emerald-400' : 'text-orange-400'}>
+                          {Math.round(selectedLoanAsset.air_quality_index)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        </>
       )}
     </div>
   );

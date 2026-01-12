@@ -1,0 +1,43 @@
+# Vehicle Activity Policy Rules
+# Traffic and vehicle emission policies
+# Based on EU Green Deal transport emissions targets and local air quality regulations
+
+- name: block_high_vehicle_density_urban_areas
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: location_type
+        op: eq
+        value: "urban"
+      - field: vehicle_density
+        op: gt
+        value: 500  # vehicles/km²
+      - field: estimated_vehicle_emissions
+        op: gt
+        value: 150  # tons CO2/year per km²
+      - field: air_quality_index
+        op: gt
+        value: 150
+  action: block
+  priority: 85
+  description: "Block facilities in urban areas with excessive vehicle density and emissions"
+  category: "green_finance"
+
+- name: flag_high_traffic_areas
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "facility_creation"
+      - field: vehicle_density
+        op: gt
+        value: 300  # vehicles/km²
+      - field: road_density
+        op: gt
+        value: 6.0  # km/km²
+  action: flag
+  priority: 65
+  description: "Flag facilities in high-traffic areas requiring traffic impact assessment"
+  category: "green_finance"

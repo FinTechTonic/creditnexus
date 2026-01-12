@@ -10,7 +10,8 @@ from typing import List, Dict, Any, Optional
 import logging
 
 from sqlalchemy.orm import Session
-from app.db.models import PaymentSchedule, LoanAsset
+from app.db.models import PaymentSchedule
+from app.models.loan_asset import LoanAsset
 from app.models.loan_asset import LoanAsset as LoanAssetModel
 from app.services.x402_payment_service import X402PaymentService
 from app.models.cdm import Party, Money, Currency

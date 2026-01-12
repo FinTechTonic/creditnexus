@@ -81,6 +81,9 @@ dependencies = [
     "icalendar>=6.3.2",
     # Twilio integration
     "twilio>=8.0.0",
+    "osmnx>=1.6.0",
+    "overpy>=0.6",
+    "geopandas>=0.14.0",
 ]
 
 [project.optional-dependencies]

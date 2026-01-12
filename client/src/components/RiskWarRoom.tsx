@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useFDC3 } from '@/context/FDC3Context';
+import { fetchWithAuth } from '@/context/AuthContext';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
@@ -18,6 +19,11 @@ export default function RiskWarRoom() {
     const [isSearching, setIsSearching] = useState(false);
     const [liveAlert, setLiveAlert] = useState<any>(null);
 
+    // Load portfolio data on mount
+    useEffect(() => {
+        performSearch(''); // Empty query loads portfolio data
+    }, []);
+
     // 1. FDC3 LISTENER (The "War Room" reacts to the "Front Line")
     useEffect(() => {
         if (context && context.type === 'finos.cdm.landUse') {
@@ -33,14 +39,97 @@ export default function RiskWarRoom() {
     }, [context]);
 
     const performSearch = async (searchQuery: string) => {
-        if (!searchQuery) return;
+        if (!searchQuery) {
+            // If no query, load portfolio data directly
+            setIsSearching(true);
+            try {
+                const portfolioRes = await fetchWithAuth('/api/credit-risk/portfolio-summary', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (portfolioRes.ok) {
+                    const portfolioData = await portfolioRes.json();
+                    const portfolioResults = (portfolioData.portfolio?.deals || []).map((deal: any) => ({
+                        score: 0.8,
+                        event: deal,
+                        narrative: `Deal ${deal.deal_id || deal.id}: ${deal.borrower_name || 'Unknown'} - ${deal.status || 'N/A'}`
+                    }));
+                    setResults(portfolioResults);
+                }
+            } catch (portfolioErr) {
+                console.error("Portfolio fetch failed", portfolioErr);
+                setResults([]);
+            } finally {
+                setIsSearching(false);
+            }
+            return;
+        }
+        
         setIsSearching(true);
         try {
-            const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
-            const data = await res.json();
-            setResults(data);
+            // Use proper document retrieval endpoint with repository pattern
+            const res = await fetchWithAuth('/api/documents/retrieve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: searchQuery,
+                    top_k: 10,
+                    extract_cdm: true
+                })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                // Transform document retrieval results to SearchResult format
+                const transformedResults: SearchResult[] = (data.documents || []).map((doc: any) => {
+                    // Extract event data from CDM or document
+                    const event = doc.cdm_data || doc.document || {};
+                    const narrative = doc.cdm_data 
+                        ? `Document ${doc.document_id}: ${doc.cdm_data.borrower_name || 'Unknown'} - Similarity: ${(doc.similarity_score * 100).toFixed(1)}%`
+                        : `Document ${doc.document_id}: ${doc.document?.filename || 'Unknown'} - Similarity: ${(doc.similarity_score * 100).toFixed(1)}%`;
+                    
+                    return {
+                        score: doc.similarity_score || 0.5,
+                        event: {
+                            ...event,
+                            eventType: event.eventType || 'Document',
+                            meta: {
+                                globalKey: `DOC-${doc.document_id}`,
+                                ...event.meta
+                            },
+                            document_id: doc.document_id
+                        },
+                        narrative
+                    };
+                });
+                setResults(transformedResults);
+            } else {
+                // Fallback: Try portfolio summary endpoint
+                try {
+                    const portfolioRes = await fetchWithAuth('/api/credit-risk/portfolio-summary', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+                    if (portfolioRes.ok) {
+                        const portfolioData = await portfolioRes.json();
+                        // Convert portfolio data to search results format
+                        const portfolioResults = (portfolioData.portfolio?.deals || []).map((deal: any) => ({
+                            score: 0.8,
+                            event: deal,
+                            narrative: `Deal ${deal.deal_id || deal.id}: ${deal.borrower_name || 'Unknown'} - ${deal.status || 'N/A'}`
+                        }));
+                        setResults(portfolioResults);
+                    }
+                } catch (portfolioErr) {
+                    console.error("Portfolio fetch failed", portfolioErr);
+                    setResults([]);
+                }
+            }
         } catch (e) {
             console.error("Search failed", e);
+            setResults([]);
         } finally {
             setIsSearching(false);
         }

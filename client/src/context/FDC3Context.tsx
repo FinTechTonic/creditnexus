@@ -138,6 +138,30 @@ export interface LandUseContext extends Context {
   cloudCover: number;
 }
 
+export interface GreenFinanceAssessmentContext extends Context {
+  type: 'finos.cdm.greenFinanceAssessment';
+  id: { transactionId: string };
+  location: {
+    lat: number;
+    lon: number;
+    type: 'urban' | 'suburban' | 'rural';
+  };
+  environmentalMetrics: {
+    airQualityIndex: number;
+    pm25?: number;
+    pm10?: number;
+    no2?: number;
+  };
+  sustainabilityScore: number;
+  sdgAlignment?: {
+    sdg_11?: number;
+    sdg_13?: number;
+    sdg_15?: number;
+    overall_alignment: number;
+  };
+  assessedAt: string;
+}
+
 export type CreditNexusContext =
   | CreditNexusLoanContext
   | AgreementContext
@@ -145,7 +169,8 @@ export type CreditNexusContext =
   | PortfolioContext
   | ApprovalResultContext
   | ESGDataContext
-  | LandUseContext;
+  | LandUseContext
+  | GreenFinanceAssessmentContext;
 
 export type IntentName =
   | 'ViewLoanAgreement'

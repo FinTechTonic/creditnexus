@@ -23,7 +23,8 @@ from sqlalchemy import and_
 from app.db.models import (
     User, UserRole, Deal, Application, Document, DocumentVersion, Workflow,
     GeneratedDocument, DealNote, PolicyDecision, DealStatus,
-    DealType, ApplicationStatus, ApplicationType, WorkflowState, GeneratedDocumentStatus
+    DealType, ApplicationStatus, ApplicationType, WorkflowState, GeneratedDocumentStatus,
+    GreenFinanceAssessment
 )
 from app.models.cdm import CreditAgreement
 from app.models.loan_asset import LoanAsset
@@ -501,6 +502,14 @@ class DemoDataService:
         # Step 6: Generate LoanAssets for sustainability-linked deals
         loan_assets = self._generate_loan_assets_for_deals(deals)
         
+        # Step 6b: Create green finance assessments for loan assets
+        if loan_assets and settings.ENHANCED_SATELLITE_ENABLED:
+            try:
+                green_finance_assessments = self._create_green_finance_assessments(loan_assets, deals)
+                logger.info(f"Created {len(green_finance_assessments)} green finance assessments for demo loan assets")
+            except Exception as e:
+                logger.warning(f"Failed to create green finance assessments: {e}")
+        
         # Step 7: Generate documents from templates for approved deals
         approved_deals = [d for d in deals if d.status in [DealStatus.APPROVED.value, DealStatus.ACTIVE.value]]
         generated_docs = []
@@ -516,6 +525,15 @@ class DemoDataService:
         
         # Step 9: Create policy decisions for documents
         policy_decisions = self.create_policy_decisions_for_documents([d.id for d in documents])
+        
+        # Step 9b: Create green finance policy decisions for loan assets (if enabled)
+        if loan_assets and settings.ENHANCED_SATELLITE_ENABLED:
+            try:
+                green_policy_decisions = self._create_green_finance_policy_decisions(loan_assets, deals)
+                policy_decisions.extend(green_policy_decisions)
+                logger.info(f"Created {len(green_policy_decisions)} green finance policy decisions")
+            except Exception as e:
+                logger.warning(f"Failed to create green finance policy decisions: {e}")
         
         # Step 10: Store generated documents as files
         self._store_generated_documents(deals, documents, document_versions, generated_docs)
@@ -1310,7 +1328,126 @@ Interest Rate: {facility.interest_terms.rate_option.benchmark} + {facility.inter
                     "confidence": random.uniform(0.85, 0.98)
                 }
                 
-                # Create loan asset
+                # Generate green finance metrics (synthetic for demo)
+                # Location classification based on address pattern
+                location_type_map = {
+                    "123 Industrial Way, Detroit, MI 48201": "urban",
+                    "456 Farm Road, Napa, CA 94558": "rural",
+                    "789 Agricultural Blvd, Fresno, CA 93721": "suburban",
+                    "321 Green Valley Lane, Austin, TX 78701": "suburban"
+                }
+                location_type = location_type_map.get(collateral_address, random.choice(["urban", "suburban", "rural"]))
+                location_confidence = random.uniform(0.75, 0.95)
+                
+                # Generate air quality data (synthetic)
+                # Urban areas typically have higher AQI, rural lower
+                if location_type == "urban":
+                    aqi = random.uniform(80, 150)  # Moderate to Unhealthy for Sensitive Groups
+                    pm25 = random.uniform(25, 55)
+                    pm10 = random.uniform(50, 100)
+                    no2 = random.uniform(30, 80)
+                elif location_type == "suburban":
+                    aqi = random.uniform(50, 100)  # Good to Moderate
+                    pm25 = random.uniform(12, 35)
+                    pm10 = random.uniform(30, 70)
+                    no2 = random.uniform(15, 50)
+                else:  # rural
+                    aqi = random.uniform(20, 60)  # Good
+                    pm25 = random.uniform(5, 20)
+                    pm10 = random.uniform(10, 40)
+                    no2 = random.uniform(5, 25)
+                
+                # Generate OSM metrics (synthetic)
+                if location_type == "urban":
+                    building_count = random.randint(500, 2000)
+                    building_density = random.uniform(50, 150)  # buildings/km²
+                    road_density = random.uniform(8, 15)  # km/km²
+                    green_infrastructure_coverage = random.uniform(0.10, 0.25)  # 10-25%
+                elif location_type == "suburban":
+                    building_count = random.randint(100, 500)
+                    building_density = random.uniform(20, 50)  # buildings/km²
+                    road_density = random.uniform(5, 10)  # km/km²
+                    green_infrastructure_coverage = random.uniform(0.25, 0.40)  # 25-40%
+                else:  # rural
+                    building_count = random.randint(10, 100)
+                    building_density = random.uniform(2, 20)  # buildings/km²
+                    road_density = random.uniform(2, 6)  # km/km²
+                    green_infrastructure_coverage = random.uniform(0.40, 0.70)  # 40-70%
+                
+                # Calculate sustainability components
+                # Normalize NDVI to 0-1 (already is)
+                vegetation_health = last_verified_score
+                
+                # Normalize AQI to 0-1 (inverse: lower AQI = better = higher score)
+                # AQI 0-50 = 1.0, 51-100 = 0.8, 101-150 = 0.6, 151-200 = 0.4, 201+ = 0.2
+                if aqi <= 50:
+                    air_quality_score = 1.0
+                elif aqi <= 100:
+                    air_quality_score = 0.8
+                elif aqi <= 150:
+                    air_quality_score = 0.6
+                elif aqi <= 200:
+                    air_quality_score = 0.4
+                else:
+                    air_quality_score = 0.2
+                
+                # Urban activity (inverse: less activity = better for sustainability)
+                # Based on building/road density
+                activity_score = max(0.0, 1.0 - (building_density / 200.0) - (road_density / 20.0))
+                
+                # Green infrastructure (direct: more green = better)
+                green_infra_score = green_infrastructure_coverage
+                
+                # Pollution levels (inverse: less pollution = better)
+                pollution_score = max(0.0, 1.0 - (aqi / 300.0))
+                
+                # Calculate composite sustainability score (weighted average)
+                # Using default weights from config
+                sustainability_components = {
+                    "vegetation_health": vegetation_health,
+                    "air_quality": air_quality_score,
+                    "urban_activity": activity_score,
+                    "green_infrastructure": green_infra_score,
+                    "pollution_levels": pollution_score
+                }
+                
+                # Default weights (matching config defaults)
+                weights = {
+                    "vegetation_health": 0.30,
+                    "air_quality": 0.25,
+                    "urban_activity": 0.15,
+                    "green_infrastructure": 0.20,
+                    "pollution_levels": 0.10
+                }
+                
+                composite_sustainability_score = (
+                    sustainability_components["vegetation_health"] * weights["vegetation_health"] +
+                    sustainability_components["air_quality"] * weights["air_quality"] +
+                    sustainability_components["urban_activity"] * weights["urban_activity"] +
+                    sustainability_components["green_infrastructure"] * weights["green_infrastructure"] +
+                    sustainability_components["pollution_levels"] * weights["pollution_levels"]
+                )
+                
+                # Build green finance metrics dict
+                green_finance_metrics = {
+                    "location_type": location_type,
+                    "location_confidence": location_confidence,
+                    "osm_metrics": {
+                        "building_count": building_count,
+                        "building_density": building_density,
+                        "road_density": road_density,
+                        "green_infrastructure_coverage": green_infrastructure_coverage
+                    },
+                    "air_quality": {
+                        "pm25": pm25,
+                        "pm10": pm10,
+                        "no2": no2,
+                        "data_source": "synthetic_demo"
+                    },
+                    "sustainability_components": sustainability_components
+                }
+                
+                # Create loan asset with green finance metrics
                 loan_asset = LoanAsset(
                     loan_id=deal.deal_id,
                     original_text=f"Credit agreement for {deal.deal_id} with sustainability-linked provisions.",
@@ -1325,7 +1462,12 @@ Interest Rate: {facility.interest_terms.rate_option.benchmark} + {facility.inter
                     current_interest_rate=float(current_interest_rate),
                     penalty_bps=penalty_bps if risk_status == "BREACH" else 0,
                     last_verified_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
-                    asset_metadata=asset_metadata
+                    asset_metadata=asset_metadata,
+                    # Green Finance Metrics
+                    location_type=location_type,
+                    air_quality_index=aqi,
+                    composite_sustainability_score=composite_sustainability_score,
+                    green_finance_metrics=green_finance_metrics
                 )
                 
                 # Add to session - SQLModel works with SQLAlchemy sessions
@@ -1704,6 +1846,198 @@ Interest Rate: {facility.interest_terms.rate_option.benchmark} + {facility.inter
         self._update_status("policy_decisions", status="completed", completed_at=datetime.utcnow())
         
         return policy_decisions
+    
+    def _create_green_finance_policy_decisions(
+        self,
+        loan_assets: List[LoanAsset],
+        deals: List[Deal]
+    ) -> List[PolicyDecision]:
+        """
+        Create green finance policy decisions for demo loan assets.
+        
+        Args:
+            loan_assets: List of LoanAsset objects
+            deals: List of Deal objects (for deal_id mapping)
+            
+        Returns:
+            List of PolicyDecision objects
+        """
+        if not loan_assets:
+            return []
+        
+        policy_decisions = []
+        deal_id_map = {deal.deal_id: deal.id for deal in deals}
+        
+        try:
+            from app.services.policy_service import PolicyService
+            from app.services.policy_engine_factory import get_policy_engine
+            from app.models.cdm import CreditAgreement
+            
+            policy_service = PolicyService(get_policy_engine())
+            
+            for loan_asset in loan_assets:
+                try:
+                    if not loan_asset.geo_lat or not loan_asset.geo_lon:
+                        continue
+                    
+                    deal_id = deal_id_map.get(loan_asset.loan_id)
+                    
+                    # Get deal for credit agreement context
+                    deal = next((d for d in deals if d.deal_id == loan_asset.loan_id), None)
+                    
+                    # Create basic CreditAgreement for evaluation
+                    credit_agreement = None
+                    if deal:
+                        credit_agreement = CreditAgreement(
+                            deal_id=deal.deal_id,
+                            loan_identification_number=deal.deal_id,
+                            sustainability_linked=deal.deal_data.get("sustainability_linked", False) if deal.deal_data else False
+                        )
+                    
+                    # Evaluate green finance compliance
+                    green_finance_result = policy_service.evaluate_green_finance_compliance(
+                        credit_agreement=credit_agreement,
+                        loan_asset=loan_asset,
+                        document_id=None
+                    )
+                    
+                    # Create PolicyDecision
+                    policy_decision = PolicyDecision(
+                        transaction_id=loan_asset.loan_id,
+                        deal_id=deal_id,
+                        loan_asset_id=loan_asset.id,
+                        decision=green_finance_result.decision,
+                        rule_applied=green_finance_result.rule_applied,
+                        trace_id=green_finance_result.trace_id,
+                        policy_evaluation_trace=green_finance_result.trace,
+                        matched_rules=green_finance_result.matched_rules,
+                        created_at=datetime.utcnow()
+                    )
+                    
+                    self.db.add(policy_decision)
+                    policy_decisions.append(policy_decision)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to create green finance policy decision for loan asset {loan_asset.id}: {e}")
+                    continue
+            
+            self.db.commit()
+            
+        except Exception as e:
+            logger.error(f"Failed to create green finance policy decisions: {e}", exc_info=True)
+            self.db.rollback()
+        
+        return policy_decisions
+    
+    def _create_green_finance_assessments(
+        self,
+        loan_assets: List[LoanAsset],
+        deals: List[Deal]
+    ) -> List[GreenFinanceAssessment]:
+        """
+        Create green finance assessments for demo loan assets.
+        
+        Args:
+            loan_assets: List of LoanAsset objects
+            deals: List of Deal objects (for deal_id mapping)
+            
+        Returns:
+            List of GreenFinanceAssessment objects
+        """
+        if not loan_assets:
+            return []
+        
+        self._update_status("green_finance_assessments", status="running", 
+                          started_at=datetime.utcnow(), total=len(loan_assets), current=0)
+        
+        assessments = []
+        deal_id_map = {deal.deal_id: deal.id for deal in deals}
+        
+        for loan_asset in loan_assets:
+            try:
+                if not loan_asset.geo_lat or not loan_asset.geo_lon:
+                    continue
+                
+                # Get deal_id from loan_id
+                deal_id = deal_id_map.get(loan_asset.loan_id)
+                
+                # Extract green finance metrics
+                green_metrics = loan_asset.green_finance_metrics or {}
+                osm_metrics = green_metrics.get("osm_metrics", {})
+                air_quality = green_metrics.get("air_quality", {})
+                sustainability_components = green_metrics.get("sustainability_components", {})
+                
+                # Build environmental metrics
+                environmental_metrics = {
+                    "air_quality_index": loan_asset.air_quality_index,
+                    "pm25": air_quality.get("pm25"),
+                    "pm10": air_quality.get("pm10"),
+                    "no2": air_quality.get("no2")
+                }
+                
+                # Build urban activity metrics
+                urban_activity_metrics = {
+                    "building_count": osm_metrics.get("building_count"),
+                    "building_density": osm_metrics.get("building_density"),
+                    "road_density": osm_metrics.get("road_density"),
+                    "green_infrastructure_coverage": osm_metrics.get("green_infrastructure_coverage")
+                }
+                
+                # Calculate SDG alignment (simplified for demo)
+                sdg_alignment = {
+                    "sdg_11": min(1.0, (loan_asset.composite_sustainability_score or 0.5) * 1.1),  # Sustainable Cities
+                    "sdg_13": min(1.0, (1.0 - (loan_asset.air_quality_index or 100) / 300.0)),  # Climate Action
+                    "sdg_15": loan_asset.last_verified_score or 0.5,  # Life on Land (NDVI)
+                    "overall_alignment": loan_asset.composite_sustainability_score or 0.5,
+                    "aligned_goals": [],
+                    "needs_improvement": []
+                }
+                
+                # Determine aligned goals (>=70%) and needs improvement (<50%)
+                for goal, score in [("SDG 11", sdg_alignment["sdg_11"]), 
+                                   ("SDG 13", sdg_alignment["sdg_13"]), 
+                                   ("SDG 15", sdg_alignment["sdg_15"])]:
+                    if score >= 0.7:
+                        sdg_alignment["aligned_goals"].append(goal)
+                    elif score < 0.5:
+                        sdg_alignment["needs_improvement"].append(goal)
+                
+                # Create assessment
+                assessment = GreenFinanceAssessment(
+                    transaction_id=loan_asset.loan_id,
+                    deal_id=deal_id,
+                    loan_asset_id=loan_asset.id,
+                    location_lat=loan_asset.geo_lat,
+                    location_lon=loan_asset.geo_lon,
+                    location_type=loan_asset.location_type,
+                    location_confidence=green_metrics.get("location_confidence"),
+                    environmental_metrics=environmental_metrics,
+                    urban_activity_metrics=urban_activity_metrics,
+                    sustainability_score=loan_asset.composite_sustainability_score,
+                    sustainability_components=sustainability_components,
+                    sdg_alignment=sdg_alignment,
+                    assessed_at=loan_asset.last_verified_at or datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                
+                self.db.add(assessment)
+                assessments.append(assessment)
+                self._update_status("green_finance_assessments", 
+                                  current=len(assessments), 
+                                  progress=len(assessments) / len(loan_assets))
+                
+            except Exception as e:
+                error_msg = f"Failed to create green finance assessment for loan asset {loan_asset.id}: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                self._update_status("green_finance_assessments", errors=[error_msg])
+                continue
+        
+        self.db.commit()
+        self._update_status("green_finance_assessments", status="completed", 
+                          completed_at=datetime.utcnow())
+        
+        return assessments
     
     def _create_deal_storage(self, deal_id: str) -> Path:
         """

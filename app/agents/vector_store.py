@@ -9,8 +9,10 @@ import numpy as np
 import uuid
 from typing import List, Dict, Any, Optional
 
-# Constants
-EMBEDDING_DIM = 1536  # OpenAI text-embedding-ada-002
+from app.core.llm_client import get_embeddings_model
+
+# Constants - will be determined dynamically based on configured embeddings
+EMBEDDING_DIM = 384  # Default for sentence-transformers/all-MiniLM-L6-v2, will be updated on first use
 MOCK_EMBEDDINGS = False
 
 logger = logging.getLogger(__name__)
@@ -25,31 +27,40 @@ class TradeVectorStore:
         self.vectors = []
         self.metadata = []
         self.ids = []
+        self.embeddings_model = None
+        self.embedding_dim = EMBEDDING_DIM
         logger.info("Initialized In-Memory Vector Store.")
 
     def _get_embedding(self, text: str) -> List[float]:
         """
-        Generates an embedding for the text.
-        In a real deployment, calls OpenAI API.
-        For Kill Shot Demo, we can use a mock or try real if api key present.
+        Generates an embedding for the text using the configured embeddings model.
+        Uses the LLM client abstraction to get the configured embeddings (local or API-based).
         """
-        try:
-            # Check for langchain_openai
-            from langchain_openai import OpenAIEmbeddings
-            import os
-            
-            if os.getenv("OPENAI_API_KEY"):
-               embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-               return embeddings.embed_query(text)
-            
-        except Exception as e:
-            logger.warning(f"Embedding Model skipped: {e}")
+        # Lazy initialization of embeddings model
+        if self.embeddings_model is None:
+            try:
+                self.embeddings_model = get_embeddings_model()
+                # Get embedding dimension by embedding a test string
+                test_embedding = self.embeddings_model.embed_query("test")
+                self.embedding_dim = len(test_embedding)
+                logger.info(f"Initialized embeddings model with dimension {self.embedding_dim}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize configured embeddings model: {e}")
+                self.embeddings_model = None
+        
+        # Try to use configured embeddings model
+        if self.embeddings_model is not None:
+            try:
+                embedding = self.embeddings_model.embed_query(text)
+                return embedding
+            except Exception as e:
+                logger.warning(f"Embedding generation failed: {e}")
         
         # Fallback: Deterministic 'Mock' Embedding seeded by text definition
-        # This keeps the demo running even offline
+        # This keeps the demo running even if embeddings fail
         seed = len(text)
         np.random.seed(seed)
-        return np.random.rand(EMBEDDING_DIM).tolist()
+        return np.random.rand(self.embedding_dim).tolist()
 
     def add_trade_event(self, event: Dict[str, Any]):
         """
