@@ -7,6 +7,12 @@
     "test": "tests"
   },
   "scripts": {
+    "dev": "powershell -ExecutionPolicy Bypass -File run_openfin.ps1",
+    "dev:unix": "bash run_openfin.sh",
+    "backend": "python scripts/run_dev.py",
+    "frontend": "cd client && npm run dev",
+    "client:build": "cd client && npm run build",
+    "openfin:launch": "openfin launch --config openfin/app.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
