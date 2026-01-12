@@ -21,6 +21,7 @@ const LoanRecovery: React.FC = () => {
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [selectedLoan, setSelectedLoan] = useState<LoanDefault | null>(null);
 
   useEffect(() => {
     const fetchLoanDefaults = async () => {
@@ -102,7 +103,14 @@ const LoanRecovery: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {currentItems.map((loan) => (
                 <tr key={loan.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{loan.loan_id}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <button 
+                      onClick={() => setSelectedLoan(loan)}
+                      className="text-indigo-600 hover:text-indigo-900 hover:underline"
+                    >
+                      {loan.loan_id}
+                    </button>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{loan.status}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{loan.severity}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(loan.due_date).toLocaleDateString()}</td>
@@ -172,6 +180,45 @@ const LoanRecovery: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+      
+      {/* Loan Details Modal */}
+      {selectedLoan && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Loan Details - {selectedLoan.loan_id}</h2>
+              <button onClick={() => setSelectedLoan(null)} className="text-gray-500 hover:text-gray-700 text-xl">
+                ✕
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div><strong>Borrower ID:</strong> {selectedLoan.borrower_id}</div>
+              <div><strong>Deal ID:</strong> {selectedLoan.deal_id}</div>
+              <div><strong>Status:</strong> {selectedLoan.status}</div>
+              <div><strong>Severity:</strong> {selectedLoan.severity}</div>
+              <div><strong>Due Date:</strong> {new Date(selectedLoan.due_date).toLocaleDateString()}</div>
+              <div><strong>Outstanding:</strong> ${selectedLoan.outstanding_amount.toLocaleString()}</div>
+              <div><strong>Created:</strong> {new Date(selectedLoan.created_at).toLocaleDateString()}</div>
+              <div><strong>Updated:</strong> {new Date(selectedLoan.updated_at).toLocaleDateString()}</div>
+            </div>
+            
+            <div className="mt-6 pt-4 border-t">
+              <h3 className="font-semibold mb-2">Actions</h3>
+              <button 
+                onClick={() => {
+                  handleSendReminder(selectedLoan.id);
+                  setSelectedLoan(null);
+                }}
+                disabled={sendingReminder === selectedLoan.id}
+                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {sendingReminder === selectedLoan.id ? 'Sending...' : 'Send SMS Reminder'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
