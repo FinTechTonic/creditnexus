@@ -9,16 +9,18 @@ import { GroundTruthDashboard } from '@/components/GroundTruthDashboard';
 import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Phone } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext } from '@/context/FDC3Context';
+import { Toaster } from 'sonner';
 
 
 import VerificationDashboard from '@/components/VerificationDashboard';
 import RiskWarRoom from '@/components/RiskWarRoom';
+import LoanRecovery from '@/apps/loan-recovery/LoanRecovery';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'risk-war-room' | 'document-generator';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'risk-war-room' | 'document-generator' | 'loan-recovery';
 
 const mainApps: { id: AppView; name: string; icon: React.ReactNode; description: string }[] = [
   {
@@ -71,6 +73,12 @@ const sidebarApps: { id: AppView; name: string; icon: React.ReactNode; descripti
     name: 'Risk War Room',
     icon: <RadioTower className="h-5 w-5 text-red-500" />,
     description: 'Global Portfolio Surveillance',
+  },
+  {
+    id: 'loan-recovery',
+    name: 'Loan Recovery',
+    icon: <Phone className="h-5 w-5 text-orange-500" />,
+    description: 'SMS reminders for overdue loans',
   },
   {
     id: 'green-lens',
@@ -448,8 +456,11 @@ function App() {
           {activeApp === 'ground-truth' && <GroundTruthDashboard />}
           {activeApp === 'verification-demo' && <VerificationDashboard />}
           {activeApp === 'risk-war-room' && <RiskWarRoom />}
+          {activeApp === 'loan-recovery' && <LoanRecovery />}
         </main>
       </div>
+
+      <Toaster position="top-right" richColors />
 
       <footer className="border-t border-slate-700 mt-auto">
         <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400">

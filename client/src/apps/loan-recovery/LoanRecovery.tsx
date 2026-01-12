@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 
 interface LoanDefault {
   id: number;
@@ -57,14 +58,13 @@ const LoanRecovery: React.FC = () => {
       if (!response.ok) {
         throw new Error('Failed to send reminder');
       }
-      // Optionally, you can update the UI to show that the reminder was sent
-      // For now, we just log it
-      console.log(`Reminder sent for default ID: ${defaultId}`);
+      // Show success notification
+      toast.success(`SMS reminder sent successfully for loan ${defaultId}`);
     } catch (err) {
       if (err instanceof Error) {
-        alert(`Error sending reminder: ${err.message}`);
+        toast.error(`Error sending reminder: ${err.message}`);
       } else {
-        alert('An unknown error occurred while sending the reminder.');
+        toast.error('An unknown error occurred while sending the reminder.');
       }
     } finally {
       setSendingReminder(null);
