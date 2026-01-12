@@ -5,6 +5,7 @@ import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentGenerator } from '@/apps/document-generator/DocumentGenerator';
 import { PolicyEditor } from '@/apps/policy-editor/PolicyEditor';
+import { LoanRecovery } from '@/apps/loan-recovery/LoanRecovery';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { Dashboard } from '@/components/Dashboard';
 import { GroundTruthDashboard } from '@/components/GroundTruthDashboard';
@@ -37,7 +38,7 @@ import {
   PERMISSION_DEAL_VIEW_OWN,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'loan-recovery';
 
 interface AppConfig {
   id: AppView;
@@ -116,6 +117,13 @@ const sidebarApps: AppConfig[] = [
     icon: <RadioTower className="h-5 w-5 text-red-500" />,
     description: 'Global Portfolio Surveillance',
     requiredPermission: PERMISSION_DOCUMENT_VIEW,
+  },
+  {
+    id: 'loan-recovery',
+    name: 'Loan Recovery',
+    icon: <RadioTower className="h-5 w-5 text-orange-400" />,
+    description: 'Manage overdue loans and send reminders',
+    requiredPermission: PERMISSION_DEAL_VIEW,
   },
   {
     id: 'green-lens',
@@ -199,7 +207,7 @@ export function DesktopAppLayout() {
       'dashboard', 'applications', 'admin-signups', 'calendar', 'deals',
       'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
       'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
-      'policy-editor', 'library'
+      'policy-editor', 'library', 'loan-recovery'
     ];
     
     // Try to restore from sessionStorage first
@@ -227,6 +235,7 @@ export function DesktopAppLayout() {
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
       '/library': 'library',
+      '/app/loan-recovery': 'loan-recovery',
     };
     // Handle policy-editor routes with policyId parameter
     if (location.pathname.startsWith('/app/policy-editor')) {
@@ -399,6 +408,7 @@ export function DesktopAppLayout() {
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
       '/library': 'library',
+      '/app/loan-recovery': 'loan-recovery',
     };
     
     // Get base pathname (without query parameters)
@@ -523,6 +533,7 @@ export function DesktopAppLayout() {
       'risk-war-room': '/app/risk-war-room',
       'policy-editor': '/app/policy-editor',
       'library': '/library',
+      'loan-recovery': '/app/loan-recovery',
     };
     const path = appToPath[app];
     
@@ -875,6 +886,7 @@ export function DesktopAppLayout() {
           {activeApp === 'demo-data' && <DemoDataDashboard />}
           {activeApp === 'risk-war-room' && <RiskWarRoom />}
           {activeApp === 'policy-editor' && <PolicyEditor />}
+          {activeApp === 'loan-recovery' && <LoanRecovery />}
         </main>
       </div>
 

@@ -161,6 +161,14 @@ export const router = createBrowserRouter(
     ),
   },
   {
+    path: '/app/loan-recovery',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/app/policy-editor',
     element: (
       <ProtectedRoute>
