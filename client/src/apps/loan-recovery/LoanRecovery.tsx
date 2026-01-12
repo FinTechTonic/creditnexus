@@ -14,6 +14,14 @@ interface LoanDefault {
   updated_at: string;
 }
 
+interface LoanAction {
+  id: number;
+  action_type: 'SMS_REMINDER' | 'EMAIL_SENT' | 'CALL_MADE' | 'STATUS_CHANGE';
+  timestamp: string;
+  details: string;
+  user: string;
+}
+
 const LoanRecovery: React.FC = () => {
   const [loanDefaults, setLoanDefaults] = useState<LoanDefault[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,6 +87,31 @@ const LoanRecovery: React.FC = () => {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = loanDefaults.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(loanDefaults.length / itemsPerPage);
+
+  // Mock action history data
+  const getMockActionHistory = (loanId: string): LoanAction[] => [
+    {
+      id: 1,
+      action_type: 'SMS_REMINDER',
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      details: 'SMS reminder sent to borrower',
+      user: 'Recovery Agent'
+    },
+    {
+      id: 2,
+      action_type: 'STATUS_CHANGE',
+      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      details: 'Status changed to overdue',
+      user: 'System'
+    },
+    {
+      id: 3,
+      action_type: 'EMAIL_SENT',
+      timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+      details: 'Payment reminder email sent',
+      user: 'Recovery Agent'
+    }
+  ];
 
   return (
     <div className="p-4">
@@ -203,6 +236,22 @@ const LoanRecovery: React.FC = () => {
               <div><strong>Outstanding:</strong> ${selectedLoan.outstanding_amount.toLocaleString()}</div>
               <div><strong>Created:</strong> {new Date(selectedLoan.created_at).toLocaleDateString()}</div>
               <div><strong>Updated:</strong> {new Date(selectedLoan.updated_at).toLocaleDateString()}</div>
+            </div>
+            
+            <div className="mt-6 pt-4 border-t">
+              <h3 className="font-semibold mb-2">Action History</h3>
+              <div className="space-y-2 max-h-32 overflow-y-auto mb-4">
+                {getMockActionHistory(selectedLoan.loan_id).map(action => (
+                  <div key={action.id} className="text-xs bg-gray-50 p-2 rounded">
+                    <div className="flex justify-between">
+                      <span className="font-medium">{action.action_type.replace('_', ' ')}</span>
+                      <span className="text-gray-500">{new Date(action.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div className="text-gray-600">{action.details}</div>
+                    <div className="text-gray-500 text-xs">by {action.user}</div>
+                  </div>
+                ))}
+              </div>
             </div>
             
             <div className="mt-6 pt-4 border-t">
