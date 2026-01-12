@@ -5,8 +5,9 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from app.db.models import LoanDefault, RecoveryAction, BorrowerContact, PaymentSchedule
+from app.db.models import LoanDefault, RecoveryAction, BorrowerContact, PaymentSchedule, User, Deal
 from app.services.twilio_service import TwilioService
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,14 @@ class LoanRecoveryService:
             query = query.filter(LoanDefault.status != "resolved")
         
         return query.order_by(LoanDefault.severity.desc(), LoanDefault.days_past_due.desc()).all()
+
+    def get_one_day_overdue_defaults(self) -> List[LoanDefault]:
+        """Get loan defaults that are exactly 1 day overdue and open."""
+        logger.info("Getting 1-day overdue loan defaults")
+        return self.db.query(LoanDefault) \
+            .filter(LoanDefault.status == "open") \
+            .filter(LoanDefault.days_past_due == 1) \
+            .all()
     
     def trigger_recovery_actions(self, default_id: int, action_types: Optional[List[str]] = None) -> List[RecoveryAction]:
         """Trigger recovery actions for a loan default based on severity."""
@@ -179,7 +188,26 @@ class LoanRecoveryService:
     
     def _generate_recovery_message(self, loan_default: LoanDefault, action_type: str) -> str:
         """Generate appropriate message for recovery action."""
-        borrower_name = "Valued Customer"  # Would get from borrower data in real implementation
+        
+        borrower_name = "Valued Customer"
+        contact_phone = "+1234567890" # Default contact phone number
+        
+        # Try to get primary borrower contact
+        if loan_default.deal_id:
+            borrower_contact = self.db.query(BorrowerContact) \
+                .filter(BorrowerContact.deal_id == loan_default.deal_id) \
+                .filter(BorrowerContact.is_primary == True) \
+                .first()
+            
+            if borrower_contact:
+                borrower_name = borrower_contact.contact_name or borrower_name
+                contact_phone = borrower_contact.phone_number or contact_phone
+            else:
+                # Fallback to deal applicant's name if no primary contact
+                deal = self.db.query(Deal).filter(Deal.id == loan_default.deal_id).first()
+                if deal and deal.applicant:
+                    borrower_name = deal.applicant.display_name or borrower_name
+        
         loan_id = loan_default.loan_id
         amount = f"${loan_default.amount_overdue:.2f}" if loan_default.amount_overdue else "the overdue amount"
         due_date = (datetime.now() - timedelta(days=loan_default.days_past_due)).strftime("%Y-%m-%d")
@@ -187,24 +215,24 @@ class LoanRecoveryService:
         if action_type == "sms_reminder":
             return (f"Hi {borrower_name}, your loan {loan_id} payment of {amount} "
                    f"is {loan_default.days_past_due} days overdue (due {due_date}). "
-                   f"Please pay immediately to avoid further action. Contact us at +1234567890.")
+                   f"Please pay immediately to avoid further action. Contact us at {contact_phone}.")
         
         elif action_type == "voice_call":
             return (f"Hello {borrower_name}. This is an important message about "
                    f"your loan {loan_id}. Your payment of {amount}, which was due on {due_date}, "
                    f"is now {loan_default.days_past_due} days overdue. "
                    f"This is a serious matter that requires your immediate attention. "
-                   f"Please contact our recovery department at +1234567890 to arrange payment immediately.")
+                   f"Please contact our recovery department at {contact_phone} to arrange payment immediately.")
         
         elif action_type == "escalation":
             return (f"URGENT: {borrower_name}, your loan {loan_id} is in serious default. "
                    f"Payment of {amount} was due {loan_default.days_past_due} days ago on {due_date}. "
-                   f"Failure to contact us immediately at +1234567890 may result in legal action.")
+                   f"Failure to contact us immediately at {contact_phone} may result in legal action.")
         
         elif action_type == "legal_notice":
             return (f"LEGAL NOTICE: This is a formal notification that loan {loan_id} "
                    f"is in default. Payment of {amount} was due on {due_date} and remains unpaid. "
-                   f"You must contact our legal department at +1234567890 within 7 days to avoid legal proceedings.")
+                   f"You must contact our legal department at {contact_phone} within 7 days to avoid legal proceedings.")
         
         else:
             return f"Regarding your overdue loan {loan_id}, please contact us immediately."
@@ -252,10 +280,12 @@ class LoanRecoveryService:
         if not action.recipient_phone:
             return {"status": "error", "message": "No recipient phone number"}
         
+        status_callback_url = f"{settings.BASE_URL}/api/twilio/webhook/sms"
+        
         return self.twilio_service.send_sms(
             to_phone=action.recipient_phone,
             message=action.message_content,
-            status_callback="https://your-domain.com/api/twilio/webhook/sms"  # Would configure this properly
+            status_callback=status_callback_url
         )
     
     def _execute_voice_action(self, action: RecoveryAction) -> dict:
@@ -263,10 +293,12 @@ class LoanRecoveryService:
         if not action.recipient_phone:
             return {"status": "error", "message": "No recipient phone number"}
         
+        status_callback_url = f"{settings.BASE_URL}/api/twilio/webhook/voice"
+        
         return self.twilio_service.make_voice_call(
             to_phone=action.recipient_phone,
             message=action.message_content,
-            status_callback="https://your-domain.com/api/twilio/webhook/voice"  # Would configure this properly
+            status_callback=status_callback_url
         )
     
     def process_scheduled_actions(self) -> dict:
@@ -298,4 +330,23 @@ class LoanRecoveryService:
             "total_processed": processed_count,
             "success_count": success_count,
             "failure_count": processed_count - success_count
+        }
+
+    def trigger_one_day_overdue_sms_reminders(self) -> dict:
+        """Trigger SMS reminders for all loans that are exactly 1 day overdue."""
+        logger.info("Triggering SMS reminders for 1-day overdue loans")
+        one_day_overdue_defaults = self.get_one_day_overdue_defaults()
+        
+        triggered_actions_count = 0
+        for loan_default in one_day_overdue_defaults:
+            try:
+                self.trigger_recovery_actions(loan_default.id, action_types=["sms_reminder"])
+                triggered_actions_count += 1
+            except Exception as e:
+                logger.error(f"Failed to trigger SMS reminder for loan default {loan_default.id}: {e}")
+        
+        logger.info(f"Triggered SMS reminders for {triggered_actions_count} 1-day overdue loans.")
+        return {
+            "one_day_overdue_defaults_found": len(one_day_overdue_defaults),
+            "sms_reminders_triggered": triggered_actions_count
         }

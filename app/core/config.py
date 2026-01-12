@@ -127,7 +127,10 @@ class Settings(BaseSettings):
     TWILIO_ACCOUNT_SID: Optional[str] = None
     TWILIO_AUTH_TOKEN: Optional[str] = None  
     TWILIO_PHONE_NUMBER: Optional[str] = None
-    
+
+    # Base URL for external callbacks (e.g., Twilio webhooks)
+    BASE_URL: str = "http://localhost:8000" # Default for local development
+        
     # Demo Data Configuration
     DEMO_DATA_ENABLED: bool = True  # Feature flag to enable/disable demo data generation
     DEMO_DATA_DEAL_COUNT: int = 12  # Default number of deals to generate

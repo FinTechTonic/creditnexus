@@ -315,6 +315,43 @@ async def process_scheduled_actions(
         raise HTTPException(status_code=500, detail="Failed to process scheduled actions")
 
 
+@router.post("/trigger-one-day-overdue-sms-reminders")
+async def trigger_one_day_overdue_sms_reminders_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """
+    Triggers SMS reminders for all loans that are exactly 1 day overdue.
+    This endpoint calls the LoanRecoveryService to identify and send reminders.
+    """
+    try:
+        recovery_service = LoanRecoveryService(db)
+        result = recovery_service.trigger_one_day_overdue_sms_reminders()
+        
+        # Log audit action for triggering
+        from app.api.routes import log_audit_action
+        log_audit_action(
+            db=db,
+            action="CREATE",
+            target_type="recovery_sms_reminders",
+            user_id=current_user.id,
+            metadata={
+                "event_type": "1_day_overdue",
+                "triggered_count": result.get("sms_reminders_triggered")
+            }
+        )
+        
+        db.commit()
+        return {
+            "status": "success",
+            "message": "One-day overdue SMS reminders triggered successfully",
+            **result
+        }
+    except Exception as e:
+        logger.error(f"Error triggering one-day overdue SMS reminders: {e}")
+        raise HTTPException(status_code=500, detail="Failed to trigger one-day overdue SMS reminders")
+
+
 @router.get("/contacts", response_model=List[BorrowerContactResponse])
 async def get_borrower_contacts(
     deal_id: Optional[int] = Query(None, description="Filter by deal ID"),
