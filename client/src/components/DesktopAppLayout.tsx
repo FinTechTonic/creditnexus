@@ -5,7 +5,7 @@ import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentGenerator } from '@/apps/document-generator/DocumentGenerator';
 import { PolicyEditor } from '@/apps/policy-editor/PolicyEditor';
-import { LoanRecovery } from '@/apps/loan-recovery/LoanRecovery';
+import LoanRecovery from '@/apps/loan-recovery/LoanRecovery';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { Dashboard } from '@/components/Dashboard';
 import { GroundTruthDashboard } from '@/components/GroundTruthDashboard';

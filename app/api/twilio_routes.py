@@ -18,13 +18,24 @@ router = APIRouter(prefix="/api/twilio", tags=["twilio"])
 
 # Initialize Twilio RequestValidator
 # Ensure TWILIO_AUTH_TOKEN is set in environment variables or .env file
-validator = RequestValidator(settings.TWILIO_AUTH_TOKEN.get_secret_value())
+# Handle case where token might be None (for development without Twilio)
+if settings.TWILIO_AUTH_TOKEN is None:
+    validator = None
+    logger.warning("TWILIO_AUTH_TOKEN not configured. Twilio webhook validation will be disabled.")
+else:
+    validator = RequestValidator(settings.TWILIO_AUTH_TOKEN.get_secret_value())
 
 async def validate_twilio_request(request: Request, form_data: Dict[str, str] = Depends(lambda req: req.form())):
     """
     FastAPI dependency to validate incoming Twilio webhook requests.
     This ensures the request originated from Twilio and has not been tampered with.
+    If TWILIO_AUTH_TOKEN is not configured, validation is skipped (for development).
     """
+    # Skip validation if validator is None (Twilio not configured)
+    if validator is None:
+        logger.warning("Twilio webhook validation skipped - TWILIO_AUTH_TOKEN not configured")
+        return
+    
     signature = request.headers.get("X-Twilio-Signature")
     
     if not signature:

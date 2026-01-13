@@ -9463,8 +9463,6 @@ class RecoverySMSRequest(BaseModel):
 
 @router.post("/recovery/send-sms")
 async def send_recovery_sms(
-    phone: str = Body(..., description="Recipient phone number"),
-    message: str = Body(..., description="SMS message content"),
     request: RecoverySMSRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)

@@ -168,7 +168,7 @@ class Settings(BaseSettings):
 
     # Twilio configuration
     TWILIO_ACCOUNT_SID: Optional[str] = None
-    TWILIO_AUTH_TOKEN: Optional[str] = None
+    TWILIO_AUTH_TOKEN: Optional[SecretStr] = None
     TWILIO_PHONE_NUMBER: Optional[str] = None
 
     # Base URL for external callbacks (e.g., Twilio webhooks)
