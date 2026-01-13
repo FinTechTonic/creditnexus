@@ -3,7 +3,7 @@
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
