@@ -11,8 +11,15 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
+  css: {
+    postcss: {
+      // Explicitly configure PostCSS to use the config file
+      config: path.resolve(__dirname, 'postcss.config.cjs'),
+    },
+  },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],
+    exclude: ['tailwindcss'],
     force: true,
   },
   server: {
