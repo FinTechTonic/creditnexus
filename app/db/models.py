@@ -301,6 +301,8 @@ class Document(Base):
     workflow = relationship("Workflow", back_populates="document", uselist=False)
     lma_template = relationship("LMATemplate", foreign_keys=[template_id])
     deal = relationship("Deal", back_populates="documents")
+    signatures = relationship("DocumentSignature", back_populates="document", cascade="all, delete-orphan")
+    filings = relationship("DocumentFiling", back_populates="document", cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -839,6 +841,8 @@ class GeneratedDocument(Base):
     template = relationship("LMATemplate", back_populates="generated_documents")
     source_document = relationship("Document", foreign_keys=[source_document_id])
     creator = relationship("User", foreign_keys=[created_by])
+    signatures = relationship("DocumentSignature", back_populates="generated_document", cascade="all, delete-orphan")
+    filings = relationship("DocumentFiling", back_populates="generated_document", cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -852,6 +856,138 @@ class GeneratedDocument(Base):
             "status": self.status,
             "generation_summary": self.generation_summary,
             "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class DocumentSignature(Base):
+    """Tracks digital signatures for documents."""
+
+    __tablename__ = "document_signatures"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
+    generated_document_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True, index=True)
+
+    # Signature provider info
+    signature_provider = Column(String(50), nullable=False, default="digisigner")  # "digisigner"
+    signature_request_id = Column(String(255), nullable=False, unique=True, index=True)
+    signature_status = Column(String(50), nullable=False, index=True)  # "pending", "completed", "declined", "expired"
+
+    # Signers
+    signers = Column(JSONB, nullable=False)  # [{"name": "...", "email": "...", "role": "...", "signed_at": "..."}]
+
+    # Signature metadata
+    signature_provider_data = Column(JSONB, nullable=True)  # DigiSigner-specific response data
+    signed_document_url = Column(Text, nullable=True)  # URL to signed document from DigiSigner
+    signed_document_path = Column(Text, nullable=True)  # Local path if downloaded
+
+    # Timestamps
+    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    document = relationship("Document", back_populates="signatures")
+    generated_document = relationship("GeneratedDocument", back_populates="signatures")
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "generated_document_id": self.generated_document_id,
+            "signature_provider": self.signature_provider,
+            "signature_request_id": self.signature_request_id,
+            "signature_status": self.signature_status,
+            "signers": self.signers,
+            "signature_provider_data": self.signature_provider_data,
+            "signed_document_url": self.signed_document_url,
+            "signed_document_path": self.signed_document_path,
+            "requested_at": self.requested_at.isoformat() if self.requested_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+        }
+
+
+class DocumentFiling(Base):
+    """Tracks regulatory filings for documents."""
+
+    __tablename__ = "document_filings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
+    generated_document_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
+
+    # Filing metadata
+    agreement_type = Column(String(100), nullable=False, index=True)  # "facility_agreement", "disclosure", etc.
+    jurisdiction = Column(String(50), nullable=False, index=True)  # "US", "UK", "FR", "DE", etc.
+    filing_authority = Column(String(255), nullable=False)  # "SEC", "Companies House", "AMF", etc.
+
+    # Filing system info
+    filing_system = Column(String(50), nullable=False)  # "companies_house_api", "manual_ui", etc.
+    filing_reference = Column(String(255), nullable=True, unique=True, index=True)  # External filing ID
+    filing_status = Column(String(50), nullable=False, index=True)  # "pending", "submitted", "accepted", "rejected"
+
+    # Filing payload (for API submissions) or form data (for manual UI)
+    filing_payload = Column(JSONB, nullable=True)  # Data sent to filing system or prepared for UI
+    filing_response = Column(JSONB, nullable=True)  # Response from filing system
+
+    # Filing URLs
+    filing_url = Column(Text, nullable=True)  # URL to view filing
+    confirmation_url = Column(Text, nullable=True)  # Confirmation/receipt URL
+    manual_submission_url = Column(Text, nullable=True)  # URL to manual filing portal (for UI guidance)
+
+    # Manual filing tracking
+    submitted_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # User who submitted manually
+    submitted_at = Column(DateTime, nullable=True)  # When manually submitted
+    submission_notes = Column(Text, nullable=True)  # Notes from manual submission
+
+    # Error handling
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, default=0, nullable=False)
+
+    # Deadline tracking
+    deadline = Column(DateTime, nullable=True, index=True)
+
+    # Timestamps
+    filed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    document = relationship("Document", back_populates="filings")
+    generated_document = relationship("GeneratedDocument", back_populates="filings")
+    deal = relationship("Deal", back_populates="filings")
+    submitted_by_user = relationship("User", foreign_keys=[submitted_by])
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "generated_document_id": self.generated_document_id,
+            "deal_id": self.deal_id,
+            "agreement_type": self.agreement_type,
+            "jurisdiction": self.jurisdiction,
+            "filing_authority": self.filing_authority,
+            "filing_system": self.filing_system,
+            "filing_reference": self.filing_reference,
+            "filing_status": self.filing_status,
+            "filing_payload": self.filing_payload,
+            "filing_response": self.filing_response,
+            "filing_url": self.filing_url,
+            "confirmation_url": self.confirmation_url,
+            "manual_submission_url": self.manual_submission_url,
+            "submitted_by": self.submitted_by,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "submission_notes": self.submission_notes,
+            "error_message": self.error_message,
+            "retry_count": self.retry_count,
+            "deadline": self.deadline.isoformat() if self.deadline else None,
+            "filed_at": self.filed_at.isoformat() if self.filed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -1415,6 +1551,7 @@ class Deal(Base):
     application = relationship("Application", back_populates="deal")
     documents = relationship("Document", back_populates="deal")
     notes = relationship("DealNote", back_populates="deal", cascade="all, delete-orphan")
+    filings = relationship("DocumentFiling", back_populates="deal", cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -1951,3 +2088,53 @@ class VerificationAuditLog(Base):
 # Note: LoanAsset is a SQLModel and cannot have a direct relationship with SQLAlchemy Base models
 # Access LoanAsset via loan_asset_id foreign key using queries instead
 # Example: db.query(LoanAsset).filter(LoanAsset.id == assessment.loan_asset_id).first()
+
+
+class SatelliteLayer(Base):
+    """Satellite layer data for visualization and analysis."""
+
+    __tablename__ = "satellite_layers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Reference to loan asset (no FK constraint since LoanAsset is SQLModel)
+    loan_asset_id = Column(Integer, nullable=False, index=True)
+    
+    # Layer identification
+    layer_type = Column(String(50), nullable=False, index=True)  # ndvi, false_color, classification, sentinel_band
+    band_number = Column(String(10), nullable=True)  # B01, B02, etc. for Sentinel-2 bands
+    
+    # Storage
+    file_path = Column(String(1000), nullable=False)  # Relative path from storage base
+    layer_metadata = Column(JSONB, name="metadata", nullable=True)  # Layer metadata (resolution, bounds, etc.)
+    
+    # Geographic information
+    resolution = Column(Integer, nullable=True)  # Resolution in meters
+    bounds_north = Column(Numeric(10, 7), nullable=True)
+    bounds_south = Column(Numeric(10, 7), nullable=True)
+    bounds_east = Column(Numeric(10, 7), nullable=True)
+    bounds_west = Column(Numeric(10, 7), nullable=True)
+    crs = Column(String(50), default='EPSG:4326')  # Coordinate reference system
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "loan_asset_id": self.loan_asset_id,
+            "layer_type": self.layer_type,
+            "band_number": self.band_number,
+            "file_path": self.file_path,
+            "metadata": self.layer_metadata,
+            "resolution": self.resolution,
+            "bounds": {
+                "north": float(self.bounds_north) if self.bounds_north else None,
+                "south": float(self.bounds_south) if self.bounds_south else None,
+                "east": float(self.bounds_east) if self.bounds_east else None,
+                "west": float(self.bounds_west) if self.bounds_west else None,
+            },
+            "crs": self.crs,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

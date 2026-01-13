@@ -5,7 +5,7 @@ import os
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
@@ -110,6 +110,32 @@ class Settings(BaseSettings):
         None  # Policy engine implementation (e.g., "aspasia", "custom")
     )
     POLICY_AUTO_RELOAD: bool = False  # Auto-reload policies on file change (development only)
+
+    # LangChain Configuration for Filing/Signature Chains
+    FILING_CHAIN_TEMPERATURE: float = Field(default=0.0, description="Temperature for filing chains")
+    SIGNATURE_CHAIN_TEMPERATURE: float = Field(default=0.0, description="Temperature for signature chains")
+    FILING_CHAIN_MAX_RETRIES: int = Field(default=3, description="Max retries for filing chains")
+    SIGNATURE_CHAIN_MAX_RETRIES: int = Field(default=3, description="Max retries for signature chains")
+
+    # DigiSigner API Configuration
+    DIGISIGNER_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="DigiSigner API key for digital signatures"
+    )
+    DIGISIGNER_BASE_URL: str = Field(
+        default="https://api.digisigner.com/v1",
+        description="DigiSigner API base URL"
+    )
+    DIGISIGNER_WEBHOOK_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        description="DigiSigner webhook secret for signature status updates"
+    )
+
+    # Companies House API Configuration
+    COMPANIES_HOUSE_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Companies House API key for UK filings (free registration)"
+    )
 
     # x402 Payment Engine Configuration
     X402_ENABLED: bool = True  # Feature flag to enable/disable x402 payments

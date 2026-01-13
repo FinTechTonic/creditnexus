@@ -126,7 +126,10 @@ export function AssetVerificationCard({ assetId, onVerify }: AssetVerificationCa
         setAsset(data.loan_asset);
         onVerify?.();
       } else {
-        throw new Error('Verification failed');
+        // Get error message from response
+        const errorData = await response.json().catch(() => ({ detail: 'Verification failed' }));
+        const errorMessage = errorData.detail?.message || errorData.detail || 'Verification failed';
+        throw new Error(errorMessage);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');

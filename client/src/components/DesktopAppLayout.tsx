@@ -24,6 +24,7 @@ import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext
 import VerificationDashboard from '@/components/VerificationDashboard';
 import { DemoDataDashboard } from '@/components/DemoDataDashboard';
 import RiskWarRoom from '@/components/RiskWarRoom';
+import { AuditorRouter } from '@/apps/auditor/AuditorRouter';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   PERMISSION_DOCUMENT_VIEW,
@@ -36,9 +37,10 @@ import {
   PERMISSION_USER_VIEW,
   PERMISSION_DEAL_VIEW,
   PERMISSION_DEAL_VIEW_OWN,
+  PERMISSION_AUDIT_VIEW,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'loan-recovery';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'loan-recovery' | 'auditor';
 
 interface AppConfig {
   id: AppView;
@@ -154,6 +156,13 @@ const sidebarApps: AppConfig[] = [
     requiredPermissions: [PERMISSION_DEAL_VIEW, PERMISSION_DEAL_VIEW_OWN],
     requireAll: false,
   },
+  {
+    id: 'auditor',
+    name: 'Auditor',
+    icon: <Shield className="h-5 w-5 text-amber-400" />,
+    description: 'Audit dashboard & compliance monitoring',
+    requiredPermission: PERMISSION_AUDIT_VIEW,
+  },
 ];
 
 interface PolicyDecision {
@@ -207,7 +216,7 @@ export function DesktopAppLayout() {
       'dashboard', 'applications', 'admin-signups', 'calendar', 'deals',
       'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
       'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
-      'policy-editor', 'library', 'loan-recovery'
+      'policy-editor', 'library', 'loan-recovery', 'auditor'
     ];
     
     // Try to restore from sessionStorage first
@@ -236,6 +245,7 @@ export function DesktopAppLayout() {
       '/app/policy-editor': 'policy-editor',
       '/library': 'library',
       '/app/loan-recovery': 'loan-recovery',
+      '/auditor': 'auditor',
     };
     // Handle policy-editor routes with policyId parameter
     if (location.pathname.startsWith('/app/policy-editor')) {
@@ -244,6 +254,10 @@ export function DesktopAppLayout() {
     // Handle deal detail routes
     if (location.pathname.startsWith('/dashboard/deals/')) {
       return 'deals';
+    }
+    // Handle auditor routes
+    if (location.pathname.startsWith('/auditor')) {
+      return 'auditor';
     }
     const result = pathToApp[location.pathname] || 'dashboard';
     return result;
@@ -409,6 +423,7 @@ export function DesktopAppLayout() {
       '/app/policy-editor': 'policy-editor',
       '/library': 'library',
       '/app/loan-recovery': 'loan-recovery',
+      '/auditor': 'auditor',
     };
     
     // Get base pathname (without query parameters)
@@ -427,6 +442,10 @@ export function DesktopAppLayout() {
     // IMPORTANT: Check for deal detail routes BEFORE checking exact path matches
     if (!app && basePathname.startsWith('/dashboard/deals/') && basePathname !== '/dashboard/deals') {
       app = 'deals';  // Set app to 'deals' but don't navigate away from detail page
+    }
+    // Handle auditor routes
+    if (!app && basePathname.startsWith('/auditor')) {
+      app = 'auditor';
     }
     
     // Only sync if the pathname is actually in our mapping (not a route we don't handle)
@@ -534,6 +553,7 @@ export function DesktopAppLayout() {
       'policy-editor': '/app/policy-editor',
       'library': '/library',
       'loan-recovery': '/app/loan-recovery',
+      'auditor': '/auditor',
     };
     const path = appToPath[app];
     
@@ -887,6 +907,7 @@ export function DesktopAppLayout() {
           {activeApp === 'risk-war-room' && <RiskWarRoom />}
           {activeApp === 'policy-editor' && <PolicyEditor />}
           {activeApp === 'loan-recovery' && <LoanRecovery />}
+          {activeApp === 'auditor' && <AuditorRouter />}
         </main>
       </div>
 

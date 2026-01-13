@@ -1,0 +1,259 @@
+# ==========================================
+# FILING COMPLIANCE RULES
+# ==========================================
+# These rules determine which regulatory filings are required
+# Based on jurisdiction, agreement type, and transaction characteristics
+
+# US SEC EDGAR Filing - Material Credit Agreements
+- name: us_sec_material_agreement_filing
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "US"
+      - field: agreement_type
+        op: in
+        value: ["facility_agreement", "loan_agreement", "credit_agreement"]
+      - any:
+          - field: total_commitment
+            op: greater_than
+            value: "total_assets * 0.10"  # 10% of assets
+          - field: total_commitment
+            op: greater_than
+            value: 1000000  # $1M absolute threshold
+          - field: material_restrictions
+            op: equals
+            value: true
+  action: flag
+  filing_authority: "SEC"
+  filing_system: "manual_ui"
+  filing_form: "8-K"
+  deadline: "4 business days from agreement_date"
+  priority: 100
+  description: "SEC 8-K filing required for material credit agreements"
+  required_fields:
+    - "borrower_name"
+    - "borrower_lei"
+    - "agreement_date"
+    - "total_commitment"
+    - "currency"
+    - "maturity_date"
+    - "governing_law"
+  penalty: "Up to $250,000 or transaction value (whichever greater)"
+
+# US CFIUS Filing - Foreign Investment
+- name: us_cfius_filing_requirement
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "US"
+      - field: foreign_investor
+        op: equals
+        value: true
+      - any:
+          - field: ownership_percentage
+            op: greater_than
+            value: 10
+          - field: sector
+            op: in
+            value: ["defense", "critical_infrastructure", "telecommunications"]
+  action: flag
+  filing_authority: "CFIUS"
+  filing_system: "manual_ui"
+  deadline: "30 days before transaction_closing_date"
+  priority: 100
+  description: "CFIUS filing required for foreign investment in sensitive sectors"
+  penalty: "Transaction unwinding, fines up to transaction value"
+
+# UK Companies House Charge Filing
+- name: uk_companies_house_charge_filing
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "UK"
+      - field: security_type
+        op: in
+        value: ["charge", "mortgage", "security_interest"]
+      - field: agreement_type
+        op: in
+        value: ["facility_agreement", "security_agreement", "charge_agreement"]
+  action: flag
+  filing_authority: "Companies House"
+  filing_system: "companies_house_api"
+  filing_form: "MR01"
+  deadline: "21 days from charge_creation_date"
+  priority: 100
+  description: "Companies House charge registration required within 21 days"
+  api_available: true
+  api_endpoint: "POST /company/{company_number}/charges"
+  required_fields:
+    - "borrower_name"
+    - "company_number"
+    - "charge_creation_date"
+    - "charge_description"
+    - "secured_amount"
+    - "charge_holder_name"
+  penalty: "Up to 5% of worldwide turnover or £10 million (whichever greater), imprisonment up to 5 years"
+
+# UK NSIA Filing - Foreign Investment
+- name: uk_nsia_filing_requirement
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "UK"
+      - field: foreign_investor
+        op: equals
+        value: true
+      - any:
+          - field: acquisition_percentage
+            op: greater_than
+            value: 25
+          - field: sector
+            op: in
+            value: ["defense", "ai", "energy", "communications"]
+  action: flag
+  filing_authority: "UK Government (NSIA)"
+  filing_system: "manual_ui"
+  deadline: "Before transaction_completion_date"
+  priority: 100
+  description: "NSIA filing required for foreign investment in sensitive sectors"
+  penalty: "Fines up to 5% of worldwide turnover or £10 million, imprisonment up to 5 years"
+
+# France AMF Foreign Investment Filing
+- name: fr_amf_foreign_investment_filing
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "FR"
+      - field: foreign_investor
+        op: equals
+        value: true
+      - any:
+          - field: ownership_percentage
+            op: greater_than
+            value: 25
+          - field: sector
+            op: in
+            value: ["defense", "energy", "water", "transport"]
+  action: flag
+  filing_authority: "AMF"
+  filing_system: "manual_ui"
+  deadline: "Before transaction_closing_date"
+  priority: 100
+  description: "AMF foreign investment authorization required for strategic sectors"
+  language_requirement: "French"
+  document_translation_required: true
+  required_fields:
+    - "borrower_name"
+    - "borrower_siren"
+    - "agreement_date"
+    - "total_commitment"
+    - "currency"
+    - "investment_percentage"
+    - "sector_classification"
+  penalty: "Up to twice investment amount, 10% of target turnover, or €5 million"
+
+# France Commercial Court Charge Filing
+- name: fr_commercial_court_charge_filing
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "FR"
+      - field: security_type
+        op: in
+        value: ["charge", "nantissement", "security_interest"]
+      - any:
+          - field: governing_law
+            op: equals
+            value: "French"
+          - field: governing_law
+            op: equals
+            value: "FR"
+  action: flag
+  filing_authority: "Tribunal de Commerce"
+  filing_system: "manual_ui"
+  deadline: "15 days from charge_creation_date"
+  priority: 100
+  description: "Commercial Court charge registration required within 15 days"
+  language_requirement: "French"
+  document_translation_required: true
+  required_fields:
+    - "borrower_name"
+    - "borrower_siren"
+    - "charge_creation_date"
+    - "charge_description"
+    - "secured_amount"
+  penalty: "Transaction may be void if not filed"
+
+# Germany BaFin Foreign Investment Filing
+- name: de_bafin_foreign_investment_filing
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "DE"
+      - field: foreign_investor
+        op: equals
+        value: true
+      - any:
+          - field: ownership_percentage
+            op: greater_than
+            value: 25
+          - field: sector
+            op: in
+            value: ["defense", "critical_infrastructure", "telecommunications"]
+  action: flag
+  filing_authority: "BaFin"
+  filing_system: "manual_ui"
+  deadline: "Before transaction_closing_date"
+  priority: 100
+  description: "BaFin foreign investment notification required for sensitive sectors"
+  language_requirement: "German"
+  document_translation_required: true
+  required_fields:
+    - "borrower_name"
+    - "borrower_hrb"
+    - "agreement_date"
+    - "total_commitment"
+    - "currency"
+    - "investment_percentage"
+    - "sector_classification"
+  penalty: "Up to €500,000 or 5 years imprisonment"
+
+# Germany Commercial Register Charge Filing
+- name: de_commercial_register_charge_filing
+  when:
+    all:
+      - field: jurisdiction
+        op: equals
+        value: "DE"
+      - field: security_type
+        op: in
+        value: ["charge", "grundschuld", "security_interest"]
+      - any:
+          - field: governing_law
+            op: equals
+            value: "German"
+          - field: governing_law
+            op: equals
+            value: "DE"
+  action: flag
+  filing_authority: "Handelsregister"
+  filing_system: "manual_ui"
+  deadline: "15 days from charge_creation_date"
+  priority: 100
+  description: "Commercial Register charge registration required within 15 days"
+  language_requirement: "German"
+  document_translation_required: true
+  required_fields:
+    - "borrower_name"
+    - "borrower_hrb"
+    - "charge_creation_date"
+    - "charge_description"
+    - "secured_amount"
+  penalty: "Transaction may be void if not filed"

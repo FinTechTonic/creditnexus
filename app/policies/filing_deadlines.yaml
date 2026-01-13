@@ -1,0 +1,52 @@
+# ==========================================
+# FILING DEADLINE ALERT RULES
+# ==========================================
+# These rules generate alerts for approaching filing deadlines
+
+# Critical Deadline Alert (1 day or less)
+- name: filing_deadline_approaching_critical
+  when:
+    all:
+      - field: filing_status
+        op: equals
+        value: "pending"
+      - field: days_until_deadline
+        op: less_than_or_equal
+        value: 1
+  action: flag
+  priority: 1000
+  alert_type: "critical"
+  description: "Filing deadline is today or tomorrow - immediate action required"
+  notification_channels: ["email", "slack", "in_app"]
+
+# High Priority Deadline Alert (2-3 days)
+- name: filing_deadline_approaching_high
+  when:
+    all:
+      - field: filing_status
+        op: equals
+        value: "pending"
+      - field: days_until_deadline
+        op: between
+        value: [2, 3]
+  action: flag
+  priority: 500
+  alert_type: "high"
+  description: "Filing deadline approaching within 2-3 days"
+  notification_channels: ["email", "in_app"]
+
+# Medium Priority Deadline Alert (4-7 days)
+- name: filing_deadline_approaching_medium
+  when:
+    all:
+      - field: filing_status
+        op: equals
+        value: "pending"
+      - field: days_until_deadline
+        op: between
+        value: [4, 7]
+  action: flag
+  priority: 200
+  alert_type: "medium"
+  description: "Filing deadline approaching within 4-7 days"
+  notification_channels: ["in_app"]

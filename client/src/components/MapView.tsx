@@ -7,11 +7,14 @@
  * - NDVI status visualization on marker
  */
 
-import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { useEffect, useState, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, ImageOverlay } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin, Leaf } from 'lucide-react';
+import { useLayerStore } from '@/stores/layerStore';
+import { LayerControls } from './LayerControls';
+import type { LayerData, Bounds } from '@/types/layers';
 
 // Fix for default marker icons in React-Leaflet
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -77,6 +80,8 @@ interface MapViewProps {
     onAssetSelect?: (asset: LoanAsset) => void;
     height?: string;
     showSatellite?: boolean;
+    assetId?: number;  // For layer support
+    showLayerControls?: boolean;  // Show layer controls panel
 }
 
 // Component to recenter map when selected asset changes
@@ -88,14 +93,105 @@ function MapRecenter({ lat, lon }: { lat: number; lon: number }) {
     return null;
 }
 
+// Component to handle base map layer switching
+function BaseMapLayer({ baseMapType }: { baseMapType: 'satellite' | 'street' }) {
+    return baseMapType === 'satellite' ? (
+        <TileLayer
+            key="satellite" // Key forces re-render when switching
+            attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        />
+    ) : (
+        <TileLayer
+            key="street" // Key forces re-render when switching
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+    );
+}
+
+// Component to render layer overlays
+function LayerOverlays({ assetId, overlays }: { assetId?: number; overlays: any[] }) {
+    const getLayersForAsset = useLayerStore((state) => state.getLayersForAsset);
+    const mapState = useLayerStore((state) => state.mapState);
+    
+    // Get current overlays from store (reactive)
+    const currentOverlays = mapState.overlays;
+    const layers = assetId ? getLayersForAsset(assetId) : [];
+    
+    // Use currentOverlays from store instead of prop
+    const overlaysToRender = currentOverlays.length > 0 ? currentOverlays : overlays;
+    
+    if (overlaysToRender.length === 0) {
+        return null;
+    }
+    
+    return (
+        <>
+            {overlaysToRender.map(overlay => {
+                const layer = layers.find(l => String(l.id) === overlay.layerId);
+                if (!layer || !overlay.visible) {
+                    return null;
+                }
+                
+                // Get image URL from layer - use the API endpoint
+                const imageUrl = layer.thumbnail_url || 
+                    `/api/layers/${assetId}/${layer.id}?format=png`;
+                
+                // Create bounds from layer metadata
+                const bounds: [[number, number], [number, number]] | null = layer.bounds && 
+                    layer.bounds.north != null && layer.bounds.south != null && 
+                    layer.bounds.east != null && layer.bounds.west != null &&
+                    layer.bounds.north !== layer.bounds.south &&
+                    layer.bounds.east !== layer.bounds.west
+                    ? [
+                        [layer.bounds.south, layer.bounds.west],
+                        [layer.bounds.north, layer.bounds.east]
+                      ]
+                    : null;
+                
+                // Skip if bounds are invalid
+                if (!bounds) {
+                    console.warn(`Layer ${layer.id} has invalid bounds:`, layer.bounds);
+                    return null;
+                }
+                
+                // Apply opacity
+                const opacity = overlay.opacity || 0.7;
+                
+                return (
+                    <ImageOverlay
+                        key={`overlay-${overlay.layerId}-${assetId}`}
+                        url={imageUrl}
+                        bounds={bounds}
+                        opacity={opacity}
+                        zIndex={overlay.zIndex || 100}
+                    />
+                );
+            })}
+        </>
+    );
+}
+
 export function MapView({
     assets,
     selectedAssetId,
     onAssetSelect,
     height = '400px',
     showSatellite = false,
+    assetId,
+    showLayerControls = false,
 }: MapViewProps) {
     const [mapReady, setMapReady] = useState(false);
+    const mapState = useLayerStore((state) => state.mapState);
+    const getLayersForAsset = useLayerStore((state) => state.getLayersForAsset);
+    
+    // Use assetId from props or selectedAssetId
+    const activeAssetId = assetId || selectedAssetId;
+    const overlays = mapState.overlays;
+    
+    // Determine base map from store or prop - this will re-render when mapState.baseMap changes
+    const baseMapType = mapState.baseMap || (showSatellite ? 'satellite' : 'street');
 
     // Filter assets with valid coordinates
     const validAssets = assets.filter(a => a.geo_lat && a.geo_lon);
@@ -124,7 +220,7 @@ export function MapView({
 
     return (
         <div
-            className="rounded-xl overflow-hidden border border-slate-700/50"
+            className="rounded-xl overflow-hidden border border-slate-700/50 relative"
             style={{ height }}
         >
             <MapContainer
@@ -134,17 +230,12 @@ export function MapView({
                 style={{ height: '100%', width: '100%' }}
                 whenReady={() => setMapReady(true)}
             >
-                {/* Base map layer */}
-                {showSatellite ? (
-                    <TileLayer
-                        attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
-                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                    />
-                ) : (
-                    <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
+                {/* Base map layer - handled by BaseMapLayer component */}
+                <BaseMapLayer baseMapType={baseMapType} />
+
+                {/* Layer Overlays - Always render component, it handles empty state */}
+                {activeAssetId && (
+                    <LayerOverlays assetId={activeAssetId} overlays={overlays} />
                 )}
 
                 {/* Asset markers */}
@@ -209,6 +300,11 @@ export function MapView({
                     />
                 )}
             </MapContainer>
+            
+            {/* Layer Controls Panel - Always show in compact mode so it can be reopened */}
+            {showLayerControls && activeAssetId && (
+                <LayerControls assetId={activeAssetId} compact={true} />
+            )}
         </div>
     );
 }

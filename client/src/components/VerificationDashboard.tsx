@@ -5,9 +5,13 @@ import { fetchWithAuth } from '@/context/AuthContext';
 import { DropZone } from './DropZone';
 import { AgentTerminal } from './AgentTerminal';
 import { MapView } from './MapView';
+import { RealTimeMapView } from './RealTimeMapView';
+import { LayerBrowser } from './LayerBrowser';
+import { VerificationProgress } from './VerificationProgress';
+import { LayerAnimationController } from './LayerAnimationController';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
-import { ShieldCheck, Activity, Code, Map as MapIcon, Globe, FileText, Building2, Loader2, Search, Leaf } from 'lucide-react';
+import { ShieldCheck, Activity, Code, Map as MapIcon, Globe, FileText, Building2, Loader2, Search, Leaf, Layers } from 'lucide-react';
 import { GreenFinanceMetricsCard } from './green-finance/GreenFinanceMetricsCard';
 import { LocationTypeBadge } from './green-finance/LocationTypeBadge';
 import { AirQualityIndicator } from './green-finance/AirQualityIndicator';
@@ -45,6 +49,8 @@ export default function VerificationDashboard() {
     const [cdmEvents, setCdmEvents] = useState<any>(null);
     const [classification, setClassification] = useState<any>(null);
     const [extractedText, setExtractedText] = useState<string>('');
+    const [loanAssetId, setLoanAssetId] = useState<number | null>(null);
+    const [verificationProgress, setVerificationProgress] = useState<any>(null);
     
     // Document and loan selectors
     const [showDocumentSelector, setShowDocumentSelector] = useState(false);
@@ -257,6 +263,12 @@ export default function VerificationDashboard() {
 
     const handleSecuritize = async () => {
         setIsAnalyzing(true);
+        setVerificationProgress({
+            stage: 'geocoding',
+            current: 0,
+            total: 5,
+            percentage: 0
+        });
         addLog("Initiating Ground Truth Verification Protocol...", 'WARN');
 
         try {
@@ -279,6 +291,11 @@ export default function VerificationDashboard() {
 
             const { loan_asset, audit } = data;
             const stages = audit.stages_completed;
+            
+            // Store loan asset ID for layer visualization
+            if (loan_asset?.id) {
+                setLoanAssetId(loan_asset.id);
+            }
 
             if (stages.includes('legal_analysis')) addLog("Legal Analysis: SPT & Collateral Extracted", 'SUCCESS');
             if (stages.includes('geocoding')) addLog(`Geocoded: ${loan_asset.collateral_address}`, 'SUCCESS');
@@ -483,6 +500,7 @@ export default function VerificationDashboard() {
                         <div className="absolute top-4 right-4 z-10 bg-black/80 backdrop-blur rounded p-1 border border-zinc-700">
                             <TabsList className="bg-transparent h-8">
                                 <TabsTrigger value="map" className="data-[state=active]:bg-zinc-800 text-xs px-3 py-1"><MapIcon className="w-3 h-3 mr-1" /> Geospatial</TabsTrigger>
+                                <TabsTrigger value="layers" className="data-[state=active]:bg-zinc-800 text-xs px-3 py-1"><Layers className="w-3 h-3 mr-1" /> Layers</TabsTrigger>
                                 <TabsTrigger value="green" className="data-[state=active]:bg-zinc-800 text-xs px-3 py-1"><Leaf className="w-3 h-3 mr-1" /> Green Finance</TabsTrigger>
                                 <TabsTrigger value="cdm" className="data-[state=active]:bg-zinc-800 text-xs px-3 py-1"><Code className="w-3 h-3 mr-1" /> CDM JSON</TabsTrigger>
                             </TabsList>
@@ -490,7 +508,25 @@ export default function VerificationDashboard() {
 
                         <TabsContent value="map" className="flex-1 m-0 h-full p-0">
                             <div className="w-full h-full relative">
-                                <MapView assets={[DEMO_ASSET]} showSatellite={true} />
+                                {loanAssetId ? (
+                                    <RealTimeMapView
+                                        assetId={loanAssetId}
+                                        assets={[DEMO_ASSET]}
+                                        selectedAssetId={DEMO_ASSET.id}
+                                        showSatellite={true}
+                                        showLayerControls={true}
+                                        onVerificationComplete={(complete) => {
+                                            addLog(`Verification complete: ${complete.layers_generated.length} layers generated`, 'SUCCESS');
+                                        }}
+                                    />
+                                ) : (
+                                    <MapView assets={[DEMO_ASSET]} showSatellite={true} />
+                                )}
+
+                                {/* Layer Animation Controller */}
+                                {loanAssetId && (
+                                    <LayerAnimationController assetId={loanAssetId} />
+                                )}
 
                                 {/* Overlay Stats */}
                                 <div className="absolute bottom-6 left-6 z-[1000] bg-black/80 backdrop-blur px-4 py-2 rounded border border-red-500/50">
@@ -501,6 +537,24 @@ export default function VerificationDashboard() {
                                     </div>
                                 </div>
                             </div>
+                        </TabsContent>
+
+                        <TabsContent value="layers" className="flex-1 m-0 h-full overflow-auto p-6">
+                            {loanAssetId ? (
+                                <LayerBrowser
+                                    assetId={loanAssetId}
+                                    onLayerSelect={(layerId) => {
+                                        // Layer selection handled by store
+                                        console.log('Layer selected:', layerId);
+                                    }}
+                                />
+                            ) : (
+                                <div className="text-center text-zinc-500 py-12">
+                                    <Layers className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                                    <p className="text-sm">No layers available</p>
+                                    <p className="text-xs mt-2 opacity-70">Complete verification to generate layers</p>
+                                </div>
+                            )}
                         </TabsContent>
 
                         <TabsContent value="green" className="flex-1 m-0 h-full overflow-auto p-6">

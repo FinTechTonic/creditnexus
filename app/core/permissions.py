@@ -434,3 +434,65 @@ def get_user_permissions(user: User) -> Set[str]:
             )
     
     return permissions
+
+
+def is_read_only(user: User) -> bool:
+    """
+    Check if user has read-only access (e.g., auditor role).
+    
+    Args:
+        user: User instance
+        
+    Returns:
+        True if user is read-only, False otherwise
+    """
+    # Auditor role is read-only
+    if user.role == UserRole.AUDITOR.value:
+        return True
+    
+    # Check if user has explicit read-only flag (if added to User model in future)
+    # For now, only auditor role is read-only
+    
+    return False
+
+
+def require_write_permission(func):
+    """
+    Decorator to enforce write permissions (block read-only users).
+    
+    Usage:
+        @require_write_permission
+        async def create_document(...):
+            ...
+    
+    Raises:
+        HTTPException: 403 if user is read-only
+    """
+    from functools import wraps
+    from fastapi import HTTPException
+    from app.db.models import User
+    
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # Find current_user in kwargs or args
+        current_user = None
+        
+        # Check kwargs first
+        if 'current_user' in kwargs:
+            current_user = kwargs['current_user']
+        else:
+            # Check args (current_user is usually a Depends() dependency)
+            for arg in args:
+                if isinstance(arg, User):
+                    current_user = arg
+                    break
+        
+        if current_user and is_read_only(current_user):
+            raise HTTPException(
+                status_code=403,
+                detail="Read-only access: This operation requires write permissions"
+            )
+        
+        return await func(*args, **kwargs)
+    
+    return wrapper

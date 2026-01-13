@@ -20,6 +20,9 @@ from app.api.credit_risk_routes import router as credit_risk_router
 from app.api.policy_editor_routes import router as policy_editor_router
 from app.api.policy_template_routes import router as policy_template_router
 from app.api.green_finance_routes import router as green_finance_router
+from app.api.auditor_routes import router as auditor_router
+from app.api.layer_routes import router as layer_router
+from app.api.websocket_routes import router as websocket_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -532,6 +535,9 @@ app.include_router(credit_risk_router)
 app.include_router(policy_editor_router)
 app.include_router(policy_template_router)
 app.include_router(green_finance_router)
+app.include_router(auditor_router)
+app.include_router(layer_router)
+app.include_router(websocket_router)
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
 

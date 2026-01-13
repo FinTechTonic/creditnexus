@@ -25,7 +25,9 @@ import {
 import { fetchWithAuth } from '@/context/AuthContext';
 import { AssetVerificationCard } from './AssetVerificationCard';
 import { MapView } from './MapView';
+import { LayerControls } from './LayerControls';
 import { useFDC3 } from '@/context/FDC3Context';
+import { useLayerStore } from '@/stores/layerStore';
 
 interface LoanAsset {
     id: number;
@@ -60,6 +62,7 @@ export function GroundTruthDashboard() {
     const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
     const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
     const [showSatellite, setShowSatellite] = useState(false);
+    const { setBaseMap } = useLayerStore();
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [creating, setCreating] = useState(false);
     const { context } = useFDC3();
@@ -357,7 +360,11 @@ export function GroundTruthDashboard() {
 
                 {viewMode === 'map' && (
                     <button
-                        onClick={() => setShowSatellite(!showSatellite)}
+                        onClick={() => {
+                            const newValue = !showSatellite;
+                            setShowSatellite(newValue);
+                            setBaseMap(newValue ? 'satellite' : 'street');
+                        }}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${showSatellite
                             ? 'bg-emerald-600 text-white'
                             : 'bg-slate-700 text-slate-300 hover:text-white'
@@ -380,6 +387,8 @@ export function GroundTruthDashboard() {
                             onAssetSelect={(asset) => setSelectedAssetId(asset.id)}
                             height="500px"
                             showSatellite={showSatellite}
+                            assetId={selectedAssetId ?? undefined}
+                            showLayerControls={!!selectedAssetId}
                         />
                     ) : (
                         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">

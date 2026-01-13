@@ -35,6 +35,47 @@ class PolicyDecision:
     metadata: Dict[str, Any]  # Additional context (document_id, loan_asset_id, etc.)
 
 
+@dataclass
+class FilingRequirement:
+    """Represents a filing requirement for an agreement."""
+    authority: str
+    filing_system: str
+    deadline: datetime
+    required_fields: List[str]
+    api_available: bool
+    api_endpoint: Optional[str] = None
+    penalty: Optional[str] = None
+    language_requirement: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    agreement_type: Optional[str] = None
+    form_type: Optional[str] = None
+    priority: str = "medium"
+
+
+@dataclass
+class DeadlineAlert:
+    """Represents a deadline alert for a filing."""
+    filing_id: int
+    document_id: Optional[int]
+    deal_id: Optional[int]
+    authority: str
+    deadline: datetime
+    days_remaining: int
+    urgency: str  # "critical", "high", "medium", "low"
+    penalty: Optional[str] = None
+
+
+@dataclass
+class FilingRequirementDecision:
+    """Result of filing requirement evaluation."""
+    required_filings: List[FilingRequirement]
+    deadline_alerts: List[DeadlineAlert]
+    compliance_status: str  # "compliant", "non_compliant", "pending"
+    missing_fields: List[str]
+    trace_id: str
+    metadata: Dict[str, Any]
+
+
 class PolicyService:
     """
     Service layer for policy engine integration.
@@ -194,6 +235,336 @@ class PolicyService:
             matched_rules=result.get("matched_rules", []),
             metadata={"trade_id": trade_id}
         )
+    
+    def evaluate_filing_requirements(
+        self,
+        credit_agreement: CreditAgreement,
+        document_id: Optional[int] = None,
+        deal_id: Optional[int] = None
+    ) -> FilingRequirementDecision:
+        """
+        Evaluate filing requirements for a credit agreement.
+        
+        Args:
+            credit_agreement: CDM CreditAgreement instance
+            document_id: Optional document ID for audit trail
+            deal_id: Optional deal ID for context
+            
+        Returns:
+            FilingRequirementDecision with required filings and compliance status
+        """
+        # 1. Extract jurisdiction from governing_law
+        jurisdiction = self._extract_jurisdiction(credit_agreement.governing_law)
+        
+        # 2. Determine agreement type from CDM data
+        agreement_type = self._determine_agreement_type(credit_agreement)
+        
+        # 3. Load compliance rules for jurisdiction
+        compliance_rules = self._load_compliance_rules(jurisdiction)
+        
+        # 4. Evaluate each rule's trigger conditions
+        required_filings = []
+        for rule in compliance_rules:
+            if agreement_type in rule.get("agreement_types", []):
+                if self._evaluate_triggers(rule.get("triggers", []), credit_agreement):
+                    filing_req = FilingRequirement(
+                        authority=rule.get("filing_authority", "Unknown"),
+                        filing_system=rule.get("filing_system", "manual"),
+                        deadline=self._calculate_deadline(rule.get("deadline", ""), credit_agreement.agreement_date),
+                        required_fields=rule.get("required_fields", []),
+                        api_available=rule.get("api_available", False),
+                        api_endpoint=rule.get("api_endpoint"),
+                        penalty=rule.get("penalty"),
+                        language_requirement=rule.get("language_requirement"),
+                        jurisdiction=jurisdiction,
+                        agreement_type=agreement_type,
+                        form_type=rule.get("filing_form"),
+                        priority=self._calculate_priority(rule.get("deadline", ""), credit_agreement.agreement_date)
+                    )
+                    required_filings.append(filing_req)
+        
+        # 5. Check if all required fields are present
+        missing_fields = self._check_required_fields(required_filings, credit_agreement)
+        
+        # 6. Determine compliance status
+        compliance_status = "compliant" if not missing_fields else "non_compliant"
+        
+        # 7. Generate deadline alerts
+        deadline_alerts = self._generate_deadline_alerts(required_filings, document_id, deal_id)
+        
+        return FilingRequirementDecision(
+            required_filings=required_filings,
+            deadline_alerts=deadline_alerts,
+            compliance_status=compliance_status,
+            missing_fields=missing_fields,
+            trace_id=f"filing_req_{document_id}_{datetime.utcnow().isoformat()}" if document_id else f"filing_req_{datetime.utcnow().isoformat()}",
+            metadata={"document_id": document_id, "deal_id": deal_id, "jurisdiction": jurisdiction}
+        )
+    
+    def check_filing_deadlines(
+        self,
+        deal_id: Optional[int] = None,
+        document_id: Optional[int] = None,
+        days_ahead: int = 7
+    ) -> List[DeadlineAlert]:
+        """
+        Check for approaching filing deadlines.
+        
+        Args:
+            deal_id: Optional deal ID to check
+            document_id: Optional document ID to check
+            days_ahead: Number of days ahead to check (default: 7)
+            
+        Returns:
+            List of DeadlineAlert objects for deadlines within days_ahead
+        """
+        from app.db.models import DocumentFiling, Document
+        from datetime import timedelta
+        
+        alerts = []
+        cutoff_date = datetime.utcnow() + timedelta(days=days_ahead)
+        
+        # Query pending filings
+        from app.db import get_db
+        db = next(get_db())
+        query = db.query(DocumentFiling).filter(
+            DocumentFiling.filing_status == "pending"
+        )
+        
+        if deal_id:
+            query = query.filter(DocumentFiling.deal_id == deal_id)
+        if document_id:
+            query = query.filter(DocumentFiling.document_id == document_id)
+        
+        pending_filings = query.all()
+        
+        for filing in pending_filings:
+            if filing.deadline and filing.deadline <= cutoff_date:
+                days_remaining = (filing.deadline - datetime.utcnow()).days
+                alert = DeadlineAlert(
+                    filing_id=filing.id,
+                    document_id=filing.document_id,
+                    deal_id=filing.deal_id,
+                    authority=filing.filing_authority,
+                    deadline=filing.deadline,
+                    days_remaining=days_remaining,
+                    urgency="critical" if days_remaining <= 1 else "high" if days_remaining <= 3 else "medium",
+                    penalty=None  # Could be extracted from filing metadata
+                )
+                alerts.append(alert)
+        
+        return alerts
+    
+    def evaluate_filing_compliance(
+        self,
+        filing_id: int,
+        jurisdiction: str
+    ) -> PolicyDecision:
+        """
+        Evaluate filing compliance before submission.
+        
+        Args:
+            filing_id: DocumentFiling ID
+            jurisdiction: Filing jurisdiction
+            
+        Returns:
+            PolicyDecision with ALLOW/BLOCK/FLAG
+        """
+        from app.db.models import DocumentFiling
+        from app.db import get_db
+        db = next(get_db())
+        
+        filing = db.query(DocumentFiling).filter(DocumentFiling.id == filing_id).first()
+        
+        if not filing:
+            raise ValueError(f"Filing {filing_id} not found")
+        
+        # Convert filing to policy transaction
+        tx = self._filing_to_policy_transaction(filing, jurisdiction)
+        
+        # Evaluate using policy engine
+        result = self.engine.evaluate(tx)
+        
+        return PolicyDecision(
+            decision=result["decision"],
+            rule_applied=result.get("rule"),
+            trace_id=f"filing_compliance_{filing_id}_{datetime.utcnow().isoformat()}",
+            trace=result.get("trace", []),
+            matched_rules=result.get("matched_rules", []),
+            metadata={"filing_id": filing_id, "jurisdiction": jurisdiction}
+        )
+    
+    # Private helper methods for filing evaluation
+    def _extract_jurisdiction(self, governing_law: Optional[Any]) -> str:
+        """Extract jurisdiction from governing law."""
+        if not governing_law:
+            return "US"  # Default
+        
+        # Handle enum or string
+        law_str = governing_law.value if hasattr(governing_law, 'value') else str(governing_law)
+        
+        jurisdiction_map = {
+            "NY": "US",
+            "Delaware": "US",
+            "California": "US",
+            "English": "UK",
+            "UK": "UK",
+            "French": "FR",
+            "FR": "FR",
+            "German": "DE",
+            "DE": "DE"
+        }
+        return jurisdiction_map.get(law_str, "US")  # Default to US
+    
+    def _determine_agreement_type(self, credit_agreement: CreditAgreement) -> str:
+        """Determine agreement type from CDM data."""
+        # Logic to determine agreement type
+        # For now, default to "facility_agreement"
+        if credit_agreement.facilities:
+            return "facility_agreement"
+        return "facility_agreement"
+    
+    def _load_compliance_rules(self, jurisdiction: str) -> List[Dict[str, Any]]:
+        """Load compliance rules for a jurisdiction."""
+        from app.core.policy_config import PolicyConfigLoader
+        from app.core.config import settings
+        from pathlib import Path
+        
+        loader = PolicyConfigLoader(settings)
+        rules = []
+        
+        # Load general filing rules
+        general_rules_path = Path("app/policies/filing_compliance.yaml")
+        if general_rules_path.exists():
+            file_rules = loader._load_rules_from_file(general_rules_path)
+            # Filter by jurisdiction
+            for rule in file_rules:
+                if self._rule_applies_to_jurisdiction(rule, jurisdiction):
+                    rules.append(rule)
+        
+        return rules
+    
+    def _rule_applies_to_jurisdiction(self, rule: Dict[str, Any], jurisdiction: str) -> bool:
+        """Check if a rule applies to a jurisdiction."""
+        when = rule.get("when", {})
+        all_conditions = when.get("all", [])
+        
+        for condition in all_conditions:
+            if condition.get("field") == "jurisdiction" and condition.get("value") == jurisdiction:
+                return True
+        
+        return False
+    
+    def _evaluate_triggers(self, triggers: List[Dict[str, Any]], credit_agreement: CreditAgreement) -> bool:
+        """Evaluate trigger conditions for a filing requirement."""
+        # Simplified trigger evaluation
+        # In production, this would need more sophisticated logic
+        if not triggers:
+            return True
+        
+        # For now, return True if any trigger matches
+        # This is a placeholder - actual implementation would evaluate conditions
+        return True
+    
+    def _calculate_deadline(self, deadline_rule: str, agreement_date: Optional[Any]) -> Optional[datetime]:
+        """Calculate filing deadline from rule and agreement date."""
+        if not agreement_date:
+            return None
+        
+        from datetime import timedelta, date
+        
+        # Parse deadline rule (e.g., "4 business days from agreement_date")
+        # For now, simple implementation
+        if "4 business days" in deadline_rule or "4 days" in deadline_rule:
+            if isinstance(agreement_date, datetime):
+                return agreement_date + timedelta(days=4)
+            elif isinstance(agreement_date, date):
+                return datetime.combine(agreement_date, datetime.min.time()) + timedelta(days=4)
+            elif hasattr(agreement_date, 'date'):
+                return datetime.combine(agreement_date.date(), datetime.min.time()) + timedelta(days=4)
+        elif "21 days" in deadline_rule:
+            if isinstance(agreement_date, datetime):
+                return agreement_date + timedelta(days=21)
+            elif isinstance(agreement_date, date):
+                return datetime.combine(agreement_date, datetime.min.time()) + timedelta(days=21)
+            elif hasattr(agreement_date, 'date'):
+                return datetime.combine(agreement_date.date(), datetime.min.time()) + timedelta(days=21)
+        elif "15 days" in deadline_rule:
+            if isinstance(agreement_date, datetime):
+                return agreement_date + timedelta(days=15)
+            elif isinstance(agreement_date, date):
+                return datetime.combine(agreement_date, datetime.min.time()) + timedelta(days=15)
+            elif hasattr(agreement_date, 'date'):
+                return datetime.combine(agreement_date.date(), datetime.min.time()) + timedelta(days=15)
+        
+        return None
+    
+    def _calculate_priority(self, deadline_rule: str, agreement_date: Optional[Any]) -> str:
+        """Calculate priority based on deadline proximity."""
+        deadline = self._calculate_deadline(deadline_rule, agreement_date)
+        if not deadline:
+            return "medium"
+        
+        days_remaining = (deadline - datetime.utcnow()).days
+        if days_remaining <= 7:
+            return "critical"
+        elif days_remaining <= 30:
+            return "high"
+        elif days_remaining <= 90:
+            return "medium"
+        return "low"
+    
+    def _check_required_fields(self, required_filings: List[FilingRequirement], credit_agreement: CreditAgreement) -> List[str]:
+        """Check if all required fields are present in credit agreement."""
+        missing = []
+        
+        for filing_req in required_filings:
+            for field in filing_req.required_fields:
+                if not self._field_exists(credit_agreement, field):
+                    missing.append(field)
+        
+        return missing
+    
+    def _field_exists(self, credit_agreement: CreditAgreement, field: str) -> bool:
+        """Check if a field exists in credit agreement."""
+        # Simple field existence check
+        # Would need more sophisticated logic for nested fields
+        return hasattr(credit_agreement, field) and getattr(credit_agreement, field, None) is not None
+    
+    def _generate_deadline_alerts(self, required_filings: List[FilingRequirement], document_id: Optional[int], deal_id: Optional[int]) -> List[DeadlineAlert]:
+        """Generate deadline alerts for required filings."""
+        alerts = []
+        
+        for req in required_filings:
+            if req.deadline:
+                days_remaining = (req.deadline - datetime.utcnow()).days
+                
+                if days_remaining <= 7:
+                    urgency = "critical" if days_remaining <= 1 else "high" if days_remaining <= 3 else "medium"
+                    alerts.append(DeadlineAlert(
+                        filing_id=0,  # Will be set when filing is created
+                        document_id=document_id,
+                        deal_id=deal_id,
+                        authority=req.authority,
+                        deadline=req.deadline,
+                        days_remaining=days_remaining,
+                        urgency=urgency,
+                        penalty=req.penalty
+                    ))
+        
+        return alerts
+    
+    def _filing_to_policy_transaction(self, filing: Any, jurisdiction: str) -> Dict[str, Any]:
+        """Convert filing to policy transaction format."""
+        return {
+            "transaction_id": f"filing_{filing.id}",
+            "transaction_type": "filing_submission",
+            "timestamp": datetime.utcnow().isoformat(),
+            "jurisdiction": jurisdiction,
+            "filing_authority": filing.filing_authority,
+            "filing_status": filing.filing_status,
+            "context": "FilingCompliance"
+        }
     
     # Private helper methods for CDM mapping
     def _cdm_to_policy_transaction(

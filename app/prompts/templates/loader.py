@@ -32,6 +32,8 @@ class PromptLoader:
         "Regulatory": "app.prompts.templates.regulatory",
         "Restructuring": "app.prompts.templates.restructuring",
         "Supporting Documents": "app.prompts.templates.supporting",
+        "Filing": "app.prompts.templates.filing",
+        "Signature": "app.prompts.templates.signature",
     }
     
     

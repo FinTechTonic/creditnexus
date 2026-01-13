@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { SkeletonDocumentList } from '@/components/ui/skeleton';
 import { DealTimeline, type TimelineEvent as DealTimelineEvent } from '@/components/DealTimeline';
+import { FilingRequirementsPanel } from '@/components/FilingRequirementsPanel';
 
 interface Deal {
   id: number;
@@ -81,7 +82,7 @@ export function DealDetail() {
   const [newNoteContent, setNewNoteContent] = useState('');
   const [newNoteType, setNewNoteType] = useState('general');
   const [submittingNote, setSubmittingNote] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'notes' | 'timeline'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'notes' | 'timeline' | 'filings'>('overview');
 
   useEffect(() => {
     if (dealId) {
@@ -356,6 +357,16 @@ export function DealDetail() {
         >
           Timeline ({timeline?.length || 0})
         </button>
+        <button
+          onClick={() => setActiveTab('filings')}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === 'filings'
+              ? 'text-emerald-400 border-b-2 border-emerald-400'
+              : 'text-slate-400 hover:text-slate-100'
+          }`}
+        >
+          Filings
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -548,6 +559,38 @@ export function DealDetail() {
             dealStatus={deal?.status}
             className="w-full"
           />
+        </div>
+      )}
+
+      {activeTab === 'filings' && (
+        <div className="space-y-4">
+          {documents.length === 0 ? (
+            <Card className="bg-slate-800 border-slate-700">
+              <CardContent className="p-6 text-center text-slate-400">
+                No documents available for filing requirements
+              </CardContent>
+            </Card>
+          ) : (
+            documents.map((doc) => (
+              <div key={doc.id} className="space-y-4">
+                <Card className="bg-slate-800 border-slate-700">
+                  <CardHeader>
+                    <CardTitle className="text-slate-100 flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      {doc.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <FilingRequirementsPanel
+                      documentId={doc.id}
+                      dealId={deal.id}
+                      agreementType="facility_agreement"
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>

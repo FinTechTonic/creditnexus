@@ -439,17 +439,22 @@ export function VerificationWidget({
                         <div className="h-[400px] bg-zinc-900/50 rounded-lg border border-zinc-800 overflow-hidden relative">
                             {isVerified && loanAsset ? (
                                 <>
-                                    <MapView assets={[{
-                                        id: loanAsset.id,
-                                        loan_id: loanAsset.loan_id,
-                                        collateral_address: loanAsset.collateral_address || 'Unknown',
-                                        geo_lat: loanAsset.geo_lat,
-                                        geo_lon: loanAsset.geo_lon,
-                                        risk_status: loanAsset.risk_status,
-                                        last_verified_score: loanAsset.last_verified_score,
-                                        spt_threshold: loanAsset.spt_threshold,
-                                        current_interest_rate: loanAsset.current_interest_rate
-                                    }]} showSatellite={true} />
+                                    <MapView 
+                                        assets={[{
+                                            id: loanAsset.id,
+                                            loan_id: loanAsset.loan_id,
+                                            collateral_address: loanAsset.collateral_address || 'Unknown',
+                                            geo_lat: loanAsset.geo_lat,
+                                            geo_lon: loanAsset.geo_lon,
+                                            risk_status: loanAsset.risk_status,
+                                            last_verified_score: loanAsset.last_verified_score,
+                                            spt_threshold: loanAsset.spt_threshold,
+                                            current_interest_rate: loanAsset.current_interest_rate
+                                        }]} 
+                                        showSatellite={true}
+                                        assetId={loanAsset.id}
+                                        showLayerControls={true}
+                                    />
                                     <div className="absolute bottom-4 left-4 z-[1000] bg-black/80 backdrop-blur px-3 py-1.5 rounded border border-red-500/50">
                                         <div className="text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Satellite Intelligence</div>
                                         <div className="flex items-center gap-2">

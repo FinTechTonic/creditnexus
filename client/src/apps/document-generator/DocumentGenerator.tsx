@@ -27,6 +27,7 @@ import { FieldFillingPanel } from './FieldFillingPanel';
 import { Dialog, DialogContent } from '../../components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
 import { Button } from '../../components/ui/button';
+import { SignatureStatus } from '../../components/SignatureStatus';
 
 // Types
 interface LMATemplate {
@@ -404,6 +405,38 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
     }
   };
 
+  const handleRequestSignature = async () => {
+    if (!generatedDocument) return;
+
+    setRequestingSignature(true);
+    try {
+      // Get the source document ID if available
+      const documentId = sourceDocumentId || generatedDocument.id;
+      
+      const response = await fetchWithAuth(`/api/documents/${documentId}/signatures/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auto_detect_signers: true,
+          expires_in_days: 30,
+          urgency: 'standard'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to request signature');
+      }
+
+      const data = await response.json();
+      setSignatureId(data.signature.id);
+      setShowSignatureRequest(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to request signature');
+    } finally {
+      setRequestingSignature(false);
+    }
+  };
+
   const handleFieldEditorSave = (overrides: Record<string, any>) => {
     try {
       // Merge field overrides into existing field_overrides state
@@ -641,19 +674,52 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
           ) : showPreview && generatedDocument ? (
             <div className="flex-1 flex flex-col p-6">
               <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-4 mb-4">
-                <div className="flex items-center">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 mr-2" />
-                  <span className="text-sm font-medium text-emerald-300">
-                    Document generated successfully!
-                  </span>
-                </div>
-                {generatedDocument.generation_summary && (
-                  <div className="mt-2 text-xs text-emerald-400">
-                    {generatedDocument.generation_summary.mapped_fields_count} mapped fields,{' '}
-                    {generatedDocument.generation_summary.ai_fields_count} AI-generated sections
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 mr-2" />
+                      <span className="text-sm font-medium text-emerald-300">
+                        Document generated successfully!
+                      </span>
+                    </div>
+                    {generatedDocument.generation_summary && (
+                      <div className="mt-2 text-xs text-emerald-400">
+                        {generatedDocument.generation_summary.mapped_fields_count} mapped fields,{' '}
+                        {generatedDocument.generation_summary.ai_fields_count} AI-generated sections
+                      </div>
+                    )}
                   </div>
-                )}
+                  {!showSignatureRequest && (
+                    <Button
+                      onClick={handleRequestSignature}
+                      disabled={requestingSignature}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {requestingSignature ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Requesting...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-4 w-4 mr-2" />
+                          Request Signatures
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
+
+              {/* Signature Request UI */}
+              {showSignatureRequest && generatedDocument && (
+                <div className="mb-4">
+                  <SignatureStatus
+                    documentId={generatedDocument.id}
+                    signatureId={signatureId || undefined}
+                  />
+                </div>
+              )}
 
               <div className="flex-1 bg-slate-800 rounded-lg border border-slate-700 p-4 mb-4">
                 <div className="flex items-center justify-between mb-4">

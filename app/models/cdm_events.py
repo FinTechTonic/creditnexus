@@ -444,3 +444,120 @@ def generate_green_finance_assessment(
             "version": 1
         }
     }
+
+
+def generate_cdm_filing_requirement(
+    transaction_id: str,
+    filing_requirement: Any,  # FilingRequirement dataclass
+    credit_agreement: Optional[Any] = None,
+    related_event_identifiers: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Generate CDM event for filing requirement.
+    
+    Args:
+        transaction_id: Deal/transaction identifier
+        filing_requirement: FilingRequirement object (from PolicyService)
+        credit_agreement: Optional source credit agreement
+        related_event_identifiers: Related CDM events
+        
+    Returns:
+        CDM FilingRequirement event dictionary
+    """
+    if related_event_identifiers is None:
+        related_event_identifiers = []
+    
+    return {
+        "eventType": "FilingRequirement",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "meta": {
+            "globalKey": {
+                "issuer": "CreditNexus",
+                "assignedIdentifier": [{
+                    "identifier": {
+                        "value": f"filing_req_{transaction_id}_{datetime.datetime.now().timestamp()}"
+                    }
+                }]
+            }
+        },
+        "transactionIdentifier": {
+            "issuer": "CreditNexus",
+            "assignedIdentifier": [{
+                "identifier": {
+                    "value": transaction_id
+                }
+            }]
+        },
+        "filingRequirement": {
+            "authority": filing_requirement.authority,
+            "filingSystem": filing_requirement.filing_system,
+            "deadline": filing_requirement.deadline.isoformat() if hasattr(filing_requirement.deadline, 'isoformat') else str(filing_requirement.deadline),
+            "requiredFields": filing_requirement.required_fields,
+            "apiAvailable": filing_requirement.api_available,
+            "apiEndpoint": filing_requirement.api_endpoint,
+            "penalty": filing_requirement.penalty,
+            "jurisdiction": filing_requirement.jurisdiction or "Unknown",
+            "agreementType": filing_requirement.agreement_type or "Unknown",
+            "formType": filing_requirement.form_type,
+            "priority": filing_requirement.priority,
+            "languageRequirement": filing_requirement.language_requirement
+        },
+        "relatedEventIdentifier": related_event_identifiers
+    }
+
+
+def generate_cdm_filing_submission(
+    transaction_id: str,
+    filing_id: int,
+    filing_status: str,
+    filing_reference: Optional[str] = None,
+    filing_authority: Optional[str] = None,
+    related_event_identifiers: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Generate CDM event for filing submission.
+    
+    Args:
+        transaction_id: Deal/transaction identifier
+        filing_id: DocumentFiling ID
+        filing_status: "pending", "submitted", "accepted", "rejected"
+        filing_reference: External filing reference (if available)
+        filing_authority: Filing authority name
+        related_event_identifiers: Related CDM events
+        
+    Returns:
+        CDM FilingSubmission event dictionary
+    """
+    if related_event_identifiers is None:
+        related_event_identifiers = []
+    
+    return {
+        "eventType": "FilingSubmission",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "meta": {
+            "globalKey": {
+                "issuer": "CreditNexus",
+                "assignedIdentifier": [{
+                    "identifier": {
+                        "value": f"filing_sub_{filing_id}_{datetime.datetime.now().timestamp()}"
+                    }
+                }]
+            }
+        },
+        "transactionIdentifier": {
+            "issuer": "CreditNexus",
+            "assignedIdentifier": [{
+                "identifier": {
+                    "value": transaction_id
+                }
+            }]
+        },
+        "filingSubmission": {
+            "filingId": filing_id,
+            "filingStatus": filing_status,
+            "filingReference": filing_reference,
+            "filingAuthority": filing_authority,
+            "submittedAt": datetime.datetime.now().isoformat()
+        },
+        "relatedEventIdentifier": related_event_identifiers
+    }
