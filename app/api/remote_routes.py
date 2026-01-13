@@ -15,6 +15,7 @@ from app.utils.link_payload import LinkPayloadGenerator
 from app.core.verification_file_config import VerificationFileConfig
 from app.utils.crypto_verification import verify_ethereum_signature
 from app.auth.remote_auth import get_remote_profile
+from app.auth.jwt_auth import require_auth as require_jwt_auth, get_current_user
 from app.services.cdm_payload_generator import get_deal_cdm_payload
 from app.services.notarization_service import NotarizationService
 from app.services.notarization_payment_service import NotarizationPaymentService
@@ -476,19 +477,51 @@ async def process_verification_link(
 # Notarization Endpoints
 # ============================================================================
 
+async def get_auth_user_or_profile(
+    current_user: Optional[User] = Depends(get_current_user),
+    api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+) -> tuple[Optional[User], Optional[RemoteAppProfile]]:
+    """Get authenticated user (JWT) or remote profile (API key).
+    
+    Returns:
+        Tuple of (user, profile) - one will be None
+    """
+    # Try JWT first
+    if current_user:
+        return (current_user, None)
+    
+    # Fall back to remote profile
+    if api_key:
+        try:
+            profile = await get_remote_profile(api_key=api_key, request=request, db=db)
+            return (None, profile)
+        except HTTPException:
+            pass
+    
+    # Neither worked
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required: provide JWT Bearer token or X-API-Key header"
+    )
+
 
 @remote_router.post("/deals/{deal_id}/notarize")
 async def create_notarization(
     deal_id: int,
     request: CreateNotarizationRequest,
-    profile: RemoteAppProfile = Depends(get_remote_profile),
+    auth_result: tuple[Optional[User], Optional[RemoteAppProfile]] = Depends(get_auth_user_or_profile),
     db: Session = Depends(get_db),
     http_request: Request = None,
 ):
     """Create notarization request with x402 payment requirement.
     
     Returns 402 Payment Required if payment_payload not provided (unless admin).
+    Supports both JWT authentication (for internal users) and remote API key (for external apps).
     """
+    current_user, profile = auth_result
+    
     deal = db.query(Deal).filter(Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
@@ -515,15 +548,6 @@ async def create_notarization(
         
         payment_service_wrapper = NotarizationPaymentService(db, payment_service)
         
-        # Try to get current user (optional for remote API)
-        current_user = None
-        try:
-            from app.auth.dependencies import get_optional_user
-            if http_request:
-                current_user = await get_optional_user(http_request, db)
-        except:
-            pass
-        
         # Check if admin can skip
         if current_user and payment_service_wrapper.can_skip_payment(current_user):
             # Admin skip - log audit action
@@ -544,9 +568,10 @@ async def create_notarization(
             }
         
         # Extract payer and receiver from deal
+        payer_name = current_user.display_name if current_user else (profile.profile_name if profile else "Unknown")
         payer = Party(
             id="notarization_payer",
-            name=current_user.display_name if current_user else profile.profile_name,
+            name=payer_name,
             lei=None
         )
         
