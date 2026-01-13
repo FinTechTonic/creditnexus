@@ -105,7 +105,7 @@ jobs:
           uv run safety check --json --output safety-report.json || true
 
       - name: Upload pip-audit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: pip-audit-report
@@ -113,7 +113,7 @@ jobs:
           retention-days: 30
 
       - name: Upload Safety results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: safety-report
@@ -157,7 +157,7 @@ jobs:
           npm audit --json > npm-audit-report.json || echo '{"vulnerabilities":{}}' > npm-audit-report.json
 
       - name: Upload npm audit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: npm-audit-report
@@ -206,7 +206,7 @@ jobs:
           uv run bandit -r app/ -f json -o bandit-report.json --severity-level all || true
 
       - name: Upload Bandit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: bandit-report
@@ -273,7 +273,7 @@ jobs:
           uv run ruff check app/ --select S --output-format json > ruff-security-report.json || true
 
       - name: Upload Ruff results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: ruff-security-report
@@ -306,7 +306,7 @@ jobs:
           npm run lint -- --format json --output-file eslint-security-report.json || true
 
       - name: Upload ESLint results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: eslint-security-report
@@ -346,7 +346,7 @@ jobs:
           cmd_options: '-a'
 
       - name: Upload ZAP results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: zap-report
@@ -409,7 +409,7 @@ jobs:
           echo "See the Security tab for detailed findings." >> security-summary.md
 
       - name: Upload summary report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: security-summary
           path: security-summary.md
