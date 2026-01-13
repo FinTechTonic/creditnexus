@@ -85,8 +85,10 @@ After PostgreSQL is running, apply the database schema using Alembic:
 
 ```bash
 # In the root directory
-uv run alembic upgrade head
+uv run alembic upgrade heads
 ```
+
+**Note:** Use `heads` instead of `head` because this project has multiple migration branches. If you encounter "Multiple head revisions" errors, `alembic upgrade heads` will apply all migration heads.
 
 This will create all necessary tables (documents, workflows, policy_decisions, users, etc.) based on the migration files in `alembic/versions/`.
 
@@ -200,6 +202,29 @@ The platform components are designed to work as a "Chain of Command" using the *
 - **Dependencies**: Managed via `pyproject.toml` and `uv.lock`
 - **Testing**: `uv run pytest`
 - **Code Quality**: ruff, black, mypy (configured in `pyproject.toml`)
+
+### Optional Features: Twilio SMS Integration
+
+CreditNexus supports Twilio SMS integration for loan recovery notifications. To enable this feature:
+
+1. **Create a `.env` file** in the project root (copy from `.env.example`):
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Configure Twilio credentials** in `.env`:
+   ```env
+   TWILIO_ACCOUNT_SID=your_twilio_account_sid_here
+   TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
+   TWILIO_PHONE_NUMBER=+12345678900
+   ```
+
+3. **Install Twilio Python SDK**:
+   ```bash
+   uv add twilio
+   ```
+
+**Development Note**: If Twilio credentials are not configured, the backend will start with a warning and Twilio webhook validation will be disabled. This allows for local development without requiring Twilio setup.
 
 ---
 
