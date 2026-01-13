@@ -1,4 +1,6 @@
-"""YAML configuration editor component for verification file whitelist."""
+/**
+ * YAML configuration editor component for verification file whitelist.
+ */
 
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'

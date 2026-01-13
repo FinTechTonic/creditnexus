@@ -88,17 +88,29 @@ def extract_text_from_pdf(file_content: bytes) -> str:
         
     Returns:
         Extracted text from all pages.
+        
+    Raises:
+        ValueError: If file is not a valid PDF, too large, or corrupted.
     """
     import fitz
     
+    # Validate file size first
     file_size_mb = len(file_content) / (1024 * 1024)
     if file_size_mb > MAX_FILE_SIZE_MB:
         raise ValueError(f"File too large ({file_size_mb:.1f} MB). Maximum size is {MAX_FILE_SIZE_MB} MB.")
     
+    # Validate PDF magic bytes (PDF files start with %PDF-)
+    if not file_content.startswith(b'%PDF-'):
+        raise ValueError("Invalid PDF file: File does not start with PDF magic bytes.")
+    
+    # Validate PDF structure by attempting to open it
     doc = None
     text_parts = []
     try:
         doc = fitz.open(stream=file_content, filetype="pdf")
+        # Additional validation: check if document has pages
+        if doc.page_count == 0:
+            raise ValueError("Invalid PDF file: Document has no pages.")
         for page in doc:
             text_parts.append(page.get_text())
     except Exception as e:
@@ -120,6 +132,8 @@ class ExtractionRequest(BaseModel):
 
 
 @router.post("/extract")
+# Rate limiting: Uses slowapi default_limits (60/minute) from server.py
+# This endpoint processes large documents and may need custom limits in production
 async def extract_credit_agreement(
     request: ExtractionRequest,
     db: Session = Depends(get_db),
@@ -348,6 +362,8 @@ async def extract_credit_agreement(
 
 
 @router.post("/upload")
+# Rate limiting: Uses slowapi default_limits (60/minute) from server.py
+# File upload endpoints may benefit from stricter limits (e.g., 10/minute) in production
 async def upload_and_extract(file: UploadFile = File(...)):
     """Upload a file (PDF or TXT) and extract structured data.
     
@@ -443,6 +459,8 @@ async def upload_and_extract(file: UploadFile = File(...)):
 
 
 @router.post("/audio/transcribe")
+# Rate limiting: Uses slowapi default_limits (60/minute) from server.py
+# Audio processing is resource-intensive; consider stricter limits (e.g., 5/minute) in production
 async def transcribe_audio(
     file: UploadFile = File(...),
     source_lang: Optional[str] = Query(None, description="Source language code (e.g., 'en', 'es')"),
@@ -584,6 +602,8 @@ async def transcribe_audio(
 
 
 @router.post("/image/extract")
+# Rate limiting: Uses slowapi default_limits (60/minute) from server.py
+# Image processing is resource-intensive; consider stricter limits (e.g., 10/minute) in production
 async def extract_from_images(
     files: List[UploadFile] = File(...),
     extract_cdm: bool = Query(True, description="Whether to extract CDM data from OCR text"),
@@ -785,6 +805,115 @@ async def health_check():
     
     status_code = 200 if status["status"] == "healthy" else 503
     return JSONResponse(content=status, status_code=status_code)
+
+
+@router.get("/health/database/ssl")
+async def health_check_database_ssl():
+    """Check SSL status of database connection.
+    
+    Returns SSL connection information including:
+    - SSL enabled status
+    - SSL version
+    - SSL cipher
+    - Certificate validation status
+    """
+    from app.db import SessionLocal, engine
+    from app.core.config import settings
+    from app.db.ssl_config import validate_ssl_config
+    from fastapi.responses import JSONResponse
+    from sqlalchemy import text
+    
+    # Check if database is available
+    if SessionLocal is None or engine is None:
+        return JSONResponse(
+            content={
+                "ssl_enabled": False,
+                "error": "Database not configured",
+                "status": "error"
+            },
+            status_code=503
+        )
+    
+    # Validate SSL configuration
+    is_valid, error_msg = validate_ssl_config()
+    
+    ssl_info = {
+        "ssl_enabled": False,
+        "ssl_mode": settings.DB_SSL_MODE,
+        "ssl_required": settings.DB_SSL_REQUIRED,
+        "ssl_version": None,
+        "ssl_cipher": None,
+        "certificate_validation": None,
+        "config_valid": is_valid,
+        "config_error": error_msg if not is_valid else None,
+        "status": "unknown"
+    }
+    
+    # Try to check SSL status from database
+    try:
+        with engine.connect() as conn:
+            # Check if SSL is active (PostgreSQL only)
+            if not str(engine.url).startswith("sqlite"):
+                try:
+                    # Check SSL status
+                    ssl_result = conn.execute(text("SHOW ssl"))
+                    ssl_active = ssl_result.scalar() == "on"
+                    ssl_info["ssl_enabled"] = ssl_active
+                    
+                    if ssl_active:
+                        # Get SSL version
+                        try:
+                            version_result = conn.execute(text("SHOW ssl_version"))
+                            ssl_info["ssl_version"] = version_result.scalar()
+                        except Exception:
+                            pass
+                        
+                        # Get SSL cipher
+                        try:
+                            cipher_result = conn.execute(text("SHOW ssl_cipher"))
+                            ssl_info["ssl_cipher"] = cipher_result.scalar()
+                        except Exception:
+                            pass
+                        
+                        # Determine certificate validation status
+                        if settings.DB_SSL_MODE in ["verify-ca", "verify-full"]:
+                            ssl_info["certificate_validation"] = "enabled"
+                        elif settings.DB_SSL_MODE == "require":
+                            ssl_info["certificate_validation"] = "disabled"
+                        else:
+                            ssl_info["certificate_validation"] = "optional"
+                        
+                        ssl_info["status"] = "healthy"
+                    else:
+                        if settings.DB_SSL_REQUIRED:
+                            ssl_info["status"] = "error"
+                            ssl_info["error"] = "SSL is required but connection is not using SSL"
+                        else:
+                            ssl_info["status"] = "warning"
+                            ssl_info["warning"] = "SSL is not active but not required"
+                            
+                except Exception as e:
+                    # PostgreSQL might not support these commands or SSL might not be configured
+                    ssl_info["status"] = "warning"
+                    ssl_info["warning"] = f"Could not determine SSL status: {str(e)}"
+            else:
+                # SQLite doesn't support SSL
+                ssl_info["status"] = "not_applicable"
+                ssl_info["message"] = "SQLite does not support SSL/TLS"
+                
+    except Exception as e:
+        ssl_info["status"] = "error"
+        ssl_info["error"] = str(e)
+    
+    # Determine HTTP status code
+    if ssl_info["status"] == "error":
+        status_code = 503
+    elif ssl_info["status"] == "warning":
+        status_code = 200  # Still return 200 but with warning
+    else:
+        status_code = 200
+    
+    return JSONResponse(content=ssl_info, status_code=status_code)
 
 
 class ApproveRequest(BaseModel):
@@ -7871,6 +8000,20 @@ class WalletAuthRequest(BaseModel):
     message: str = Field(..., description="Message that was signed")
 
 
+class AutoLoginRequest(BaseModel):
+    """Request model for wallet auto-login (hot login)."""
+    wallet_address: str = Field(..., description="Ethereum wallet address")
+
+
+class WalletSignupRequest(BaseModel):
+    """Request model for wallet signup with enhanced user information."""
+    wallet_address: str = Field(..., description="Ethereum wallet address")
+    signature: str = Field(..., description="Signed message signature")
+    message: str = Field(..., description="Message that was signed")
+    email: Optional[str] = Field(None, description="User email address (optional but recommended)")
+    display_name: Optional[str] = Field(None, description="User display name (optional but recommended)")
+
+
 @router.post("/auth/wallet/nonce")
 async def get_wallet_nonce(
     request: dict,
@@ -7905,19 +8048,45 @@ async def wallet_authentication(
     request: WalletAuthRequest,
     db: Session = Depends(get_db)
 ):
-    """Authenticate using wallet signature (placeholder - requires cryptographic verification)."""
-    # TODO: Implement cryptographic signature verification
-    # For now, this is a placeholder that finds or creates a user by wallet address
+    """Authenticate using wallet signature with cryptographic verification."""
+    from app.utils.crypto_verification import (
+        verify_ethereum_signature,
+        normalize_wallet_address,
+        validate_wallet_address
+    )
+    
+    # Normalize wallet address to checksum format
+    normalized_address = normalize_wallet_address(request.wallet_address)
+    
+    # Validate wallet address format
+    if not validate_wallet_address(normalized_address):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid wallet address format"
+        )
+    
+    # Verify signature cryptographically
+    is_valid = verify_ethereum_signature(
+        message=request.message,
+        signature=request.signature,
+        wallet_address=normalized_address
+    )
+    
+    if not is_valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid signature. Signature does not match wallet address."
+        )
     
     # Find existing user by wallet address
-    user = db.query(User).filter(User.wallet_address == request.wallet_address.lower()).first()
+    user = db.query(User).filter(User.wallet_address == normalized_address.lower()).first()
     
     if not user:
         # Create new user with wallet address
         user = User(
-            email=f"{request.wallet_address[:8]}@wallet.local",
-            display_name=f"Wallet {request.wallet_address[:8]}",
-            wallet_address=request.wallet_address.lower(),
+            email=f"{normalized_address[:8]}@wallet.local",
+            display_name=f"Wallet {normalized_address[:8]}",
+            wallet_address=normalized_address.lower(),
             role="viewer",
             is_active=True
         )
@@ -7938,6 +8107,218 @@ async def wallet_authentication(
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": user.to_dict()
+    }
+
+
+@router.post("/auth/wallet/auto-login")
+async def wallet_auto_login(
+    request: AutoLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """Auto-login endpoint for wallet-based hot login (session persistence).
+    
+    This endpoint allows users to automatically log in if they have a valid
+    refresh token. If no valid token exists, returns signup_required status
+    to prompt for full authentication.
+    
+    Args:
+        request: AutoLoginRequest with wallet_address
+        
+    Returns:
+        - If user exists and has valid refresh token: tokens and user data
+        - If user doesn't exist: signup_required status
+        - If no valid token: authentication_required status
+    """
+    from app.utils.crypto_verification import normalize_wallet_address, validate_wallet_address
+    from app.auth.jwt_auth import create_access_token, create_refresh_token
+    from app.db.models import RefreshToken
+    from datetime import datetime
+    
+    # Normalize and validate wallet address
+    normalized_address = normalize_wallet_address(request.wallet_address)
+    
+    if not validate_wallet_address(normalized_address):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid wallet address format"
+        )
+    
+    # Find user by wallet address
+    user = db.query(User).filter(User.wallet_address == normalized_address.lower()).first()
+    
+    if not user:
+        # User doesn't exist - requires signup
+        return {
+            "status": "signup_required",
+            "message": "Wallet not registered. Please complete signup.",
+            "wallet_address": normalized_address
+        }
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="User account is inactive"
+        )
+    
+    # Check for valid refresh token (not revoked and not expired)
+    valid_refresh_token = db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.is_revoked == False,
+        RefreshToken.expires_at > datetime.utcnow()
+    ).order_by(RefreshToken.expires_at.desc()).first()
+    
+    if valid_refresh_token:
+        # User has valid session - generate new tokens
+        access_token = create_access_token({"sub": str(user.id), "email": user.email})
+        refresh_token = create_refresh_token({"sub": str(user.id)}, db)
+        
+        log_audit_action(
+            db, 
+            AuditAction.LOGIN, 
+            "user", 
+            user.id, 
+            user.id, 
+            metadata={"method": "wallet_auto_login"}
+        )
+        
+        return {
+            "status": "success",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": user.to_dict()
+        }
+    else:
+        # No valid session - requires full authentication
+        return {
+            "status": "authentication_required",
+            "message": "No valid session found. Please sign in with your wallet.",
+            "wallet_address": normalized_address
+        }
+
+
+@router.post("/auth/wallet/signup")
+async def wallet_signup(
+    request: WalletSignupRequest,
+    db: Session = Depends(get_db)
+):
+    """Signup endpoint for wallet-based authentication with enhanced user information.
+    
+    This endpoint allows new users to create an account using their wallet address.
+    Users can optionally provide email and display_name for a better experience.
+    
+    Args:
+        request: WalletSignupRequest with wallet_address, signature, message, and optional email/display_name
+        
+    Returns:
+        - If successful: tokens and user data
+        - If user already exists: error indicating user exists
+        - If signature invalid: authentication error
+    """
+    from app.utils.crypto_verification import (
+        verify_ethereum_signature,
+        normalize_wallet_address,
+        validate_wallet_address
+    )
+    from app.auth.jwt_auth import create_access_token, create_refresh_token
+    
+    # Normalize wallet address to checksum format
+    normalized_address = normalize_wallet_address(request.wallet_address)
+    
+    # Validate wallet address format
+    if not validate_wallet_address(normalized_address):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid wallet address format"
+        )
+    
+    # Verify signature cryptographically
+    is_valid = verify_ethereum_signature(
+        message=request.message,
+        signature=request.signature,
+        wallet_address=normalized_address
+    )
+    
+    if not is_valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid signature. Signature does not match wallet address."
+        )
+    
+    # Check if user already exists
+    existing_user = db.query(User).filter(User.wallet_address == normalized_address.lower()).first()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "status": "user_exists",
+                "message": "A user with this wallet address already exists. Please use login instead.",
+                "wallet_address": normalized_address
+            }
+        )
+    
+    # Validate email format if provided
+    email = request.email
+    if email:
+        # Basic email validation
+        if "@" not in email or "." not in email.split("@")[1]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid email format"
+            )
+        # Check if email is already in use
+        email_user = db.query(User).filter(User.email == email.lower()).first()
+        if email_user:
+            raise HTTPException(
+                status_code=409,
+                detail="Email address is already registered"
+            )
+    else:
+        # Generate default email if not provided
+        email = f"{normalized_address[:8]}@wallet.local"
+    
+    # Use provided display_name or generate default
+    display_name = request.display_name or f"Wallet {normalized_address[:8]}"
+    
+    # Create new user
+    user = User(
+        email=email.lower() if email else f"{normalized_address[:8]}@wallet.local",
+        display_name=display_name,
+        wallet_address=normalized_address.lower(),
+        role="viewer",  # Default role
+        is_active=True
+    )
+    
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    # Generate JWT tokens
+    access_token = create_access_token({"sub": str(user.id), "email": user.email})
+    refresh_token = create_refresh_token({"sub": str(user.id)}, db)
+    
+    # Log signup action
+    log_audit_action(
+        db,
+        AuditAction.CREATE,
+        "user",
+        user.id,
+        user.id,
+        metadata={
+            "method": "wallet_signup",
+            "email_provided": bool(request.email),
+            "display_name_provided": bool(request.display_name)
+        }
+    )
+    
+    return {
+        "status": "success",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": user.to_dict(),
+        "message": "Account created successfully"
     }
 
 
@@ -8594,6 +8975,8 @@ async def delete_deal_note(
 
 
 @router.post("/profile/extract")
+# Rate limiting: Uses slowapi default_limits (60/minute) from server.py
+# Profile extraction may benefit from custom limits based on user role
 async def extract_profile_from_documents(
     files: List[UploadFile] = File(...),
     role: str = Form(...),
@@ -9461,8 +9844,6 @@ class RecoverySMSRequest(BaseModel):
 
 @router.post("/recovery/send-sms")
 async def send_recovery_sms(
-    phone: str = Body(..., description="Recipient phone number"),
-    message: str = Body(..., description="SMS message content"),
     request: RecoverySMSRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)

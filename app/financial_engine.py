@@ -17,18 +17,45 @@ def calculate_breach_impact(
     penalty_spread_bps: int
 ) -> Dict[str, Any]:
     """
-    Calculates the financial impact of a sustainability breach.
+    Calculate the financial impact of a sustainability covenant breach.
     
-    This is the "Money Shot" - showing exactly how much the borrower loses
-    when a covenant is breached, linking satellite data directly to P&L.
+    This function calculates the real-world monetary consequences when a sustainability
+    covenant is breached, linking satellite-verified risk directly to P&L impact
+    through margin ratchets. This is the "Money Shot" - showing exactly how much
+    the borrower loses when a covenant is breached.
+    
+    The calculation determines the annualized, monthly, and daily cost increases
+    resulting from the spread adjustment triggered by the breach.
     
     Args:
-        principal: The loan principal amount in dollars
-        base_spread_bps: The base interest rate spread in basis points
-        penalty_spread_bps: The penalty spread after breach in basis points
+        principal: The loan principal amount in dollars. Must be positive.
+        base_spread_bps: The base interest rate spread in basis points (e.g., 200 = 2.00%).
+        penalty_spread_bps: The penalty spread after breach in basis points (e.g., 250 = 2.50%).
+                          Must be >= base_spread_bps for a penalty.
     
     Returns:
-        Dictionary with financial impact details including annualized penalty cost
+        Dictionary containing:
+            - status: "BREACH" indicating breach status
+            - spread_adjustment_bps: Difference in basis points (penalty_spread_bps - base_spread_bps)
+            - spread_adjustment_display: Human-readable spread adjustment (e.g., "+50 bps")
+            - base_spread_bps: Original base spread
+            - new_spread_bps: New spread after breach
+            - base_rate_pct: Base rate as percentage
+            - new_rate_pct: New rate as percentage
+            - annualized_penalty: Annual cost increase in dollars
+            - monthly_penalty: Monthly cost increase in dollars
+            - daily_penalty: Daily cost increase in dollars
+            - principal: Original principal amount
+            - message: Human-readable message describing the breach impact
+    
+    Example:
+        >>> result = calculate_breach_impact(
+        ...     principal=1000000,
+        ...     base_spread_bps=200,
+        ...     penalty_spread_bps=250
+        ... )
+        >>> result["annualized_penalty"]
+        5000.0  # $5,000 annual penalty
     """
     spread_diff_bps = penalty_spread_bps - base_spread_bps
     
@@ -63,20 +90,62 @@ def calculate_margin_ratchet(
     step_bps: int = 25  # Default penalty step: 25 bps
 ) -> Dict[str, Any]:
     """
-    Full margin ratchet calculation based on NDVI verification result.
+    Calculate margin ratchet based on NDVI verification result.
     
-    The margin ratchet mechanism adjusts interest rates based on
-    sustainability performance relative to agreed thresholds.
+    The margin ratchet mechanism automatically adjusts interest rates based on
+    sustainability performance relative to agreed thresholds. This function
+    implements a tiered penalty system:
+    
+    - EXCEEDS_TARGET: Performance > threshold + 0.1 → Discount applied
+    - COMPLIANT: Performance >= threshold → No adjustment
+    - WARNING: Performance >= threshold - 0.1 → Minor penalty (1x step_bps)
+    - BREACH: Performance < threshold - 0.1 → Major penalty (up to 4x step_bps)
+    
+    Penalty severity increases with the magnitude of the breach, capped at
+    4x the step increment to prevent excessive penalties.
     
     Args:
-        ndvi_score: The verified NDVI score (0.0 to 1.0)
-        spt_threshold: The Sustainability Performance Target threshold
-        principal: Loan principal amount
-        base_spread_bps: Base spread in basis points (default 200 = 2%)
-        step_bps: Penalty increment per threshold breach (default 25 bps)
+        ndvi_score: The verified NDVI score from satellite imagery (0.0 to 1.0).
+                   Higher values indicate better vegetation health.
+        spt_threshold: The Sustainability Performance Target threshold (0.0 to 1.0).
+                      This is the agreed-upon minimum NDVI score.
+        principal: Loan principal amount in dollars. Must be positive.
+        base_spread_bps: Base spread in basis points (default 200 = 2.00%).
+        step_bps: Penalty increment per threshold breach tier (default 25 bps).
+                 Each 0.1 below threshold adds one step, capped at 4 steps.
     
     Returns:
-        Complete margin ratchet calculation including financial impact
+        Dictionary containing:
+            - compliance_status: One of "COMPLIANT", "EXCEEDS_TARGET", "WARNING", "BREACH"
+            - ndvi_score: Verified NDVI score
+            - spt_threshold: Sustainability Performance Target
+            - breach_margin: Difference between threshold and score (positive = breach)
+            - base_spread_bps: Original base spread
+            - penalty_bps: Penalty spread adjustment (can be negative for discounts)
+            - new_spread_bps: Final spread after adjustment
+            - base_rate_pct: Base rate as percentage string
+            - new_rate_pct: New rate as percentage string
+            - spread_adjustment_display: Human-readable adjustment (e.g., "+25 bps" or "-25 bps")
+            - annualized_impact: Annual cost change in dollars (positive = cost increase)
+            - monthly_impact: Monthly cost change in dollars
+            - principal: Original principal amount
+            - is_breach: Boolean indicating if breach occurred
+            - is_penalty: Boolean indicating if penalty applied
+            - is_discount: Boolean indicating if discount applied
+            - message: Human-readable message describing the result
+    
+    Example:
+        >>> result = calculate_margin_ratchet(
+        ...     ndvi_score=0.85,
+        ...     spt_threshold=0.90,
+        ...     principal=1000000,
+        ...     base_spread_bps=200,
+        ...     step_bps=25
+        ... )
+        >>> result["compliance_status"]
+        "BREACH"
+        >>> result["penalty_bps"]
+        25  # 25 bps penalty for being 0.05 below threshold
     """
     # Determine compliance status
     breach_margin = spt_threshold - ndvi_score
@@ -146,9 +215,52 @@ def generate_spread_schedule_cdm(
     trigger_event: str = "ESG_BREACH"
 ) -> Dict[str, Any]:
     """
-    Generate CDM-compliant spread schedule for audit trail.
+    Generate CDM-compliant spread schedule for audit trail and smart contract visualization.
     
-    Returns the Before/After state for the smart contract visualization.
+    This function creates a FINOS Common Domain Model (CDM) compliant representation
+    of a spread schedule change, showing the before and after states. This is used
+    for audit trails, smart contract visualization, and regulatory reporting.
+    
+    The output includes:
+    - Before state: Original spread schedule configuration
+    - After state: Updated spread schedule with trigger event and evidence
+    - Diff: Structured change record for audit purposes
+    
+    Args:
+        base_spread_bps: The original base spread in basis points (e.g., 200 = 2.00%).
+        penalty_spread_bps: The new spread after penalty in basis points (e.g., 250 = 2.50%).
+        trigger_event: The event that triggered the spread change (default "ESG_BREACH").
+                      Common values: "ESG_BREACH", "ESG_COMPLIANCE", "ESG_EXCEEDS_TARGET".
+    
+    Returns:
+        Dictionary containing:
+            - before: CDM spread schedule before the change
+                - spreadSchedule.initialValue: Original spread as decimal (e.g., 0.0200 for 2%)
+                - spreadSchedule.type: "SustainabilityLinked"
+            - after: CDM spread schedule after the change
+                - spreadSchedule.initialValue: New spread as decimal
+                - spreadSchedule.effectiveDate: "T+2" (settlement convention)
+                - spreadSchedule.step: Adjustment details
+                    - triggerEvent: Event that triggered the change
+                    - adjustmentBps: Spread change in basis points
+                    - evidence: Verification evidence (source, metric, verified flag)
+            - diff: Change record
+                - field: Field path that changed
+                - oldValue: Original value
+                - newValue: New value
+                - changeType: "INCREASE" or "DECREASE"
+                - trigger: Trigger event identifier
+    
+    Example:
+        >>> schedule = generate_spread_schedule_cdm(
+        ...     base_spread_bps=200,
+        ...     penalty_spread_bps=250,
+        ...     trigger_event="ESG_BREACH"
+        ... )
+        >>> schedule["diff"]["oldValue"]
+        0.02  # 2.00% as decimal
+        >>> schedule["diff"]["newValue"]
+        0.025  # 2.50% as decimal
     """
     before_state = {
         "spreadSchedule": {

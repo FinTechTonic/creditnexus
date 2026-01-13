@@ -1,11 +1,14 @@
 #!/bin/bash
 # Bash script to run CreditNexus backend and frontend for OpenFin (for Unix/Linux/Mac)
+# Usage: ./scripts/run_openfin.sh
 
 echo "========================================"
 echo "CreditNexus OpenFin Startup"
 echo "========================================"
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get project root (one level up from scripts directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 echo ""
 echo "Project root: $PROJECT_ROOT"
 
@@ -54,8 +57,11 @@ echo "  • Backend: http://127.0.0.1:8000"
 echo "  • Frontend (dev): http://localhost:5173"
 echo "  • OpenFin config: $PROJECT_ROOT/openfin/app.json"
 echo ""
-echo "To launch OpenFin, use:"
-echo "  openfin launch --config $PROJECT_ROOT/openfin/app.json"
+echo "To launch OpenFin, open the manifest URL in your browser:"
+echo "  http://localhost:8000/openfin/app.json"
+echo ""
+echo "Or use the OpenFin RVM directly (if installed):"
+echo "  The OpenFin Runtime will be downloaded automatically by RVM if not already installed."
 echo ""
 echo "Press Ctrl+C to stop all services"
 echo ""

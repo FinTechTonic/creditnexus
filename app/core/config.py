@@ -200,6 +200,20 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None  # PostgreSQL or SQLite connection string
     DATABASE_ENABLED: bool = True  # Feature flag to enable/disable database
 
+    # Database SSL/TLS Configuration
+    DB_SSL_MODE: str = "prefer"  # SSL mode: disable, allow, prefer, require, verify-ca, verify-full
+    DB_SSL_CA_CERT: Optional[str] = None  # Path to CA certificate file
+    DB_SSL_CLIENT_CERT: Optional[str] = None  # Path to client certificate file (mutual TLS)
+    DB_SSL_CLIENT_KEY: Optional[str] = None  # Path to client private key file (mutual TLS)
+    DB_SSL_REQUIRED: bool = False  # Require SSL in production (enforced if True)
+
+    # Automatic Certificate Generation for Database SSL
+    DB_SSL_AUTO_GENERATE: bool = True  # Auto-generate certificates if not provided
+    DB_SSL_AUTO_GENERATE_CA: bool = True  # Auto-generate CA certificate
+    DB_SSL_AUTO_GENERATE_CLIENT: bool = False  # Auto-generate client cert (mutual TLS)
+    DB_SSL_AUTO_CERT_DIR: str = "./ssl_certs/db"  # Directory for auto-generated certificates
+    DB_SSL_AUTO_CERT_VALIDITY_DAYS: int = 365  # Certificate validity period (1 year default)
+
     # Seeding Configuration
     SEED_PERMISSIONS: bool = False  # Seed permission definitions and role mappings on startup
     SEED_PERMISSIONS_FORCE: bool = False  # Force update existing permissions (use with caution)
@@ -210,8 +224,26 @@ class Settings(BaseSettings):
     SEED_LAW_OFFICER: bool = False  # Seed law officer demo user
     SEED_ACCOUNTANT: bool = False  # Seed accountant demo user
     SEED_APPLICANT: bool = False  # Seed applicant demo user
-
-    @field_validator("DATABASE_URL", mode="before")
+    
+    # Security Configuration
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:8000", "https://creditnexus.com"]  # CORS allowed origins
+    CORS_ALLOW_CREDENTIALS: bool = True  # Allow credentials in CORS
+    SESSION_SAME_SITE: str = "strict"  # Session cookie same-site policy: "strict", "lax", or "none"
+    SESSION_SECURE: bool = True  # Require HTTPS for session cookies
+    SESSION_MAX_AGE: int = 86400 * 7  # Session max age in seconds (7 days)
+    RATE_LIMIT_ENABLED: bool = True  # Enable rate limiting
+    RATE_LIMIT_PER_MINUTE: int = 60  # Requests per minute per IP
+    RATE_LIMIT_PER_HOUR: int = 1000  # Requests per hour per IP (for additional protection)
+    SECURITY_HEADERS_ENABLED: bool = True  # Enable security headers middleware
+    JWT_SECRET_KEY: Optional[SecretStr] = None  # JWT secret key (required in production)
+    JWT_REFRESH_SECRET_KEY: Optional[SecretStr] = None  # JWT refresh secret key (required in production)
+    
+    # Encryption at Rest Configuration
+    ENCRYPTION_KEY: Optional[SecretStr] = None  # Master encryption key for data at rest (Fernet key or password)
+    ENCRYPTION_ENABLED: bool = True  # Enable encryption for sensitive fields
+    ENCRYPTION_AUTO_ENCRYPT_FIELDS: bool = True  # Automatically encrypt sensitive fields in JSONB
+    
+    @field_validator('DATABASE_URL', mode='before')
     @classmethod
     def validate_database_url(cls, v):
         """Auto-create SQLite URL for development if not provided."""
@@ -241,6 +273,22 @@ class Settings(BaseSettings):
                 )
         return v
 
+    @field_validator("ENCRYPTION_KEY", mode="before")
+    @classmethod
+    def validate_encryption_key(cls, v):
+        """Validate encryption key format."""
+        if v is None or v == "":
+            return None
+        # Fernet keys are 44 bytes when base64-encoded
+        if isinstance(v, str):
+            if len(v) != 44:
+                logger.warning(
+                    f"ENCRYPTION_KEY length is {len(v)}, expected 44 (base64-encoded Fernet key). "
+                    "A new key will be generated on first use."
+                )
+            return v
+        return v
+    
     @field_validator("POLICY_RULES_DIR", mode="before")
     @classmethod
     def validate_policy_rules_dir(cls, v):
@@ -300,6 +348,90 @@ class Settings(BaseSettings):
             )
 
         return rule_files
+
+    def validate_ssl_config(self) -> None:
+        """Validate SSL configuration at startup.
+        
+        This method validates that SSL configuration is correct and consistent.
+        It should be called during application startup to ensure proper SSL setup.
+        
+        Raises:
+            ValueError: If SSL configuration is invalid or inconsistent.
+            
+        Examples:
+            >>> settings = Settings(DB_SSL_REQUIRED=True, DB_SSL_MODE="verify-full")
+            >>> settings.validate_ssl_config()  # Raises ValueError if DB_SSL_CA_CERT not set
+        """
+        import os
+        from pathlib import Path
+        
+        # Check if SSL is required
+        if self.DB_SSL_REQUIRED:
+            if not self.DB_SSL_MODE or self.DB_SSL_MODE == "disable":
+                raise ValueError(
+                    "DB_SSL_REQUIRED=true but DB_SSL_MODE is not set or is 'disable'. "
+                    "Set DB_SSL_MODE to 'require', 'verify-ca', or 'verify-full'."
+                )
+            
+            # Check for insecure SSL modes when SSL is required
+            if self.DB_SSL_MODE in ["disable", "allow"]:
+                raise ValueError(
+                    f"DB_SSL_REQUIRED=true but DB_SSL_MODE={self.DB_SSL_MODE} is not secure. "
+                    "Use 'require', 'verify-ca', or 'verify-full'."
+                )
+            
+            # Check certificate requirements for verification modes
+            if self.DB_SSL_MODE in ["verify-ca", "verify-full"]:
+                if not self.DB_SSL_CA_CERT:
+                    # Check if auto-generation is enabled
+                    if not self.DB_SSL_AUTO_GENERATE:
+                        raise ValueError(
+                            f"DB_SSL_MODE={self.DB_SSL_MODE} requires DB_SSL_CA_CERT to be set, "
+                            "or enable DB_SSL_AUTO_GENERATE=true."
+                        )
+                elif not Path(self.DB_SSL_CA_CERT).exists():
+                    # Check if auto-generation will create it
+                    if not self.DB_SSL_AUTO_GENERATE:
+                        raise ValueError(
+                            f"DB_SSL_CA_CERT file not found: {self.DB_SSL_CA_CERT}. "
+                            "Enable DB_SSL_AUTO_GENERATE=true to auto-generate certificates."
+                        )
+        
+        # Validate client certificate configuration (mutual TLS)
+        if self.DB_SSL_CLIENT_CERT or self.DB_SSL_CLIENT_KEY:
+            if not self.DB_SSL_CLIENT_CERT:
+                raise ValueError(
+                    "DB_SSL_CLIENT_KEY is set but DB_SSL_CLIENT_CERT is missing. "
+                    "Both must be provided for mutual TLS."
+                )
+            if not self.DB_SSL_CLIENT_KEY:
+                raise ValueError(
+                    "DB_SSL_CLIENT_CERT is set but DB_SSL_CLIENT_KEY is missing. "
+                    "Both must be provided for mutual TLS."
+                )
+            
+            # Check if client certificate files exist
+            if self.DB_SSL_CLIENT_CERT and not Path(self.DB_SSL_CLIENT_CERT).exists():
+                if not self.DB_SSL_AUTO_GENERATE_CLIENT:
+                    raise ValueError(
+                        f"DB_SSL_CLIENT_CERT file not found: {self.DB_SSL_CLIENT_CERT}. "
+                        "Enable DB_SSL_AUTO_GENERATE_CLIENT=true to auto-generate client certificate."
+                    )
+            
+            if self.DB_SSL_CLIENT_KEY and not Path(self.DB_SSL_CLIENT_KEY).exists():
+                if not self.DB_SSL_AUTO_GENERATE_CLIENT:
+                    raise ValueError(
+                        f"DB_SSL_CLIENT_KEY file not found: {self.DB_SSL_CLIENT_KEY}. "
+                        "Enable DB_SSL_AUTO_GENERATE_CLIENT=true to auto-generate client key."
+                    )
+        
+        # Validate SSL mode value
+        valid_modes = ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+        if self.DB_SSL_MODE not in valid_modes:
+            raise ValueError(
+                f"Invalid DB_SSL_MODE: {self.DB_SSL_MODE}. "
+                f"Must be one of: {', '.join(valid_modes)}"
+            )
 
     def get_secret_value(self, key: str) -> str:
         """Get the secret value for a given key."""

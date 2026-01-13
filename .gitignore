@@ -4,6 +4,26 @@ folder/
 *.mdc
 .cursor/
 
+# SSL/TLS Certificates and Keys (auto-generated and manual)
+ssl_certs/
+*.crt
+*.key
+*.pem
+*.csr
+*.p12
+*.pfx
+*.cer
+*.der
+
+# Test artifacts and temporary files
+dev/*.txt
+dev/*.log
+*.test.log
+test_artifacts/
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Environment variables
 .env
 
@@ -55,3 +75,17 @@ yarn-error.log*
 .npm
 .eslintcache
 
+# Security reports and scan results
+*.sarif
+*-report.json
+bandit-report.json
+semgrep-report.json
+pip-audit-report.json
+safety-report.json
+npm-audit-report.json
+eslint-security-report.json
+ruff-security-report.json
+zap-report.json
+zap-report.html
+security-summary.md
+security-reports/

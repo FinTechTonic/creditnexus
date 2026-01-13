@@ -14,7 +14,7 @@ import httpx
 import jwt
 from jwt import PyJWKClient
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -354,35 +354,195 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
     
     Supports both session-based auth (Replit OAuth) and JWT Bearer token auth.
     """
+    # #region agent log
+    import json
+    log_data = {
+        "sessionId": "debug-session",
+        "runId": "login-debug",
+        "hypothesisId": "C",
+        "location": "routes.py:352",
+        "message": "/api/auth/me endpoint called",
+        "data": {},
+        "timestamp": int(time.time() * 1000)
+    }
+    try:
+        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            f.write(json.dumps(log_data) + "\n")
+    except:
+        pass
+    # #endregion
+    
     user = None
     
     auth_header = request.headers.get("Authorization", "")
+    
+    # #region agent log
+    log_data = {
+        "sessionId": "debug-session",
+        "runId": "login-debug",
+        "hypothesisId": "C",
+        "location": "routes.py:360",
+        "message": "Checking auth header",
+        "data": {"has_auth_header": bool(auth_header), "is_bearer": auth_header.startswith("Bearer ")},
+        "timestamp": int(time.time() * 1000)
+    }
+    try:
+        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            f.write(json.dumps(log_data) + "\n")
+    except:
+        pass
+    # #endregion
+    
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
         from app.auth.jwt_auth import decode_access_token
+        
+        # #region agent log
+        log_data = {
+            "sessionId": "debug-session",
+            "runId": "login-debug",
+            "hypothesisId": "C",
+            "location": "routes.py:363",
+            "message": "Before decode_access_token",
+            "data": {},
+            "timestamp": int(time.time() * 1000)
+        }
+        try:
+            with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                f.write(json.dumps(log_data) + "\n")
+        except:
+            pass
+        # #endregion
+        
         payload = decode_access_token(token)
+        
+        # #region agent log
+        log_data = {
+            "sessionId": "debug-session",
+            "runId": "login-debug",
+            "hypothesisId": "C",
+            "location": "routes.py:364",
+            "message": "After decode_access_token",
+            "data": {"payload_valid": payload is not None, "user_id": payload.get("sub") if payload else None},
+            "timestamp": int(time.time() * 1000)
+        }
+        try:
+            with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                f.write(json.dumps(log_data) + "\n")
+        except:
+            pass
+        # #endregion
+        
         if payload:
             user_id = payload.get("sub")
             if user_id:
+                # #region agent log
+                log_data = {
+                    "sessionId": "debug-session",
+                    "runId": "login-debug",
+                    "hypothesisId": "C",
+                    "location": "routes.py:367",
+                    "message": "Before user query",
+                    "data": {"user_id": user_id},
+                    "timestamp": int(time.time() * 1000)
+                }
+                try:
+                    with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                        f.write(json.dumps(log_data) + "\n")
+                except:
+                    pass
+                # #endregion
+                
                 user = db.query(User).filter(User.id == int(user_id)).first()
+                
+                # #region agent log
+                log_data = {
+                    "sessionId": "debug-session",
+                    "runId": "login-debug",
+                    "hypothesisId": "C",
+                    "location": "routes.py:368",
+                    "message": "After user query",
+                    "data": {"user_found": user is not None, "is_active": user.is_active if user else None},
+                    "timestamp": int(time.time() * 1000)
+                }
+                try:
+                    with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                        f.write(json.dumps(log_data) + "\n")
+                except:
+                    pass
+                # #endregion
+                
                 if user and user.is_active:
-                    return {
-                        "authenticated": True,
-                        "user": user.to_dict()
+                    # #region agent log
+                    log_data = {
+                        "sessionId": "debug-session",
+                        "runId": "login-debug",
+                        "hypothesisId": "C",
+                        "location": "routes.py:371",
+                        "message": "Before user.to_dict()",
+                        "data": {},
+                        "timestamp": int(time.time() * 1000)
                     }
+                    try:
+                        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                            f.write(json.dumps(log_data) + "\n")
+                    except:
+                        pass
+                    # #endregion
+                    
+                    user_dict = user.to_dict()
+                    
+                    # #region agent log
+                    log_data = {
+                        "sessionId": "debug-session",
+                        "runId": "login-debug",
+                        "hypothesisId": "C",
+                        "location": "routes.py:372",
+                        "message": "After user.to_dict(), returning response",
+                        "data": {"user_dict_keys": list(user_dict.keys()) if user_dict else []},
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    try:
+                        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                            f.write(json.dumps(log_data) + "\n")
+                    except:
+                        pass
+                    # #endregion
+                    
+                    # #region agent log
+                    log_data = {
+                        "sessionId": "debug-session",
+                        "runId": "login-debug",
+                        "hypothesisId": "C",
+                        "location": "routes.py:510",
+                        "message": "Returning JSONResponse",
+                        "data": {},
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    try:
+                        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                            f.write(json.dumps(log_data) + "\n")
+                    except:
+                        pass
+                    # #endregion
+                    
+                    return JSONResponse({
+                        "authenticated": True,
+                        "user": user_dict
+                    })
     
     user_id = request.session.get("user_id")
     
     if not user_id:
-        return {"authenticated": False, "user": None}
+        return JSONResponse({"authenticated": False, "user": None})
     
     user = db.query(User).filter(User.id == user_id).first()
     
     if not user or not user.is_active:
         request.session.clear()
-        return {"authenticated": False, "user": None}
+        return JSONResponse({"authenticated": False, "user": None})
     
-    return {
+    return JSONResponse({
         "authenticated": True,
         "user": user.to_dict()
-    }
+    })

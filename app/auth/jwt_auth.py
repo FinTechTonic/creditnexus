@@ -11,6 +11,7 @@ This module implements bank-grade authentication with:
 import os
 import re
 import secrets
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Set
 
@@ -25,14 +26,40 @@ import hashlib
 from app.db import get_db
 from app.db.models import User, AuditLog, AuditAction, UserRole, RefreshToken
 
+logger = logging.getLogger(__name__)
+
 jwt_router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer(auto_error=False)
+
+
+# Rate limiting will be applied via decorators using limiter from app.state
+# For routes that need rate limiting, use: @limiter.limit("X/minute") 
+# where limiter is obtained from request.app.state.limiter at route definition
 
 # Using bcrypt directly instead of passlib to avoid initialization issues
 # with long passwords during backend setup
 
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", secrets.token_urlsafe(32))
-JWT_REFRESH_SECRET_KEY = os.environ.get("JWT_REFRESH_SECRET_KEY", secrets.token_urlsafe(32))
+# JWT secret keys - must be set in production
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+JWT_REFRESH_SECRET_KEY = os.environ.get("JWT_REFRESH_SECRET_KEY")
+
+# Validate JWT secrets in production
+is_production = os.environ.get("REPLIT_DEPLOYMENT") == "1" or os.environ.get("ENVIRONMENT") == "production"
+if is_production:
+    if not JWT_SECRET_KEY or not JWT_REFRESH_SECRET_KEY:
+        raise RuntimeError(
+            "JWT_SECRET_KEY and JWT_REFRESH_SECRET_KEY must be set in production. "
+            "Generate secure keys: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+        )
+else:
+    # Development fallback - generate temporary secrets
+    if not JWT_SECRET_KEY:
+        JWT_SECRET_KEY = secrets.token_urlsafe(32)
+        logger.warning("JWT_SECRET_KEY not set, using temporary secret (not suitable for production)")
+    if not JWT_REFRESH_SECRET_KEY:
+        JWT_REFRESH_SECRET_KEY = secrets.token_urlsafe(32)
+        logger.warning("JWT_REFRESH_SECRET_KEY not set, using temporary secret (not suitable for production)")
+
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -240,6 +267,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT refresh token and store it in the database."""
+    logger.debug("create_refresh_token called", extra={"user_id": data.get("sub")})
+    
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
     jti = secrets.token_urlsafe(16)
@@ -258,6 +287,8 @@ def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timede
     )
     db.add(token_record)
     db.commit()
+    
+    logger.debug("Refresh token created", extra={"jti": jti, "user_id": data.get("sub")})
     
     return jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
@@ -658,10 +689,17 @@ async def login(
     """Authenticate user and return JWT tokens.
     
     Account will be locked after 5 failed attempts for 30 minutes.
+    Rate limited via slowapi default_limits (60/minute) with additional
+    account lockout protection (5 failed attempts = 30 min lockout).
     """
+    # Rate limiting is handled by slowapi's default_limits (60/minute)
+    # Additional protection via account lockout mechanism (5 failed attempts)
+    logger.debug("Login attempt", extra={"email": credentials.email})
+    
     user = db.query(User).filter(User.email == credentials.email).first()
     
     if not user:
+        logger.warning("Login failed: user not found", extra={"email": credentials.email})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
@@ -682,6 +720,7 @@ async def login(
             detail = f"Invalid email or password. {remaining_attempts} attempts remaining."
         else:
             detail = f"Account locked for {LOCKOUT_DURATION_MINUTES} minutes due to too many failed attempts."
+        logger.warning("Login failed: invalid password", extra={"email": credentials.email, "remaining_attempts": remaining_attempts})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=detail
@@ -709,6 +748,8 @@ async def login(
     
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
+    
+    logger.info("Login successful", extra={"user_id": user.id, "email": user.email})
     
     return TokenResponse(
         access_token=access_token,

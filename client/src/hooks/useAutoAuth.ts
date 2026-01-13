@@ -1,4 +1,6 @@
-"""Auto-authentication hook for MetaMask hot login."""
+/**
+ * Auto-authentication hook for MetaMask hot login.
+ */
 
 import { useEffect, useState, useCallback } from 'react'
 import { useWallet } from '@/context/WalletContext'
