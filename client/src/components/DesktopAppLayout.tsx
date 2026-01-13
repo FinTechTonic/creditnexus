@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DocumentParser } from '@/apps/docu-digitizer/DocumentParser';
+import { TailwindTest } from '@/components/TailwindTest';
+import { MinimalCSSTest } from '@/components/MinimalCSSTest';
+import { SimpleTailwindTest } from '@/components/SimpleTailwindTest';
+import { DemoStats } from '@/components/DemoStats';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentGenerator } from '@/apps/document-generator/DocumentGenerator';
@@ -923,6 +927,11 @@ export function DesktopAppLayout() {
           </div>
         </div>
       </footer>
+      <DemoStats />
+      <SimpleTailwindTest />
+      <MinimalCSSTest />
+      <TailwindTest />
+      <div className="tailwind-test">PLAIN CSS TEST</div>
     </div>
   );
 }
