@@ -619,9 +619,7 @@ export function DesktopAppLayout() {
       'loan-recovery': '/app/loan-recovery',
       'auditor': '/auditor',
       'workflow-share': '/app/workflow/share',
-      'workflow-processor': '/app/workflow/process',
-      'workflow-share': '/app/workflow/share',
-      'workflow-processor': '/app/workflow/process',
+
     };
     const path = appToPath[app];
     

@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from app.db.models import LoanDefault, RecoveryAction, BorrowerContact, PaymentSchedule, User, Deal
+from app.db.models import LoanDefault, RecoveryAction, BorrowerContact, User, Deal
+# from app.db.models import PaymentSchedule # Temporarily removed due to model removal
 from app.services.twilio_service import TwilioService
 from app.core.config import settings
 
@@ -19,53 +20,54 @@ class LoanRecoveryService:
         self.db = db
         self.twilio_service = TwilioService()
     
-    def detect_payment_defaults(self, deal_id: Optional[int] = None) -> List[LoanDefault]:
-        """Detect payment defaults based on overdue payments."""
-        logger.info(f"Detecting payment defaults for deal_id: {deal_id}")
+    # Temporarily commented out due to PaymentSchedule model removal
+    # def detect_payment_defaults(self, deal_id: Optional[int] = None) -> List[LoanDefault]:
+    #     """Detect payment defaults based on overdue payments."""
+    #     logger.info(f"Detecting payment defaults for deal_id: {deal_id}")
         
-        # Query for overdue payments
-        query = self.db.query(PaymentSchedule) \
-            .filter(PaymentSchedule.status == "pending") \
-            .filter(PaymentSchedule.scheduled_date < datetime.now())
+    #     # Query for overdue payments
+    #     query = self.db.query(PaymentSchedule) \
+    #         .filter(PaymentSchedule.status == "pending") \
+    #         .filter(PaymentSchedule.scheduled_date < datetime.now())
         
-        if deal_id:
-            query = query.filter(PaymentSchedule.deal_id == deal_id)
+    #     if deal_id:
+    #         query = query.filter(PaymentSchedule.deal_id == deal_id)
         
-        overdue_payments = query.all()
-        defaults = []
+    #     overdue_payments = query.all()
+    #     defaults = []
         
-        for payment in overdue_payments:
-            # Check if default already exists for this payment
-            existing_default = self.db.query(LoanDefault) \
-                .filter(LoanDefault.loan_id == payment.loan_id) \
-                .filter(LoanDefault.default_type == "payment_default") \
-                .filter(LoanDefault.status == "open") \
-                .first()
+    #     for payment in overdue_payments:
+    #         # Check if default already exists for this payment
+    #         existing_default = self.db.query(LoanDefault) \
+    #             .filter(LoanDefault.loan_id == payment.loan_id) \
+    #             .filter(LoanDefault.default_type == "payment_default") \
+    #             .filter(LoanDefault.status == "open") \
+    #             .first()
             
-            if not existing_default:
-                days_past_due = (datetime.now() - payment.scheduled_date).days
-                severity = self._determine_severity(days_past_due)
+    #         if not existing_default:
+    #             days_past_due = (datetime.now() - payment.scheduled_date).days
+    #             severity = self._determine_severity(days_past_due)
                 
-                default = LoanDefault(
-                    loan_id=payment.loan_id,
-                    deal_id=payment.deal_id,
-                    default_type="payment_default",
-                    default_date=datetime.now(),
-                    amount_overdue=payment.amount,
-                    days_past_due=days_past_due,
-                    severity=severity,
-                    status="open",
-                    default_reason=f"Payment of {payment.amount} {payment.currency} was due on {payment.scheduled_date}"
-                )
+    #             default = LoanDefault(
+    #                 loan_id=payment.loan_id,
+    #                 deal_id=payment.deal_id,
+    #                 default_type="payment_default",
+    #                 default_date=datetime.now(),
+    #                 amount_overdue=payment.amount,
+    #                 days_past_due=days_past_due,
+    #                 severity=severity,
+    #                 status="open",
+    #                 default_reason=f"Payment of {payment.amount} {payment.currency} was due on {payment.scheduled_date}"
+    #             )
                 
-                self.db.add(default)
-                self.db.flush()  # Get the ID for the default
-                defaults.append(default)
-                logger.info(f"Created new default for loan {payment.loan_id}: {severity} severity")
+    #             self.db.add(default)
+    #             self.db.flush()  # Get the ID for the default
+    #             defaults.append(default)
+    #             logger.info(f"Created new default for loan {payment.loan_id}: {severity} severity")
         
-        self.db.commit()
-        logger.info(f"Detected {len(defaults)} new payment defaults")
-        return defaults
+    #     self.db.commit()
+    #     logger.info(f"Detected {len(defaults)} new payment defaults")
+    #     return defaults
     
     def _determine_severity(self, days_past_due: int) -> str:
         """Determine severity based on days past due."""
