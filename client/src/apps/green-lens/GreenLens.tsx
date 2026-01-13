@@ -8,6 +8,7 @@ import { Leaf, TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, Target, Dr
 import { LocationTypeBadge } from '@/components/green-finance/LocationTypeBadge';
 import { AirQualityIndicator } from '@/components/green-finance/AirQualityIndicator';
 import { SustainabilityScoreCard } from '@/components/green-finance/SustainabilityScoreCard';
+import { RiskImpactCard } from '@/components/RiskImpactCard';
 
 const MOCK_ESG_DATA: ESGKPITarget[] = [
   {
@@ -70,6 +71,8 @@ export function GreenLens() {
   const [loadingLoans, setLoadingLoans] = useState(false);
   const [loanSearchQuery, setLoanSearchQuery] = useState('');
   const [selectedLoanAsset, setSelectedLoanAsset] = useState<any>(null);
+  const [financialImpact, setFinancialImpact] = useState<any>(null);
+  const [loadingImpact, setLoadingImpact] = useState(false);
 
   useEffect(() => {
     if (context?.loan) {
@@ -82,13 +85,151 @@ export function GreenLens() {
       } else {
         setEsgTargets(MOCK_ESG_DATA);
       }
+
+      // If loan asset has NDVI data, calculate financial impact
+      if (context.loan.ndvi_score !== undefined && context.loan.spt_threshold !== undefined) {
+        setSelectedLoanAsset(context.loan);
+        calculateFinancialImpact(context.loan);
+      }
     }
   }, [context]);
 
   const handleClear = () => {
     setLoanData(null);
     setEsgTargets([]);
+    setSelectedLoanAsset(null);
+    setFinancialImpact(null);
     clearContext();
+  };
+
+  // Client-side fallback calculation for margin ratchet
+  const calculateMarginRatchetClientSide = (
+    ndviScore: number,
+    sptThreshold: number,
+    principal: number,
+    baseSpreadBps: number = 200,
+    stepBps: number = 25
+  ) => {
+    const breachMargin = sptThreshold - ndviScore;
+    let complianceStatus = 'COMPLIANT';
+    let penaltyBps = 0;
+
+    if (ndviScore >= sptThreshold) {
+      if (ndviScore >= sptThreshold + 0.1) {
+        complianceStatus = 'EXCEEDS_TARGET';
+        penaltyBps = -stepBps;
+      }
+    } else if (ndviScore >= sptThreshold - 0.1) {
+      complianceStatus = 'WARNING';
+      penaltyBps = stepBps;
+    } else {
+      complianceStatus = 'BREACH';
+      const severityLevels = Math.floor((sptThreshold - ndviScore) / 0.1);
+      penaltyBps = Math.min(stepBps * severityLevels, stepBps * 4);
+    }
+
+    const newSpreadBps = baseSpreadBps + penaltyBps;
+    const annualizedChange = principal * (penaltyBps * 0.0001);
+
+    return {
+      compliance_status: complianceStatus,
+      ndvi_score: ndviScore,
+      spt_threshold: sptThreshold,
+      breach_margin: breachMargin,
+      base_spread_bps: baseSpreadBps,
+      penalty_bps: penaltyBps,
+      new_spread_bps: newSpreadBps,
+      base_rate_pct: `${(baseSpreadBps / 100).toFixed(2)}%`,
+      new_rate_pct: `${(newSpreadBps / 100).toFixed(2)}%`,
+      spread_adjustment_display: `${penaltyBps >= 0 ? '+' : ''}${penaltyBps} bps`,
+      annualized_impact: Math.round(annualizedChange * 100) / 100,
+      monthly_impact: Math.round((annualizedChange / 12) * 100) / 100,
+      principal: principal,
+      is_breach: complianceStatus === 'BREACH' || complianceStatus === 'WARNING',
+      message: complianceStatus === 'COMPLIANT'
+        ? 'Asset meets sustainability performance targets. No margin adjustment.'
+        : complianceStatus === 'EXCEEDS_TARGET'
+        ? `Asset exceeds SPT by ${(ndviScore - sptThreshold).toFixed(2)}. Discount of ${Math.abs(penaltyBps)} bps applied.`
+        : complianceStatus === 'WARNING'
+        ? `Asset near threshold. Warning zone penalty of +${penaltyBps} bps applied.`
+        : `Covenant Breach: NDVI ${ndviScore.toFixed(2)} < ${sptThreshold}. Penalty of +${penaltyBps} bps triggered.`,
+    };
+  };
+
+  const calculateFinancialImpact = async (loanAsset: any) => {
+    if (!loanAsset || loanAsset.ndvi_score === undefined || loanAsset.spt_threshold === undefined) {
+      return;
+    }
+
+    setLoadingImpact(true);
+    try {
+      // Get principal from facilities or loan data
+      const principal = loanData?.facilities?.reduce((sum: number, f: any) => {
+        const amount = typeof f.commitment_amount === 'object' 
+          ? f.commitment_amount?.amount || 0
+          : f.commitment_amount || f.amount || 0;
+        return sum + (typeof amount === 'number' ? amount : parseFloat(String(amount)) || 0);
+      }, 0) || loanAsset.principal || 1000000; // Default to 1M if not available
+
+      // Base spread from loan data or default
+      const baseSpreadBps = loanData?.facilities?.[0]?.spread_bps || 
+                            loanAsset.base_spread_bps || 
+                            200; // Default 2.00%
+
+      // Try API endpoint first (if it exists)
+      try {
+        const response = await fetchWithAuth('/api/loans/calculate-margin-ratchet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            loan_id: loanAsset.loan_id,
+            ndvi_score: loanAsset.ndvi_score,
+            spt_threshold: loanAsset.spt_threshold,
+            principal: principal,
+            base_spread_bps: baseSpreadBps,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setFinancialImpact(data);
+          return;
+        }
+      } catch (apiErr) {
+        // API endpoint may not exist, fall through to client-side calculation
+        console.log('API endpoint not available, using client-side calculation');
+      }
+
+      // Fallback: calculate client-side
+      const impact = calculateMarginRatchetClientSide(
+        loanAsset.ndvi_score,
+        loanAsset.spt_threshold,
+        principal,
+        baseSpreadBps
+      );
+      setFinancialImpact(impact);
+    } catch (err) {
+      console.error('Failed to calculate financial impact:', err);
+      // Final fallback if everything fails
+      if (loanAsset) {
+        const principal = loanData?.facilities?.reduce((sum: number, f: any) => {
+          const amount = typeof f.commitment_amount === 'object' 
+            ? f.commitment_amount?.amount || 0
+            : f.commitment_amount || f.amount || 0;
+          return sum + (typeof amount === 'number' ? amount : parseFloat(String(amount)) || 0);
+        }, 0) || 1000000;
+        const baseSpreadBps = loanData?.facilities?.[0]?.spread_bps || 200;
+        const impact = calculateMarginRatchetClientSide(
+          loanAsset.ndvi_score,
+          loanAsset.spt_threshold,
+          principal,
+          baseSpreadBps
+        );
+        setFinancialImpact(impact);
+      }
+    } finally {
+      setLoadingImpact(false);
+    }
   };
 
   const borrower = loanData?.parties?.find(p => p.role.toLowerCase().includes('borrower'));
@@ -227,7 +368,13 @@ export function GreenLens() {
                                 sustainability_linked: loan.risk_status !== 'BREACH',
                               } as CreditAgreementData);
                               setEsgTargets(MOCK_ESG_DATA);
+                              setSelectedLoanAsset(loan);
                               setShowLoanSelector(false);
+                              
+                              // Calculate financial impact if loan has NDVI data
+                              if (loan.ndvi_score !== undefined && loan.spt_threshold !== undefined) {
+                                calculateFinancialImpact(loan);
+                              }
                             } catch (err) {
                               console.error('Failed to load loan:', err);
                             }
@@ -318,7 +465,15 @@ export function GreenLens() {
             </Card>
           </div>
 
-          {totalMarginAdjustment < 0 && (
+          {/* Financial Impact Card - Shows margin ratchet impact from NDVI verification */}
+          {(selectedLoanAsset && (selectedLoanAsset.ndvi_score !== undefined || financialImpact)) && (
+            <RiskImpactCard 
+              impactData={financialImpact} 
+              isLoading={loadingImpact}
+            />
+          )}
+
+          {totalMarginAdjustment < 0 && !financialImpact && (
             <Card className="border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 to-transparent">
               <CardContent className="p-6">
                 <div className="flex items-center gap-4">

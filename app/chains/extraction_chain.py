@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 # Threshold for using map-reduce (approximately 50k characters = ~12k tokens)
 MAP_REDUCE_THRESHOLD = 50000
+# Threshold for using agentic pipeline (for very large documents >100k chars)
+AGENTIC_PIPELINE_THRESHOLD = 100000
 
 
 def create_extraction_chain() -> BaseChatModel:
@@ -298,12 +300,14 @@ Original Contract Text:
 def extract_data_smart(text: str, force_map_reduce: bool = False, max_retries: int = 3) -> ExtractionResult:
     """Extract structured data with automatic strategy selection.
     
-    Automatically chooses between simple extraction (for short documents)
-    and map-reduce extraction (for long documents) based on document length.
+    Automatically chooses between:
+    - Simple extraction (for short documents <50k chars)
+    - Map-reduce extraction (for medium documents 50k-100k chars)
+    - Agentic pipeline (for very large documents >100k chars)
     
     Args:
         text: The raw text content of a credit agreement document.
-        force_map_reduce: If True, always use map-reduce strategy.
+        force_map_reduce: If True, always use map-reduce strategy (overrides agentic pipeline).
         max_retries: Maximum number of validation retries for simple extraction.
         
     Returns:
@@ -311,7 +315,39 @@ def extract_data_smart(text: str, force_map_reduce: bool = False, max_retries: i
     """
     text_length = len(text)
     
-    if force_map_reduce or text_length > MAP_REDUCE_THRESHOLD:
+    # For very large documents (>100k chars), use agentic pipeline
+    if not force_map_reduce and text_length > AGENTIC_PIPELINE_THRESHOLD:
+        logger.info(f"Document length ({text_length} chars) exceeds agentic threshold, using Agentic Pipeline strategy")
+        from app.chains.agentic_pipeline import extract_with_agentic_pipeline
+        
+        try:
+            result = extract_with_agentic_pipeline(text)
+            
+            # Convert agentic pipeline result to ExtractionResult
+            if result.get("status") == "error" or not result.get("agreement"):
+                # Fallback to map-reduce if agentic pipeline fails
+                logger.warning("Agentic pipeline failed, falling back to map-reduce")
+                return extract_data_map_reduce(text)
+            
+            # Extract agreement data from agentic pipeline result
+            agreement_dict = result.get("agreement", {})
+            
+            # Convert to CreditAgreement and wrap in ExtractionResult
+            # Note: This is a simplified conversion - the agentic pipeline's
+            # ExtractedAgreement format may need mapping to CreditAgreement
+            try:
+                agreement = CreditAgreement.model_validate(agreement_dict)
+                return ExtractionResult(agreement=agreement)
+            except ValidationError as e:
+                logger.warning(f"Failed to validate agentic pipeline result as CreditAgreement: {e}")
+                # Fallback to map-reduce
+                return extract_data_map_reduce(text)
+                
+        except Exception as e:
+            logger.error(f"Agentic pipeline error: {e}, falling back to map-reduce")
+            return extract_data_map_reduce(text)
+    
+    elif force_map_reduce or text_length > MAP_REDUCE_THRESHOLD:
         logger.info(f"Document length ({text_length} chars) exceeds threshold, using Map-Reduce strategy")
         return extract_data_map_reduce(text)
     else:

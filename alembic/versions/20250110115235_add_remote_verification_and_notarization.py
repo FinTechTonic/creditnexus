@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 
 # revision identifiers, used by Alembic.
 revision: str = "add_remote_verification"
-down_revision: Union[str, Sequence[str], None] = "cb70003e8b8c"
+down_revision = "cb70003e8b8c"
 branch_labels = None
 depends_on = None
 

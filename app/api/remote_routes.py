@@ -12,6 +12,8 @@ from app.services.verification_service import VerificationService
 from app.utils.link_payload import LinkPayloadGenerator
 from app.core.verification_file_config import VerificationFileConfig
 from app.utils.crypto_verification import verify_ethereum_signature
+from app.auth.remote_auth import get_remote_profile
+from app.services.cdm_payload_generator import get_deal_cdm_payload
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +75,7 @@ async def health_check():
 @remote_router.get("/verification/{verification_id}")
 async def get_verification(
     verification_id: str,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Get verification details."""
@@ -93,7 +95,7 @@ async def get_verification(
 async def accept_verification(
     verification_id: str,
     request: VerificationAcceptRequest,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Accept a verification."""
@@ -114,7 +116,7 @@ async def accept_verification(
 async def decline_verification(
     verification_id: str,
     request: VerificationDeclineRequest,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Decline a verification."""
@@ -134,7 +136,7 @@ async def decline_verification(
 @remote_router.post("/verifications")
 async def create_verification(
     request: CreateVerificationRequest,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Create a new verification request."""
@@ -158,7 +160,7 @@ async def list_verifications(
     deal_id: Optional[int] = None,
     verifier_user_id: Optional[int] = None,
     status: Optional[str] = None,
-    profile: RemoteAppProfile = Depends(lambda: None),
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """List verification requests."""
@@ -174,7 +176,7 @@ async def list_verifications(
 @remote_router.get("/verifications/stats")
 async def get_verification_stats(
     deal_id: Optional[int] = None,
-    profile: RemoteAppProfile = Depends(lambda: None),
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Get verification statistics."""
@@ -194,7 +196,7 @@ async def get_verification_stats(
 async def generate_verification_link(
     verification_id: str,
     request: GenerateVerificationLinkRequest,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Generate self-contained verification link with file references."""
@@ -214,27 +216,70 @@ async def generate_verification_link(
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
 
-    # Build file references
+    # Build file references from actual deal documents
     file_references = []
-    if request.include_files and request.file_categories:
+    if request.include_files:
+        from app.db.models import Document, DocumentVersion
+        from app.services.file_storage_service import FileStorageService
+        from app.utils.verification_file_config import VerificationFileConfig
+        
         file_config = VerificationFileConfig()
-
+        
         # Get enabled categories
         enabled_subdirs = file_config.get_enabled_subdirectories()
-
+        
+        # Get documents associated with deal
+        documents_query = db.query(Document).filter(Document.deal_id == verification.deal_id)
+        documents = documents_query.all()
+        
         for subdir in enabled_subdirs:
-            # Simulate getting documents (TODO: actual implementation)
             if subdir == "documents":
-                file_references.append(
-                    {
-                        "document_id": f"doc_{1}",
-                        "filename": "credit_agreement.pdf",
-                        "category": "legal",
-                        "subdirectory": subdir,
-                        "size": 1024000,
-                        "download_url": f"/api/deals/{deal.id}/files/doc_1",
-                    }
-                )
+                for doc in documents:
+                    # Get latest version
+                    latest_version = (
+                        db.query(DocumentVersion)
+                        .filter(DocumentVersion.document_id == doc.id)
+                        .order_by(DocumentVersion.version_number.desc())
+                        .first()
+                    )
+                    
+                    if latest_version and latest_version.source_filename:
+                        # Determine category
+                        category = "legal"  # Default category
+                        
+                        # Filter by categories if specified
+                        if request.file_categories and category not in request.file_categories:
+                            continue
+                        
+                        # Get file size from filesystem
+                        file_size = 0
+                        try:
+                            file_storage = FileStorageService()
+                            deal_docs = file_storage.get_deal_documents(
+                                user_id=deal.applicant_id if deal.applicant_id else 0,
+                                deal_id=deal.deal_id,
+                                subdirectory=subdir
+                            )
+                            # Find matching file
+                            for stored_file in deal_docs:
+                                if str(doc.id) in stored_file.get("filename", "") or latest_version.source_filename in stored_file.get("filename", ""):
+                                    file_size = stored_file.get("size", 0)
+                                    break
+                        except Exception as e:
+                            logger.warning(f"Failed to get file size for document {doc.id}: {e}")
+                        
+                        # Build download URL
+                        download_url = f"/api/deals/{deal.id}/files/{latest_version.source_filename}"
+                        
+                        file_references.append({
+                            "document_id": doc.id,
+                            "filename": latest_version.source_filename,
+                            "category": category,
+                            "subdirectory": subdir,
+                            "size": file_size,
+                            "download_url": download_url,
+                            "title": doc.title or latest_version.source_filename
+                        })
 
     # Generate encrypted link payload
     payload_generator = LinkPayloadGenerator()
@@ -242,7 +287,7 @@ async def generate_verification_link(
         verification_id=verification.verification_id,
         deal_id=deal.id,
         deal_data=deal.deal_data or {},
-        cdm_payload={},  # TODO: Get actual CDM payload
+        cdm_payload=get_deal_cdm_payload(db, deal) if deal else {},
         file_references=file_references if file_references else None,
         expires_in_hours=request.expires_in_hours,
     )
@@ -285,6 +330,138 @@ async def verify_link_payload(payload: str, db: Session = Depends(get_db)):
     }
 
 
+@remote_router.post("/verify/{payload}/process")
+async def process_verification_link(
+    payload: str,
+    db: Session = Depends(get_db),
+    profile: RemoteAppProfile = Depends(get_remote_profile),
+):
+    """Process verification link and update files in local Postgres.
+    
+    This endpoint:
+    1. Parses the encrypted link payload
+    2. Extracts file references
+    3. Downloads files from URLs (if provided)
+    4. Stores files in local Postgres via FileStorageService
+    5. Updates deal documents
+    6. Updates verification status
+    
+    Args:
+        payload: Encrypted verification link payload
+        db: Database session
+        profile: Remote app profile (for authentication)
+    
+    Returns:
+        Processing result with file metadata
+    """
+    from app.utils.link_payload import LinkPayloadGenerator
+    from app.utils.file_downloader import download_file_from_url
+    from app.services.verification_service import VerificationService
+    from app.db.models import Document, DocumentVersion
+    from datetime import datetime
+    
+    # Parse payload
+    payload_generator = LinkPayloadGenerator()
+    link_data = payload_generator.parse_verification_link_payload(payload)
+    
+    if not link_data:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+    
+    verification_id = link_data["verification_id"]
+    deal_id = link_data["deal_id"]
+    file_references = link_data.get("file_references", [])
+    
+    # Get verification
+    verification_service = VerificationService(db)
+    verification = verification_service.get_verification_by_id(verification_id)
+    
+    if not verification:
+        raise HTTPException(status_code=404, detail="Verification not found")
+    
+    # Process file references
+    processed_files = []
+    
+    for file_ref in file_references:
+        try:
+            file_metadata = None
+            
+            # Download file if URL provided
+            if "download_url" in file_ref:
+                download_url = file_ref["download_url"]
+                # If relative URL, construct full URL
+                if download_url.startswith("/"):
+                    from app.core.config import settings
+                    base_url = getattr(settings, "API_BASE_URL", "http://localhost:8000")
+                    download_url = f"{base_url}{download_url}"
+                
+                file_metadata = await download_file_from_url(
+                    url=download_url,
+                    deal_id=deal_id,
+                    filename=file_ref.get("filename", "unknown"),
+                    category=file_ref.get("category", "legal"),
+                    subdirectory=file_ref.get("subdirectory", "documents"),
+                    db=db
+                )
+            
+            # If we have a document_id, update existing document
+            if "document_id" in file_ref and file_ref["document_id"]:
+                doc_id = file_ref["document_id"]
+                if isinstance(doc_id, str) and doc_id.startswith("doc_"):
+                    # Skip placeholder document IDs
+                    continue
+                
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if doc:
+                    # Update document metadata if needed
+                    if file_metadata:
+                        # Document already exists, just update metadata
+                        processed_files.append({
+                            "document_id": doc.id,
+                            "filename": doc.title,
+                            "status": "updated",
+                            "path": file_metadata.get("path")
+                        })
+                    else:
+                        processed_files.append({
+                            "document_id": doc.id,
+                            "filename": doc.title,
+                            "status": "exists"
+                        })
+            elif file_metadata:
+                # Create new document entry if file was downloaded
+                # Note: This is a simplified version - in production, you'd want
+                # to create proper Document and DocumentVersion entries
+                processed_files.append({
+                    "filename": file_metadata["filename"],
+                    "status": "downloaded",
+                    "path": file_metadata["path"],
+                    "size": file_metadata["size"]
+                })
+            
+        except Exception as e:
+            logger.error(f"Failed to process file {file_ref.get('filename')}: {e}")
+            processed_files.append({
+                "filename": file_ref.get("filename", "unknown"),
+                "status": "error",
+                "error": str(e)
+            })
+    
+    # Update verification metadata
+    if not verification.verification_metadata:
+        verification.verification_metadata = {}
+    verification.verification_metadata["files_processed"] = len(processed_files)
+    verification.verification_metadata["processed_at"] = datetime.utcnow().isoformat()
+    db.commit()
+    
+    return {
+        "status": "success",
+        "verification_id": verification_id,
+        "deal_id": deal_id,
+        "files_processed": len(processed_files),
+        "files": processed_files
+    }
+
+
 # ============================================================================
 # Notarization Endpoints
 # ============================================================================
@@ -294,7 +471,7 @@ async def verify_link_payload(payload: str, db: Session = Depends(get_db)):
 async def create_notarization(
     deal_id: int,
     request: CreateNotarizationRequest,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Create notarization request."""
@@ -333,7 +510,7 @@ async def create_notarization(
 @remote_router.get("/notarization/{notarization_id}")
 async def get_notarization(
     notarization_id: int,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Get notarization details."""
@@ -351,7 +528,7 @@ async def get_notarization(
 async def get_notarization_nonce(
     notarization_id: int,
     wallet_address: str,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Get nonce and message for notarization signing."""
@@ -378,7 +555,7 @@ async def get_notarization_nonce(
 async def sign_notarization(
     notarization_id: int,
     request: NotarizationSignRequest,
-    profile: RemoteAppProfile = Depends(lambda: None),  # TODO: Add real auth
+    profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
 ):
     """Sign notarization with MetaMask signature."""

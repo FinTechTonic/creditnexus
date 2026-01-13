@@ -162,13 +162,21 @@ Portfolio analytics updates.
 ### Local Development
 
 1. Start your CreditNexus application locally
-2. Replace `${APP_URL}` in all JSON files with your local URL (e.g., `http://localhost:5000`)
-3. Launch OpenFin with the app.json manifest:
-   ```bash
-   npx openfin-cli --launch --config http://localhost:8000/openfin/app.json
+2. Replace `${APP_URL}` in all JSON files with your local URL (e.g., `http://localhost:8000`)
+3. Launch OpenFin using RVM (Runtime Version Manager) - no CLI needed:
+   ```powershell
+   # Windows (PowerShell)
+   .\scripts\launch_openfin.ps1
+   
+   # Or simply open the manifest URL in your browser:
+   # http://localhost:8000/openfin/app.json
    ```
+   
+   The OpenFin Runtime will be downloaded automatically by RVM if not already installed.
 
-**Note**: For local development, the app will launch but some FDC3 features may show warnings about insecure connections. This is expected for HTTP URLs.
+**Note**: 
+- The deprecated `openfin-cli` package has been removed. Launch is now handled via RVM.
+- For local development, the app will launch but some FDC3 features may show warnings about insecure connections. This is expected for HTTP URLs.
 
 ### Production Deployment
 
@@ -179,9 +187,11 @@ Portfolio analytics updates.
    ```
 3. Ensure manifests are served with correct MIME types (application/json)
 4. Register the app in your OpenFin App Directory using `fdc3-intents.json`
-5. Launch via:
+5. Launch via RVM (users can open the manifest URL directly, or use a script):
    ```bash
-   npx openfin-cli --launch --config https://creditnexus.app/openfin/app.json
+   # Users can simply open the manifest URL in their browser:
+   # https://creditnexus.app/openfin/app.json
+   # RVM will handle runtime download and app launch automatically
    ```
 
 ### Serving Manifests from CreditNexus

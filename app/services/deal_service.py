@@ -16,6 +16,7 @@ from app.models.cdm_events import generate_cdm_policy_evaluation
 from app.services.file_storage_service import FileStorageService
 import uuid
 from app.utils.audit import log_audit_action, AuditAction
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,28 @@ class DealService:
         self.db.add(policy_decision)
         self.db.commit()
         self.db.refresh(deal)
+        
+        # #region agent log
+        log_data = {
+            "sessionId": "debug-session",
+            "runId": "post-fix",
+            "hypothesisId": "A",
+            "location": "deal_service.py:152",
+            "message": "Post-fix: Settings access in deal_service",
+            "data": {
+                "settings_in_globals": "settings" in globals(),
+                "settings_accessible": "settings" in globals() and hasattr(settings, "ENHANCED_SATELLITE_ENABLED"),
+                "enhanced_satellite_value": getattr(settings, "ENHANCED_SATELLITE_ENABLED", None) if "settings" in globals() else None
+            },
+            "timestamp": int(datetime.now().timestamp() * 1000)
+        }
+        try:
+            import json
+            with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                f.write(json.dumps(log_data) + "\n")
+        except:
+            pass
+        # #endregion
         
         # Auto-evaluate green finance on deal creation (if enabled and location data available)
         if settings.ENHANCED_SATELLITE_ENABLED:

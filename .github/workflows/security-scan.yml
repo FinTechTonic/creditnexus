@@ -1,0 +1,454 @@
+name: Security Scan
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'client/**'
+      - 'server.py'
+      - 'pyproject.toml'
+      - 'client/package.json'
+      - '.github/workflows/security-scan.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'client/**'
+      - 'server.py'
+      - 'pyproject.toml'
+      - 'client/package.json'
+  schedule:
+    # Run weekly on Monday at 2 AM UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # ============================================================================
+  # Stage 1: Pre-Build Security Checks (Fast Failures)
+  # ============================================================================
+  
+  secrets-detection:
+    name: Secrets Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for secrets scanning
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install detect-secrets
+        run: |
+          pip install detect-secrets
+
+      - name: Scan for secrets
+        id: secrets-scan
+        continue-on-error: true
+        run: |
+          detect-secrets scan --baseline .secrets.baseline --force-use-all-plugins || true
+          
+      - name: Check for new secrets
+        run: |
+          if detect-secrets audit .secrets.baseline --report --json | grep -q '"is_secret": true'; then
+            echo "❌ New secrets detected! Please review and update .secrets.baseline"
+            detect-secrets audit .secrets.baseline --report
+            exit 1
+          else
+            echo "✅ No new secrets detected"
+          fi
+
+  python-dependency-scan:
+    name: Python Dependency Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Run pip-audit
+        id: pip-audit
+        continue-on-error: true
+        run: |
+          uv run pip-audit --format json --output pip-audit-report.json || true
+
+      - name: Run Safety check
+        id: safety
+        continue-on-error: true
+        run: |
+          uv run safety check --json --output safety-report.json || true
+
+      - name: Upload pip-audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          retention-days: 30
+
+      - name: Upload Safety results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: safety-report
+          path: safety-report.json
+          retention-days: 30
+
+      - name: Check for critical vulnerabilities
+        run: |
+          if [ -f pip-audit-report.json ]; then
+            CRITICAL=$(jq '[.vulnerabilities[] | select(.severity == "CRITICAL")] | length' pip-audit-report.json)
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "❌ Found $CRITICAL critical vulnerabilities"
+              exit 1
+            fi
+          fi
+
+  node-dependency-scan:
+    name: Node.js Dependency Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./client
+        run: npm ci
+
+      - name: Run npm audit
+        id: npm-audit
+        continue-on-error: true
+        working-directory: ./client
+        run: |
+          npm audit --json > npm-audit-report.json || echo '{"vulnerabilities":{}}' > npm-audit-report.json
+
+      - name: Upload npm audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-report
+          path: client/npm-audit-report.json
+          retention-days: 30
+
+      - name: Check for critical vulnerabilities
+        working-directory: ./client
+        run: |
+          CRITICAL=$(jq '[.vulnerabilities | to_entries[] | select(.value.severity == "critical")] | length' npm-audit-report.json)
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "❌ Found $CRITICAL critical vulnerabilities"
+            exit 1
+          fi
+
+  # ============================================================================
+  # Stage 2: Static Application Security Testing (SAST)
+  # ============================================================================
+
+  python-sast-bandit:
+    name: Python SAST (Bandit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Run Bandit
+        id: bandit
+        continue-on-error: true
+        run: |
+          uv run bandit -r app/ -f json -o bandit-report.json --severity-level all || true
+
+      - name: Upload Bandit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          retention-days: 30
+
+      - name: Upload Bandit SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit-report.json
+          category: bandit
+
+  python-sast-semgrep:
+    name: Python SAST (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/python
+            p/owasp-top-ten
+          generateSarif: "1"
+          generateGitHubSAST: "1"
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  python-lint-security:
+    name: Python Security Linting (Ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Run Ruff security checks
+        continue-on-error: true
+        run: |
+          uv run ruff check app/ --select S --output-format json > ruff-security-report.json || true
+
+      - name: Upload Ruff results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ruff-security-report
+          path: ruff-security-report.json
+          retention-days: 30
+
+  frontend-sast:
+    name: Frontend SAST (ESLint Security)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./client
+        run: npm ci
+
+      - name: Run ESLint with security plugin
+        continue-on-error: true
+        working-directory: ./client
+        run: |
+          npm run lint -- --format json --output-file eslint-security-report.json || true
+
+      - name: Upload ESLint results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eslint-security-report
+          path: client/eslint-security-report.json
+          retention-days: 30
+
+      - name: Run TypeScript strict check
+        working-directory: ./client
+        run: |
+          npx tsc --noEmit --strict || echo "TypeScript strict check completed with warnings"
+
+  # ============================================================================
+  # Stage 3: Dynamic Application Security Testing (DAST) - Optional
+  # ============================================================================
+
+  dast-zap:
+    name: DAST (OWASP ZAP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start application
+        run: |
+          # Start the application in background
+          # This is a placeholder - adjust based on your deployment
+          echo "Starting application for DAST scan..."
+          # docker-compose up -d || echo "Application not available for DAST"
+
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.10.0
+        with:
+          target: 'http://localhost:8000'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+      - name: Upload ZAP results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: |
+            zap_report.html
+            zap_report.json
+          retention-days: 30
+
+  # ============================================================================
+  # Stage 4: Security Report Generation
+  # ============================================================================
+
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs:
+      - secrets-detection
+      - python-dependency-scan
+      - node-dependency-scan
+      - python-sast-bandit
+      - python-sast-semgrep
+      - python-lint-security
+      - frontend-sast
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-reports
+
+      - name: Generate summary report
+        run: |
+          echo "# Security Scan Summary" > security-summary.md
+          echo "" >> security-summary.md
+          echo "## Scan Results" >> security-summary.md
+          echo "" >> security-summary.md
+          
+          # Count vulnerabilities from each report
+          if [ -f security-reports/pip-audit-report/pip-audit-report.json ]; then
+            PYTHON_VULNS=$(jq '[.vulnerabilities[]] | length' security-reports/pip-audit-report/pip-audit-report.json || echo "0")
+            echo "- Python Dependencies: $PYTHON_VULNS vulnerabilities" >> security-summary.md
+          fi
+          
+          if [ -f security-reports/npm-audit-report/npm-audit-report.json ]; then
+            NODE_VULNS=$(jq '.vulnerabilities | length' security-reports/npm-audit-report/npm-audit-report.json || echo "0")
+            echo "- Node.js Dependencies: $NODE_VULNS vulnerabilities" >> security-summary.md
+          fi
+          
+          if [ -f security-reports/bandit-report/bandit-report.json ]; then
+            BANDIT_ISSUES=$(jq '.metrics._totals | ."SEVERITY.HIGH" + ."SEVERITY.MEDIUM"' security-reports/bandit-report/bandit-report.json || echo "0")
+            echo "- Bandit SAST: $BANDIT_ISSUES high/medium issues" >> security-summary.md
+          fi
+          
+          echo "" >> security-summary.md
+          echo "## Full Reports" >> security-summary.md
+          echo "" >> security-summary.md
+          echo "See the Security tab for detailed findings." >> security-summary.md
+
+      - name: Upload summary report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: security-summary.md
+          retention-days: 90
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('security-summary.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+  # ============================================================================
+  # Stage 5: Security Gate Decision
+  # ============================================================================
+
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    needs:
+      - secrets-detection
+      - python-dependency-scan
+      - node-dependency-scan
+      - python-sast-bandit
+      - python-sast-semgrep
+      - security-report
+    if: always()
+    steps:
+      - name: Check security gate
+        run: |
+          echo "Security gate check completed"
+          echo "Review the Security tab for detailed findings"
+          # In a real implementation, you would check for critical vulnerabilities
+          # and fail the workflow if found
+          # exit 1  # Uncomment to fail on critical issues

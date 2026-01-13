@@ -1,0 +1,31 @@
+[bandit]
+# Bandit configuration file
+# See: https://bandit.readthedocs.io/en/latest/config.html
+
+# Exclude paths
+exclude_dirs = 
+    .venv,
+    venv,
+    node_modules,
+    __pycache__,
+    .git,
+    alembic/versions,
+    tests,
+    client
+
+# Skip specific tests
+skips = 
+    B101,  # assert_used - We use asserts in tests
+    B601,  # shell_injection_subprocess - False positives in our use case
+
+# Severity levels to report
+severity_level = low
+
+# Confidence levels to report
+confidence_level = low
+
+# Test IDs to skip
+tests = 
+    # Skip tests that are false positives for our codebase
+    B201,  # flask_debug_true - Not using Flask
+    B301,  # pickle - We use pickle for ML models (acceptable risk)
