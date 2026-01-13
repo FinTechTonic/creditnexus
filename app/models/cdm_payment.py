@@ -39,6 +39,7 @@ class PaymentType(str, Enum):
     INTEREST_PAYMENT = "interest_payment"
     PENALTY_PAYMENT = "penalty_payment"
     PRINCIPAL_REPAYMENT = "principal_repayment"
+    NOTARIZATION_FEE = "notarization_fee"
 
 
 class TradeIdentifier(BaseModel):

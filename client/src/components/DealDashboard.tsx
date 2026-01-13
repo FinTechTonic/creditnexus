@@ -17,7 +17,8 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  RefreshCw
+  RefreshCw,
+  Share2
 } from 'lucide-react';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -307,6 +308,18 @@ export function DealDashboard() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-4">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/app/workflow/share?view=create&dealId=${deal.id}`);
+                        }}
+                        className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                        title="Share workflow link for this deal"
+                      >
+                        <Share2 className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

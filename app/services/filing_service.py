@@ -1,411 +1,439 @@
 """
-Filing Service for CreditNexus.
+Filing service for regulatory filing of securitization documents.
 
-Handles:
-- Companies House API integration (UK - automated)
-- Manual filing UI preparation (US, FR, DE - pre-filled forms)
-- Filing status tracking
+Handles generation and submission of regulatory documents to SEC, FINRA, etc.
 """
 
 import logging
-import requests
-import base64
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, date
+from typing import Dict, Any, Optional, List
+from decimal import Decimal
+
 from sqlalchemy.orm import Session
 
-from app.db.models import Document, DocumentFiling, Deal, DocumentVersion
-from app.core.config import settings
-from app.services.policy_service import PolicyService, FilingRequirement
-from app.services.policy_engine_factory import get_policy_engine
-from app.models.cdm import CreditAgreement
-from app.chains.filing_requirement_chain import evaluate_filing_requirements
-from app.chains.filing_form_generation_chain import generate_filing_form_data
+from app.db.models import (
+    SecuritizationPool, RegulatoryFiling, GeneratedDocument, User
+)
+from app.services.securitization_template_service import SecuritizationTemplateService
+from app.templates.securitization import (
+    generate_psa_template,
+    generate_trust_agreement_template,
+    generate_prospectus_template
+)
 
 logger = logging.getLogger(__name__)
 
 
 class FilingService:
-    """Service for managing regulatory filings."""
-
+    """Service for managing regulatory filings for securitization pools."""
+    
     def __init__(self, db: Session):
-        """
-        Initialize filing service.
-
+        """Initialize filing service.
+        
         Args:
             db: Database session
         """
         self.db = db
-        self.companies_house_api_key = settings.COMPANIES_HOUSE_API_KEY
-        self.companies_house_base_url = "https://api.company-information.service.gov.uk"
-        self.policy_service = PolicyService(get_policy_engine())
-
-    def determine_filing_requirements(
+        self.template_service = SecuritizationTemplateService(db)
+    
+    def generate_regulatory_documents(
         self,
-        document_id: int,
-        agreement_type: str,
-        jurisdiction: Optional[str] = None,
-        deal_id: Optional[int] = None,
-        use_ai_evaluation: bool = True
-    ) -> List[FilingRequirement]:
+        pool_id: str,
+        filing_types: Optional[List[str]] = None,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
-        Determine what needs to be filed and where using AI-assisted evaluation.
-
-        Args:
-            document_id: Document ID
-            agreement_type: Type of agreement
-            jurisdiction: Optional jurisdiction override
-            deal_id: Optional deal ID
-            use_ai_evaluation: Use LangChain AI chain for evaluation
-
-        Returns:
-            List of FilingRequirement objects
-        """
-        document = self.db.query(Document).filter(Document.id == document_id).first()
-        if not document:
-            raise ValueError(f"Document {document_id} not found")
-
-        # Load CDM data
-        if not document.source_cdm_data:
-            raise ValueError(f"Document {document_id} has no CDM data")
-
-        credit_agreement = CreditAgreement(**document.source_cdm_data)
-
-        # Use LangChain AI chain for filing requirement evaluation
-        if use_ai_evaluation:
-            evaluation = evaluate_filing_requirements(
-                credit_agreement=credit_agreement,
-                document_id=document_id,
-                deal_id=deal_id,
-                agreement_type=agreement_type
-            )
-
-            # Convert FilingRequirement models to dataclasses
-            requirements = []
-            for req in evaluation.required_filings:
-                requirements.append(FilingRequirement(
-                    authority=req.authority,
-                    filing_system=req.filing_system,
-                    deadline=req.deadline,
-                    required_fields=req.required_fields,
-                    api_available=req.api_available,
-                    api_endpoint=req.api_endpoint,
-                    penalty=req.penalty,
-                    language_requirement=req.language_requirement,
-                    jurisdiction=req.jurisdiction,
-                    agreement_type=req.agreement_type,
-                    form_type=req.form_type,
-                    priority=req.priority
-                ))
-            return requirements
-        else:
-            # Fallback to PolicyService (if not using AI)
-            decision = self.policy_service.evaluate_filing_requirements(
-                credit_agreement=credit_agreement,
-                document_id=document_id,
-                deal_id=deal_id
-            )
-            return decision.required_filings
-
-    def file_document_automatically(
-        self,
-        document_id: int,
-        filing_requirement: FilingRequirement
-    ) -> DocumentFiling:
-        """
-        File a document automatically via API (UK only).
-
-        Args:
-            document_id: Document ID
-            filing_requirement: FilingRequirement object
-
-        Returns:
-            DocumentFiling instance
-        """
-        if filing_requirement.filing_system != "companies_house_api":
-            raise ValueError(f"Automatic filing not supported for {filing_requirement.filing_system}")
-
-        # Companies House API integration
-        return self._file_companies_house(document_id, filing_requirement)
-
-    def prepare_manual_filing(
-        self,
-        document_id: int,
-        filing_requirement: FilingRequirement
-    ) -> DocumentFiling:
-        """
-        Prepare a manual filing with AI-generated pre-filled form data.
-
-        Args:
-            document_id: Document ID
-            filing_requirement: FilingRequirement object
-
-        Returns:
-            DocumentFiling instance with pre-filled form data
-        """
-        # 1. Load document and CDM data
-        document = self.db.query(Document).filter(Document.id == document_id).first()
-        if not document:
-            raise ValueError(f"Document {document_id} not found")
-
-        if not document.source_cdm_data:
-            raise ValueError(f"Document {document_id} has no CDM data")
-
-        credit_agreement = CreditAgreement(**document.source_cdm_data)
-
-        # 2. Use LangChain AI chain to generate pre-filled form data
-        form_data = generate_filing_form_data(
-            credit_agreement=credit_agreement,
-            filing_requirement=filing_requirement,
-            document_id=document_id,
-            deal_id=document.deal_id
-        )
-
-        # 3. Create DocumentFiling record with pre-filled form data
-        filing = DocumentFiling(
-            document_id=document_id,
-            deal_id=document.deal_id,
-            agreement_type=filing_requirement.agreement_type or "facility_agreement",
-            jurisdiction=filing_requirement.jurisdiction or "Unknown",
-            filing_authority=filing_requirement.authority,
-            filing_system="manual_ui",
-            filing_status="pending",
-            filing_payload=form_data.model_dump(),  # Store pre-filled form data
-            manual_submission_url=form_data.submission_url,
-            deadline=filing_requirement.deadline
-        )
-
-        self.db.add(filing)
-        self.db.commit()
-        self.db.refresh(filing)
-
-        logger.info(f"Prepared manual filing for document {document_id}: {filing_requirement.authority}")
-        return filing
-
-    def _file_companies_house(
-        self,
-        document_id: int,
-        filing_requirement: FilingRequirement
-    ) -> DocumentFiling:
-        """
-        File charge with Companies House API.
-
-        Args:
-            document_id: Document ID
-            filing_requirement: FilingRequirement object
-
-        Returns:
-            DocumentFiling instance
-        """
-        # 1. Load document and CDM data
-        document = self.db.query(Document).filter(Document.id == document_id).first()
-        if not document:
-            raise ValueError(f"Document {document_id} not found")
-
-        # 2. Extract company number from CDM data
-        company_number = self._extract_company_number(document)
-        if not company_number:
-            raise ValueError("UK company number not found in document data")
-
-        # 3. Prepare charge filing payload
-        charge_data = {
-            "charge_code": "MR01",  # Charge creation form
-            "charge_creation_date": (
-                document.agreement_date.isoformat()
-                if document.agreement_date
-                else datetime.utcnow().date().isoformat()
-            ),
-            "charge_description": self._generate_charge_description(document),
-            "persons_entitled": self._extract_lenders(document),
-            "secured_amount": {
-                "amount": float(document.total_commitment) if document.total_commitment else 0,
-                "currency": document.currency or "GBP"
-            }
-        }
-
-        # 4. Submit to Companies House API
-        api_key_value = (
-            self.companies_house_api_key.get_secret_value()
-            if hasattr(self.companies_house_api_key, 'get_secret_value')
-            else str(self.companies_house_api_key)
-        )
-        auth_string = base64.b64encode(f"{api_key_value}:".encode()).decode()
-
-        response = requests.post(
-            f"{self.companies_house_base_url}/company/{company_number}/charges",
-            headers={
-                "Authorization": f"Basic {auth_string}",
-                "Content-Type": "application/json"
-            },
-            json=charge_data,
-            timeout=30
-        )
-
-        if not response.ok:
-            error_msg = f"Companies House API error: {response.status_code} - {response.text}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        response_data = response.json()
-
-        # 5. Create DocumentFiling record
-        filing = DocumentFiling(
-            document_id=document_id,
-            deal_id=document.deal_id,
-            agreement_type=filing_requirement.agreement_type or "facility_agreement",
-            jurisdiction="UK",
-            filing_authority="Companies House",
-            filing_system="companies_house_api",
-            filing_reference=response_data.get("transaction_id") or response_data.get("filing_id"),
-            filing_status="submitted",
-            filing_payload=charge_data,
-            filing_response=response_data,
-            filing_url=response_data.get("filing_url"),
-            confirmation_url=response_data.get("confirmation_url"),
-            filed_at=datetime.utcnow(),
-            deadline=filing_requirement.deadline
-        )
-
-        self.db.add(filing)
-        self.db.commit()
-        self.db.refresh(filing)
-
-        logger.info(f"Filed charge with Companies House for document {document_id}: {filing.filing_reference}")
-        return filing
-
-    def _extract_company_number(self, document: Document) -> Optional[str]:
-        """Extract UK company number from document CDM data."""
-        # Try to get from document version CDM data
-        if document.current_version_id:
-            version = self.db.query(DocumentVersion).filter(
-                DocumentVersion.id == document.current_version_id
-            ).first()
-            if version and version.cdm_data:
-                # Extract from parties with UK jurisdiction
-                parties = version.cdm_data.get("parties", [])
-                for party in parties:
-                    if party.get("jurisdiction") == "UK" and party.get("company_number"):
-                        return party["company_number"]
-
-        # Try to get from document source_cdm_data
-        if document.source_cdm_data:
-            parties = document.source_cdm_data.get("parties", [])
-            for party in parties:
-                if isinstance(party, dict):
-                    if party.get("jurisdiction") == "UK" and party.get("company_number"):
-                        return party["company_number"]
-                else:
-                    # Pydantic model
-                    if hasattr(party, 'jurisdiction') and hasattr(party, 'company_number'):
-                        if party.jurisdiction == "UK" and party.company_number:
-                            return party.company_number
-
-        return None
-
-    def _generate_charge_description(self, document: Document) -> str:
-        """Generate charge description from document."""
-        return f"Charge securing credit facility agreement dated {document.agreement_date or 'N/A'}"
-
-    def _extract_lenders(self, document: Document) -> List[Dict[str, str]]:
-        """Extract lender information from document."""
-        lenders = []
+        Generate all required regulatory documents for a securitization pool.
         
-        # Try to get from document source_cdm_data
-        if document.source_cdm_data:
-            parties = document.source_cdm_data.get("parties", [])
-            for party in parties:
-                if isinstance(party, dict):
-                    roles = party.get("roles", [])
-                    if any("Lender" in str(role) for role in roles):
-                        lenders.append({
-                            "name": party.get("name", ""),
-                            "lei": party.get("lei")
-                        })
-                else:
-                    # Pydantic model
-                    if hasattr(party, 'roles'):
-                        roles = party.roles if isinstance(party.roles, list) else [party.roles]
-                        if any("Lender" in str(role) for role in roles):
-                            lenders.append({
-                                "name": party.name if hasattr(party, 'name') else "",
-                                "lei": party.lei if hasattr(party, 'lei') else None
-                            })
-
-        return lenders
-
-    def _generate_form_data(self, document: Document, requirement: FilingRequirement) -> Dict[str, Any]:
-        """Generate pre-filled form data based on jurisdiction."""
-        form_data = {}
-
-        if requirement.jurisdiction == "US":
-            form_data = {
-                "form_type": requirement.form_type or "8-K",
-                "company_name": document.borrower_name,
-                "agreement_date": document.agreement_date.isoformat() if document.agreement_date else None,
-                "total_commitment": str(document.total_commitment) if document.total_commitment else None,
-                "currency": document.currency
-            }
-        elif requirement.jurisdiction == "FR":
-            form_data = {
-                "company_name": document.borrower_name,
-                "agreement_date": document.agreement_date.isoformat() if document.agreement_date else None,
-                "total_commitment": str(document.total_commitment) if document.total_commitment else None,
-                "currency": document.currency
-            }
-        elif requirement.jurisdiction == "DE":
-            form_data = {
-                "company_name": document.borrower_name,
-                "agreement_date": document.agreement_date.isoformat() if document.agreement_date else None,
-                "total_commitment": str(document.total_commitment) if document.total_commitment else None,
-                "currency": document.currency
-            }
-
-        return form_data
-
-    def _get_manual_submission_url(self, requirement: FilingRequirement) -> str:
-        """Get manual submission portal URL for filing authority."""
-        urls = {
-            "SEC": "https://www.sec.gov/edgar/searchedgar/companysearch.html",
-            "AMF": "https://www.amf-france.org/en/your-requests/declarations",
-            "BaFin": "https://www.bafin.de/EN/Aufsicht/Unternehmen/Unternehmen_node_en.html",
-            "Tribunal de Commerce": "https://www.infogreffe.fr/",
-            "Handelsregister": "https://www.handelsregister.de/",
-            "CFIUS": "https://home.treasury.gov/policy-issues/international/the-committee-on-foreign-investment-in-the-united-states-cfius",
-            "UK Government (NSIA)": "https://www.gov.uk/government/organisations/investment-security-unit"
-        }
-        return urls.get(requirement.authority, "")
-
-    def update_manual_filing_status(
-        self,
-        filing_id: int,
-        filing_reference: str,
-        submission_notes: Optional[str] = None,
-        submitted_by: Optional[int] = None
-    ) -> DocumentFiling:
-        """
-        Update manual filing status after user submits via external portal.
-
         Args:
-            filing_id: DocumentFiling ID
-            filing_reference: External filing reference from portal
-            submission_notes: Optional notes from user
-            submitted_by: User ID who submitted
-
+            pool_id: Pool identifier
+            filing_types: Optional list of document types to generate.
+                         Default: ['psa', 'trust_agreement', 'prospectus', 'sec_10d']
+            user_id: Optional user ID generating the documents
+            
         Returns:
-            Updated DocumentFiling instance
+            Dictionary with generated documents and metadata
         """
-        filing = self.db.query(DocumentFiling).filter(DocumentFiling.id == filing_id).first()
+        if filing_types is None:
+            filing_types = ['psa', 'trust_agreement', 'prospectus', 'sec_10d']
+        
+        pool = self.db.query(SecuritizationPool).filter(
+            SecuritizationPool.pool_id == pool_id
+        ).first()
+        
+        if not pool:
+            raise ValueError(f"Pool {pool_id} not found")
+        
+        generated_docs = {}
+        
+        # Generate PSA
+        if 'psa' in filing_types:
+            try:
+                psa_data = self.template_service.generate_psa(pool_id, user_id, 'text')
+                generated_docs['psa'] = psa_data
+            except Exception as e:
+                logger.error(f"Failed to generate PSA for pool {pool_id}: {e}")
+                generated_docs['psa'] = {'error': str(e)}
+        
+        # Generate Trust Agreement
+        if 'trust_agreement' in filing_types:
+            try:
+                trust_data = self.template_service.generate_trust_agreement(pool_id, user_id, 'text')
+                generated_docs['trust_agreement'] = trust_data
+            except Exception as e:
+                logger.error(f"Failed to generate Trust Agreement for pool {pool_id}: {e}")
+                generated_docs['trust_agreement'] = {'error': str(e)}
+        
+        # Generate Prospectus Supplement
+        if 'prospectus' in filing_types:
+            try:
+                prospectus_data = self.template_service.generate_prospectus(pool_id, user_id, 'text')
+                generated_docs['prospectus'] = prospectus_data
+            except Exception as e:
+                logger.error(f"Failed to generate Prospectus for pool {pool_id}: {e}")
+                generated_docs['prospectus'] = {'error': str(e)}
+        
+        # Generate SEC Form 10-D
+        if 'sec_10d' in filing_types:
+            try:
+                sec_10d_data = self._generate_sec_10d(pool_id, user_id)
+                generated_docs['sec_10d'] = sec_10d_data
+            except Exception as e:
+                logger.error(f"Failed to generate SEC Form 10-D for pool {pool_id}: {e}")
+                generated_docs['sec_10d'] = {'error': str(e)}
+        
+        logger.info(f"Generated {len(generated_docs)} regulatory document(s) for pool {pool_id}")
+        return {
+            'pool_id': pool_id,
+            'generated_documents': generated_docs,
+            'generated_at': datetime.now().isoformat()
+        }
+    
+    def submit_to_regulatory_body(
+        self,
+        pool_id: str,
+        regulatory_body: str,
+        filing_type: str,
+        documents: Dict[str, Any],
+        user_id: Optional[int] = None,
+        mock: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Submit regulatory documents to regulatory body (SEC, FINRA, etc.).
+        
+        Args:
+            pool_id: Pool identifier
+            regulatory_body: Regulatory body ('SEC', 'FINRA', etc.)
+            filing_type: Type of filing ('sec_10d', 'prospectus', etc.)
+            documents: Dictionary of document data to file
+            user_id: Optional user ID submitting the filing
+            mock: If True, simulate filing (for MVP). If False, attempt actual filing.
+            
+        Returns:
+            Dictionary with filing status and receipt information
+        """
+        pool = self.db.query(SecuritizationPool).filter(
+            SecuritizationPool.pool_id == pool_id
+        ).first()
+        
+        if not pool:
+            raise ValueError(f"Pool {pool_id} not found")
+        
+        if mock:
+            # Mock filing - simulate submission
+            filing_receipt = {
+                'filing_id': f"{regulatory_body}-{pool_id}-{datetime.now().strftime('%Y%m%d')}",
+                'regulatory_body': regulatory_body,
+                'filing_type': filing_type,
+                'submission_date': datetime.now().isoformat(),
+                'status': 'submitted',
+                'receipt_number': f"REC-{regulatory_body}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                'mock': True
+            }
+            
+            # Create filing record
+            filing = RegulatoryFiling(
+                pool_id=pool.id,
+                filing_type=filing_type,
+                regulatory_body=regulatory_body,
+                status='submitted',
+                filed_at=datetime.now(),
+                filing_number=filing_receipt.get('receipt_number'),
+                metadata={
+                    'submitted_by': user_id,
+                    'submission_date': datetime.now().isoformat(),
+                    'mock': True,
+                    'filing_receipt': filing_receipt
+                }
+            )
+            
+            self.db.add(filing)
+            self.db.commit()
+            self.db.refresh(filing)
+            
+            logger.info(f"Mock filing submitted for pool {pool_id} to {regulatory_body}: {filing.id}")
+            
+            return {
+                'status': 'submitted',
+                'filing_id': filing.id,
+                'receipt': filing_receipt,
+                'message': 'Filing submitted (mock mode)'
+            }
+        else:
+            # Real filing - would integrate with SEC EDGAR API, FINRA API, etc.
+            # For now, raise NotImplementedError
+            raise NotImplementedError(
+                f"Real filing to {regulatory_body} not yet implemented. "
+                "Use mock=True for testing."
+            )
+    
+    def track_filing_status(
+        self,
+        filing_id: int
+    ) -> Dict[str, Any]:
+        """
+        Track the status of a regulatory filing.
+        
+        Args:
+            filing_id: Filing ID
+            
+        Returns:
+            Dictionary with current filing status
+        """
+        filing = self.db.query(RegulatoryFiling).filter(
+            RegulatoryFiling.id == filing_id
+        ).first()
+        
         if not filing:
             raise ValueError(f"Filing {filing_id} not found")
+        
+        # In mock mode, return stored status
+        # In production, would poll regulatory body API
+        if filing.metadata and filing.metadata.get('mock'):
+        return {
+            'filing_id': filing.id,
+            'status': filing.status,
+            'regulatory_body': filing.regulatory_body,
+            'filing_type': filing.filing_type,
+            'filed_at': filing.filed_at.isoformat() if filing.filed_at else None,
+            'receipt': filing.metadata.get('filing_receipt') if filing.metadata else None,
+            'filing_number': filing.filing_number,
+            'last_updated': filing.created_at.isoformat() if filing.created_at else None
+        }
+        else:
+            # Would poll actual regulatory body API here
+            return {
+                'filing_id': filing.id,
+                'status': filing.status,
+                'regulatory_body': filing.regulatory_body,
+                'filing_type': filing.filing_type,
+                'filed_at': filing.filed_at.isoformat() if filing.filed_at else None,
+                'receipt': filing.filing_receipt,
+                'last_updated': filing.updated_at.isoformat() if filing.updated_at else None,
+                'note': 'Real filing status tracking not yet implemented'
+            }
+    
+    def file_securitization_pool(
+        self,
+        pool_id: str,
+        regulatory_bodies: Optional[List[str]] = None,
+        user_id: Optional[int] = None,
+        mock: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Complete filing workflow: generate documents and submit to regulatory bodies.
+        
+        Args:
+            pool_id: Pool identifier
+            regulatory_bodies: List of regulatory bodies to file with (default: ['SEC', 'FINRA'])
+            user_id: Optional user ID performing the filing
+            mock: If True, use mock filing (for MVP)
+            
+        Returns:
+            Dictionary with filing results
+        """
+        if regulatory_bodies is None:
+            regulatory_bodies = ['SEC', 'FINRA']
+        
+        # Generate all required documents
+        documents = self.generate_regulatory_documents(
+            pool_id=pool_id,
+            filing_types=['psa', 'trust_agreement', 'prospectus', 'sec_10d'],
+            user_id=user_id
+        )
+        
+        filing_results = {}
+        
+        # Submit to each regulatory body
+        for body in regulatory_bodies:
+            try:
+                if body == 'SEC':
+                    # File SEC Form 10-D and Prospectus
+                    sec_result = self.submit_to_regulatory_body(
+                        pool_id=pool_id,
+                        regulatory_body='SEC',
+                        filing_type='sec_10d',
+                        documents=documents['generated_documents'],
+                        user_id=user_id,
+                        mock=mock
+                    )
+                    filing_results['SEC'] = sec_result
+                    
+                    # Also file Prospectus Supplement
+                    prospectus_result = self.submit_to_regulatory_body(
+                        pool_id=pool_id,
+                        regulatory_body='SEC',
+                        filing_type='prospectus_supplement',
+                        documents={'prospectus': documents['generated_documents'].get('prospectus')},
+                        user_id=user_id,
+                        mock=mock
+                    )
+                    filing_results['SEC_Prospectus'] = prospectus_result
+                
+                elif body == 'FINRA':
+                    # File with FINRA
+                    finra_result = self.submit_to_regulatory_body(
+                        pool_id=pool_id,
+                        regulatory_body='FINRA',
+                        filing_type='securitization_notice',
+                        documents=documents['generated_documents'],
+                        user_id=user_id,
+                        mock=mock
+                    )
+                    filing_results['FINRA'] = finra_result
+                
+            except Exception as e:
+                logger.error(f"Failed to file with {body} for pool {pool_id}: {e}")
+                filing_results[body] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+        
+        return {
+            'pool_id': pool_id,
+            'documents_generated': documents,
+            'filing_results': filing_results,
+            'filed_at': datetime.now().isoformat()
+        }
+    
+    def _generate_sec_10d(
+        self,
+        pool_id: str,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate SEC Form 10-D (Distribution Report) for securitization pool.
+        
+        Args:
+            pool_id: Pool identifier
+            user_id: Optional user ID
+            
+        Returns:
+            Dictionary with SEC Form 10-D data
+        """
+        pool = self.db.query(SecuritizationPool).filter(
+            SecuritizationPool.pool_id == pool_id
+        ).first()
+        
+        if not pool:
+            raise ValueError(f"Pool {pool_id} not found")
+        
+        # Get pool data
+        pool_data = self.template_service._get_pool_data(pool)
+        
+        # Generate SEC Form 10-D content
+        sec_10d_data = {
+            'form_type': '10-D',
+            'pool_name': pool.pool_name,
+            'pool_id': pool.pool_id,
+            'pool_type': pool.pool_type,
+            'reporting_period': datetime.now().strftime('%Y-%m'),
+            'filing_date': datetime.now().isoformat(),
+            'total_pool_value': str(pool.total_pool_value),
+            'currency': pool.currency,
+            'tranche_count': len(pool_data['tranches']),
+            'asset_count': len(pool_data['assets']),
+            'distribution_summary': {
+                'total_distributions': '0',  # Would calculate from actual distributions
+                'interest_payments': '0',
+                'principal_payments': '0'
+            }
+        }
+        
+        # Generate document text
+        sec_10d_text = _generate_sec_10d_document_text(sec_10d_data)
+        sec_10d_data['document_text'] = sec_10d_text
+        
+        # Save as generated document if user_id provided
+        if user_id:
+            document = self.template_service._save_generated_document(
+                pool_id=pool_id,
+                document_type='SEC Form 10-D',
+                content=sec_10d_text,
+                user_id=user_id
+            )
+            sec_10d_data['document_id'] = document.id
+            sec_10d_data['document_path'] = document.file_path
+        
+        return sec_10d_data
 
-        filing.filing_status = "submitted"
-        filing.filing_reference = filing_reference
-        filing.submitted_by = submitted_by
-        filing.submitted_at = datetime.utcnow()
-        filing.submission_notes = submission_notes
 
-        self.db.commit()
-        self.db.refresh(filing)
+def _generate_sec_10d_document_text(data: Dict[str, Any]) -> str:
+    """Generate SEC Form 10-D document text."""
+    
+    text = f"""
+UNITED STATES
+SECURITIES AND EXCHANGE COMMISSION
+Washington, D.C. 20549
 
-        logger.info(f"Updated manual filing {filing_id} status to submitted: {filing_reference}")
-        return filing
+FORM 10-D
+
+DISTRIBUTION REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+
+For the reporting period: {data['reporting_period']}
+
+Commission File Number: [TO BE ASSIGNED]
+
+{data['pool_name']}
+(Exact name of registrant as specified in its charter)
+
+Pool ID: {data['pool_id']}
+Pool Type: {data['pool_type']}
+
+REPORTING PERIOD INFORMATION
+
+Reporting Period: {data['reporting_period']}
+Filing Date: {data['filing_date']}
+
+POOL INFORMATION
+
+Pool Name: {data['pool_name']}
+Pool ID: {data['pool_id']}
+Total Pool Value: {data['currency']} {data['total_pool_value']}
+Number of Tranches: {data['tranche_count']}
+Number of Underlying Assets: {data['asset_count']}
+
+DISTRIBUTION SUMMARY
+
+Total Distributions: {data['currency']} {data['distribution_summary']['total_distributions']}
+Interest Payments: {data['currency']} {data['distribution_summary']['interest_payments']}
+Principal Payments: {data['currency']} {data['distribution_summary']['principal_payments']}
+
+ASSET PERFORMANCE
+
+[Asset performance metrics would be included here]
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant
+has duly caused this report to be signed on its behalf by the undersigned,
+thereunto duly authorized.
+
+{data['pool_name']}
+
+By: _________________________
+    [Authorized Signatory]
+    Date: {data['filing_date']}
+"""
+    
+    return text.strip()

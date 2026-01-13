@@ -26,12 +26,10 @@ class DealService:
     
     # Valid status transitions
     VALID_TRANSITIONS = {
-        DealStatus.DRAFT.value: [DealStatus.SUBMITTED.value],
-        DealStatus.SUBMITTED.value: [DealStatus.UNDER_REVIEW.value, DealStatus.REJECTED.value],
-        DealStatus.UNDER_REVIEW.value: [DealStatus.APPROVED.value, DealStatus.REJECTED.value],
-        DealStatus.APPROVED.value: [DealStatus.ACTIVE.value],
-        DealStatus.ACTIVE.value: [DealStatus.CLOSED.value],
-        DealStatus.REJECTED.value: [],  # Terminal state
+        DealStatus.DRAFT.value: [DealStatus.PENDING.value],
+        DealStatus.PENDING.value: [DealStatus.ACTIVE.value, DealStatus.CANCELLED.value],
+        DealStatus.ACTIVE.value: [DealStatus.CLOSED.value, DealStatus.CANCELLED.value],
+        DealStatus.CANCELLED.value: [],  # Terminal state
         DealStatus.CLOSED.value: [],  # Terminal state
     }
     
@@ -343,9 +341,9 @@ class DealService:
         
         # Create CDM event for status change
         decision = "ALLOW"
-        if new_status == DealStatus.REJECTED.value:
+        if new_status == DealStatus.CANCELLED.value:
             decision = "BLOCK"
-        elif new_status == DealStatus.UNDER_REVIEW.value:
+        elif new_status == DealStatus.PENDING.value:
             decision = "FLAG"
         
         cdm_event = generate_cdm_policy_evaluation(

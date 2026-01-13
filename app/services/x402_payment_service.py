@@ -8,7 +8,7 @@ import logging
 from typing import Dict, Any, Optional
 from decimal import Decimal
 from datetime import datetime
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
 import httpx
 
 from app.models.cdm import CreditAgreement, Money, Currency, Party
@@ -238,6 +238,25 @@ class X402PaymentService:
     async def close(self):
         """Close HTTP client."""
         await self.client.aclose()
+
+
+def get_x402_payment_service(request: Request) -> Optional[X402PaymentService]:
+    """
+    FastAPI dependency to get x402 payment service instance from application state.
+    
+    This dependency function provides access to the X402PaymentService instance
+    that was initialized at application startup. Returns None if x402
+    payment service is disabled.
+    
+    Args:
+        request: FastAPI request object (to access app.state)
+        
+    Returns:
+        X402PaymentService instance or None if disabled
+    """
+    if hasattr(request.app.state, 'x402_payment_service'):
+        return request.app.state.x402_payment_service
+    return None
 
 
 

@@ -1,0 +1,69 @@
+# Verification File Whitelist Configuration
+
+# File whitelist configuration for verification links
+# Controls which files and categories can be included in verification links
+
+enabled_categories:
+  - legal
+  - financial
+  - compliance
+
+file_types:
+  allowed_extensions:
+    - .pdf
+    - .doc
+    - .docx
+    - .txt
+    - .json
+    - .xlsx
+    - .csv
+  max_file_size_mb: 50
+
+categories:
+  legal:
+    enabled: true
+    required: true
+    file_types:
+      - .pdf
+      - .doc
+      - .docx
+    description: "Legal documents (agreements, contracts)"
+  
+  financial:
+    enabled: true
+    required: false
+    file_types:
+      - .pdf
+      - .xlsx
+      - .csv
+    description: "Financial statements and reports"
+  
+  compliance:
+    enabled: true
+    required: false
+    file_types:
+      - .pdf
+      - .doc
+    description: "Compliance and regulatory documents"
+
+subdirectories:
+  documents:
+    enabled: true
+    priority: 1
+    description: "Main deal documents"
+  
+  extractions:
+    enabled: true
+    priority: 2
+    description: "Extracted data files"
+  
+  generated:
+    enabled: false
+    priority: 3
+    description: "Generated documents"
+  
+
+  notes:
+    enabled: false
+    priority: 4
+    description: "Deal notes and comments"

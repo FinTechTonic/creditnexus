@@ -159,17 +159,18 @@ class NotarizationService:
             try:
                 cdm_event = generate_cdm_notarization_event(
                     notarization_id=str(notarization.id),
-                    deal_id=str(notarization.deal_id),
+                    deal_id=str(notarization.deal_id) if notarization.deal_id else "",
                     signers=signatures,
                     notarization_hash=notarization.notarization_hash,
                 )
-                notarization.cdm_event_id = (
-                    cdm_event.get("meta", {})
-                    .get("globalKey", {})
-                    .get("assignedIdentifier", [{}])[0]
-                    .get("identifier", {})
-                    .get("value", "")
-                )
+                # Extract globalKey value from CDM event
+                global_key = cdm_event.get("meta", {}).get("globalKey", {})
+                if isinstance(global_key, dict):
+                    assigned_id = global_key.get("assignedIdentifier", [{}])[0]
+                    notarization.cdm_event_id = assigned_id.get("identifier", {}).get("value", "")
+                else:
+                    # Fallback for string format
+                    notarization.cdm_event_id = str(global_key) if global_key else ""
                 logger.info(f"Generated CDM notarization event: {notarization.cdm_event_id}")
             except Exception as e:
                 logger.error(f"Failed to generate CDM notarization event: {e}")

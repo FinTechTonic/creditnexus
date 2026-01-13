@@ -561,3 +561,123 @@ def generate_cdm_filing_submission(
         },
         "relatedEventIdentifier": related_event_identifiers
     }
+
+
+def generate_cdm_securitization_creation(
+    pool_id: str,
+    pool_name: str,
+    pool_type: str,
+    originator: str,
+    trustee: str,
+    total_pool_value: float,
+    currency: str,
+    underlying_assets: List[Dict[str, Any]],
+    tranches: List[Dict[str, Any]],
+    related_event_identifiers: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """Generate CDM-compliant SecuritizationCreation event."""
+    if related_event_identifiers is None:
+        related_event_identifiers = []
+    
+    return {
+        "eventType": "SecuritizationCreation",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "securitizationCreation": {
+            "poolIdentifier": {
+                "issuer": "CreditNexus_SecuritizationService",
+                "assignedIdentifier": [{"identifier": {"value": pool_id}}]
+            },
+            "poolName": pool_name,
+            "poolType": pool_type,
+            "originator": {"partyReference": {"globalReference": originator}},
+            "trustee": {"partyReference": {"globalReference": trustee}},
+            "totalPoolValue": {
+                "currency": {"value": currency},
+                "amount": {"value": float(total_pool_value)}
+            },
+            "underlyingAssets": underlying_assets,
+            "tranches": tranches,
+            "creationDate": {"date": datetime.date.today().isoformat()}
+        },
+        "relatedEventIdentifier": related_event_identifiers,
+        "meta": {
+            "globalKey": str(uuid.uuid4()),
+            "sourceSystem": "CreditNexus_SecuritizationService_v1",
+            "version": 1
+        }
+    }
+
+
+def generate_cdm_notarization_event(
+    notarization_id: str,
+    deal_id: str,
+    signers: List[Dict[str, Any]],
+    notarization_hash: str,
+    blockchain_tx_hash: Optional[str] = None
+) -> Dict[str, Any]:
+    """Generate CDM-compliant Notarization event for deal notarization.
+    
+    Args:
+        notarization_id: Notarization record ID
+        deal_id: Deal ID (can be None for securitization pools)
+        signers: List of signer dictionaries with wallet_address and signature
+        notarization_hash: Hash of the notarization payload
+        blockchain_tx_hash: Optional blockchain transaction hash
+        
+    Returns:
+        CDM-compliant Notarization event dictionary
+    """
+    return {
+        "eventType": "Notarization",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "notarization": {
+            "notarizationIdentifier": {
+                "issuer": "CreditNexus_NotarizationService",
+                "assignedIdentifier": [{"identifier": {"value": f"NOTARIZATION_{notarization_id}"}}]
+            },
+            "dealIdentifier": {
+                "issuer": "CreditNexus_DealService",
+                "assignedIdentifier": [{"identifier": {"value": deal_id}}]
+            } if deal_id and deal_id != "" else None,
+            "notarizationHash": notarization_hash,
+            "signers": signers,
+            "blockchainTransactionHash": blockchain_tx_hash,
+            "notarizationDate": {"date": datetime.date.today().isoformat()}
+        },
+        "meta": {
+            "globalKey": {
+                "issuer": "CreditNexus",
+                "assignedIdentifier": [{"identifier": {"value": str(uuid.uuid4())}}]
+            },
+            "sourceSystem": "CreditNexus_NotarizationService_v1",
+            "version": 1
+        }
+    }
+
+
+def generate_cdm_securitization_notarization(
+    pool_id: str,
+    notarization_hash: str,
+    signers: List[Dict[str, Any]],
+    blockchain_tx_hash: Optional[str] = None
+) -> Dict[str, Any]:
+    """Generate CDM-compliant SecuritizationNotarization event."""
+    return {
+        "eventType": "SecuritizationNotarization",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "securitizationNotarization": {
+            "poolIdentifier": {
+                "issuer": "CreditNexus_SecuritizationService",
+                "assignedIdentifier": [{"identifier": {"value": pool_id}}]
+            },
+            "notarizationHash": notarization_hash,
+            "signers": signers,
+            "blockchainTransactionHash": blockchain_tx_hash,
+            "notarizationDate": {"date": datetime.date.today().isoformat()}
+        },
+        "meta": {
+            "globalKey": str(uuid.uuid4()),
+            "sourceSystem": "CreditNexus_NotarizationService_v1",
+            "version": 1
+        }
+    }

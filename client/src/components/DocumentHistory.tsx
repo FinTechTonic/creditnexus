@@ -26,7 +26,8 @@ import {
   Filter,
   GitCompare,
   X,
-  Edit2
+  Edit2,
+  Share2
 } from 'lucide-react';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
 import { WorkflowActions } from './WorkflowActions';
@@ -417,6 +418,18 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
                   Compare with Template
                 </Button>
               )}
+              {selectedDocument && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border-blue-600/30"
+                  onClick={() => navigate(`/app/workflow/share?view=create&documentId=${selectedDocument.id}`)}
+                  title="Share workflow link for this document"
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Workflow
+                </Button>
+              )}
               {selectedVersion && (
                 <Button 
                   variant="outline" 
@@ -773,6 +786,18 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/app/workflow/share?view=create&documentId=${doc.id}`);
+                      }}
+                      className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                      title="Share workflow link for this document"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"

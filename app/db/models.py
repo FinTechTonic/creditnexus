@@ -1,7 +1,7 @@
 """SQLAlchemy models for CreditNexus database."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Numeric, Date
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Numeric, Date, Float
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import relationship
 import enum
@@ -50,17 +50,30 @@ class AuditAction(str, enum.Enum):
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
+    VIEW = "view"
     APPROVE = "approve"
     REJECT = "reject"
-    PUBLISH = "publish"
-    EXPORT = "export"
+    SIGN = "sign"
+    FILE = "file"
+    VERIFY = "verify"
+    NOTARIZE = "notarize"
     LOGIN = "login"
     LOGOUT = "logout"
-    BROADCAST = "broadcast"
+    EXPORT = "export"
+    PUBLISH = "publish"
+
+
+class PolicyStatus(str, enum.Enum):
+    """Status of a policy."""
+
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
 
 
 class TemplateCategory(str, enum.Enum):
-    """LMA template categories."""
+    """Categories for LMA templates."""
 
     FACILITY_AGREEMENT = "Facility Agreement"
     TERM_SHEET = "Term Sheet"
@@ -107,27 +120,6 @@ class ApplicationStatus(str, enum.Enum):
     UNDER_REVIEW = "under_review"
     APPROVED = "approved"
     REJECTED = "rejected"
-
-
-class PolicyStatus(str, enum.Enum):
-    """Status of policies in the editor workflow."""
-
-    DRAFT = "draft"
-    PENDING_APPROVAL = "pending_approval"
-    ACTIVE = "active"
-    ARCHIVED = "archived"
-
-
-class DealStatus(str, enum.Enum):
-    """Status of deals in the lifecycle."""
-
-    DRAFT = "draft"
-    SUBMITTED = "submitted"
-    UNDER_REVIEW = "under_review"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    ACTIVE = "active"
-    CLOSED = "closed"
 
 
 class DealType(str, enum.Enum):
@@ -215,7 +207,7 @@ class User(Base):
 
     documents = relationship("Document", back_populates="uploaded_by_user")
     audit_logs = relationship("AuditLog", back_populates="user")
-    applications = relationship("Application", back_populates="user")
+    applications = relationship("Application", back_populates="user", foreign_keys="Application.user_id")
     deals = relationship("Deal", back_populates="applicant", foreign_keys="Deal.applicant_id")
     inquiries = relationship("Inquiry", back_populates="user", foreign_keys="Inquiry.user_id")
     organized_meetings = relationship(
@@ -326,6 +318,40 @@ class Document(Base):
         }
 
 
+class RemoteAppProfile(Base):
+    """Remote application profile for API access control."""
+
+    __tablename__ = "remote_app_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    profile_name = Column(String(100), unique=True, nullable=False, index=True)
+
+    api_key_hash = Column(String(255), nullable=False)  # bcrypt hash
+
+    allowed_ips = Column(JSONB, nullable=True)  # Array of IP addresses/CIDR blocks
+
+    permissions = Column(JSONB, nullable=True)  # {"read": True, "verify": True, "sign": False}
+
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "profile_name": self.profile_name,
+            "allowed_ips": self.allowed_ips,
+            "permissions": self.permissions,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class DocumentVersion(Base):
     """Version tracking for document extractions."""
 
@@ -417,6 +443,11 @@ class Workflow(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+
+    """Remote application profile for API access control."""
+
 
 
 class AuditLog(Base):
@@ -634,165 +665,42 @@ class PolicyDecision(Base):
         }
 
 
-class PaymentEvent(Base):
-    """Model for storing x402 payment events with CDM compliance.
-
-    Stores payment processing results with full CDM event support for
-    machine-readable and machine-executable payment tracking.
-    """
-
-    __tablename__ = "payment_events"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-
-    # Payment identification
-    payment_id = Column(String(255), nullable=False, unique=True, index=True)
-    payment_method = Column(String(50), nullable=False)  # x402, wire, ach, swift
-    payment_type = Column(String(50), nullable=False)  # loan_disbursement, trade_settlement, etc.
-
-    # Party information
-    payer_id = Column(String(255), nullable=False)
-    payer_name = Column(String(255), nullable=False)
-    receiver_id = Column(String(255), nullable=False)
-    receiver_name = Column(String(255), nullable=False)
-
-    # Payment amount
-    amount = Column(Numeric(20, 2), nullable=False)
-    currency = Column(String(3), nullable=False)
-
-    # Payment status (CDM state machine)
-    status = Column(
-        String(20), nullable=False, index=True
-    )  # pending, verified, settled, failed, cancelled
-
-    # x402-specific fields (JSONB for flexibility)
-    x402_payment_payload = Column(JSONB, nullable=True)
-    x402_verification = Column(JSONB, nullable=True)
-    x402_settlement = Column(JSONB, nullable=True)
-    transaction_hash = Column(String(255), nullable=True)
-
-    # CDM references
-    related_trade_id = Column(String(255), nullable=True, index=True)
-    related_loan_id = Column(String(255), nullable=True, index=True)
-    related_facility_id = Column(String(255), nullable=True)
-
-    # Full CDM event (JSONB for complete CDM compliance)
-    cdm_event = Column(JSONB, nullable=True)
-
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    settled_at = Column(DateTime, nullable=True)
-
-    def to_dict(self):
-        """Convert model to dictionary for API serialization."""
-        return {
-            "id": self.id,
-            "payment_id": self.payment_id,
-            "payment_method": self.payment_method,
-            "payment_type": self.payment_type,
-            "payer_id": self.payer_id,
-            "payer_name": self.payer_name,
-            "receiver_id": self.receiver_id,
-            "receiver_name": self.receiver_name,
-            "amount": float(self.amount) if self.amount else None,
-            "currency": self.currency,
-            "status": self.status,
-            "x402_payment_payload": self.x402_payment_payload,
-            "x402_verification": self.x402_verification,
-            "x402_settlement": self.x402_settlement,
-            "transaction_hash": self.transaction_hash,
-            "related_trade_id": self.related_trade_id,
-            "related_loan_id": self.related_loan_id,
-            "related_facility_id": self.related_facility_id,
-            "cdm_event": self.cdm_event,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "settled_at": self.settled_at.isoformat() if self.settled_at else None,
-        }
-
-
-class PaymentSchedule(Base):
-    """Model for storing scheduled payment information.
-
-    Tracks periodic payments (interest, principal) that are scheduled
-    for future processing via x402 payment service.
-    """
-
-    __tablename__ = "payment_schedules"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-
-    # Loan asset reference
-    loan_asset_id = Column(Integer, nullable=False, index=True)
-
-    # Payment details
-    amount = Column(Numeric(20, 2), nullable=False)
-    currency = Column(String(3), nullable=False, default="USD")
-    payment_type = Column(String(50), nullable=False)  # interest, principal, penalty
-
-    # Schedule information
-    scheduled_date = Column(DateTime, nullable=False, index=True)
-    status = Column(
-        String(20), nullable=False, default="pending", index=True
-    )  # pending, processed, failed, cancelled
-
-    # Payment frequency (for recurring payments)
-    payment_frequency_period = Column(String(20), nullable=True)  # Day, Week, Month, Year
-    payment_frequency_multiplier = Column(Integer, nullable=True)  # e.g., 3 for "every 3 months"
-
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    processed_at = Column(DateTime, nullable=True)
-
-    # Metadata
-    additional_metadata = Column(
-        JSONB, name="metadata", nullable=True
-    )  # Additional schedule information
-
-    def to_dict(self):
-        """Convert model to dictionary for API serialization."""
-        return {
-            "id": self.id,
-            "loan_asset_id": self.loan_asset_id,
-            "amount": float(self.amount) if self.amount else None,
-            "currency": self.currency,
-            "payment_type": self.payment_type,
-            "scheduled_date": self.scheduled_date.isoformat() if self.scheduled_date else None,
-            "status": self.status,
-            "payment_frequency_period": self.payment_frequency_period,
-            "payment_frequency_multiplier": self.payment_frequency_multiplier,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "processed_at": self.processed_at.isoformat() if self.processed_at else None,
-            "metadata": self.additional_metadata,
-        }
-
-
 class LMATemplate(Base):
-    """LMA template metadata for document generation."""
+    """LMA template model for document generation."""
 
     __tablename__ = "lma_templates"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    template_code = Column(String(50), nullable=False, unique=True, index=True)
+
+    template_code = Column(String(255), unique=True, nullable=False, index=True)
+
     name = Column(String(255), nullable=False)
+
     category = Column(String(100), nullable=False, index=True)
-    subcategory = Column(String(100), nullable=True, index=True)
+
+    subcategory = Column(String(100), nullable=True)
+
     governing_law = Column(String(50), nullable=True)
-    version = Column(String(20), nullable=False)
-    file_path = Column(Text, nullable=False)
+
+    version = Column(String(50), nullable=False)
+
+    file_path = Column(String(500), nullable=False)
+
     additional_metadata = Column(JSONB, name="metadata", nullable=True)
+
     required_fields = Column(JSONB, nullable=True)
+
     optional_fields = Column(JSONB, nullable=True)
+
     ai_generated_sections = Column(JSONB, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    generated_documents = relationship(
-        "GeneratedDocument", back_populates="template", cascade="all, delete-orphan"
-    )
-    field_mappings = relationship(
-        "TemplateFieldMapping", back_populates="template", cascade="all, delete-orphan"
-    )
+    field_mappings = relationship("TemplateFieldMapping", back_populates="template", cascade="all, delete-orphan")
+    generated_documents = relationship("GeneratedDocument", back_populates="template")
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -812,6 +720,11 @@ class LMATemplate(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+
+    """Remote application profile for API access control."""
+
 
 
 class GeneratedDocument(Base):
@@ -836,6 +749,8 @@ class GeneratedDocument(Base):
     )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    document_type = Column(String(100), nullable=True)  # For securitization templates
+    source_type = Column(String(100), nullable=True)  # 'lma_template', 'securitization_template', etc.
 
     # Relationships
     template = relationship("LMATemplate", back_populates="generated_documents")
@@ -856,141 +771,16 @@ class GeneratedDocument(Base):
             "status": self.status,
             "generation_summary": self.generation_summary,
             "created_by": self.created_by,
+            "document_type": self.document_type,
+            "source_type": self.source_type,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
-class DocumentSignature(Base):
-    """Tracks digital signatures for documents."""
 
-    __tablename__ = "document_signatures"
+    """Remote application profile for API access control."""
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
-    generated_document_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True, index=True)
-
-    # Signature provider info
-    signature_provider = Column(String(50), nullable=False, default="digisigner")  # "digisigner"
-    signature_request_id = Column(String(255), nullable=False, unique=True, index=True)
-    signature_status = Column(String(50), nullable=False, index=True)  # "pending", "completed", "declined", "expired"
-
-    # Signers
-    signers = Column(JSONB, nullable=False)  # [{"name": "...", "email": "...", "role": "...", "signed_at": "..."}]
-
-    # Signature metadata
-    signature_provider_data = Column(JSONB, nullable=True)  # DigiSigner-specific response data
-    signed_document_url = Column(Text, nullable=True)  # URL to signed document from DigiSigner
-    signed_document_path = Column(Text, nullable=True)  # Local path if downloaded
-
-    # Timestamps
-    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    completed_at = Column(DateTime, nullable=True)
-    expires_at = Column(DateTime, nullable=True)
-
-    # Relationships
-    document = relationship("Document", back_populates="signatures")
-    generated_document = relationship("GeneratedDocument", back_populates="signatures")
-
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": self.id,
-            "document_id": self.document_id,
-            "generated_document_id": self.generated_document_id,
-            "signature_provider": self.signature_provider,
-            "signature_request_id": self.signature_request_id,
-            "signature_status": self.signature_status,
-            "signers": self.signers,
-            "signature_provider_data": self.signature_provider_data,
-            "signed_document_url": self.signed_document_url,
-            "signed_document_path": self.signed_document_path,
-            "requested_at": self.requested_at.isoformat() if self.requested_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-        }
-
-
-class DocumentFiling(Base):
-    """Tracks regulatory filings for documents."""
-
-    __tablename__ = "document_filings"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
-    generated_document_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True, index=True)
-    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
-
-    # Filing metadata
-    agreement_type = Column(String(100), nullable=False, index=True)  # "facility_agreement", "disclosure", etc.
-    jurisdiction = Column(String(50), nullable=False, index=True)  # "US", "UK", "FR", "DE", etc.
-    filing_authority = Column(String(255), nullable=False)  # "SEC", "Companies House", "AMF", etc.
-
-    # Filing system info
-    filing_system = Column(String(50), nullable=False)  # "companies_house_api", "manual_ui", etc.
-    filing_reference = Column(String(255), nullable=True, unique=True, index=True)  # External filing ID
-    filing_status = Column(String(50), nullable=False, index=True)  # "pending", "submitted", "accepted", "rejected"
-
-    # Filing payload (for API submissions) or form data (for manual UI)
-    filing_payload = Column(JSONB, nullable=True)  # Data sent to filing system or prepared for UI
-    filing_response = Column(JSONB, nullable=True)  # Response from filing system
-
-    # Filing URLs
-    filing_url = Column(Text, nullable=True)  # URL to view filing
-    confirmation_url = Column(Text, nullable=True)  # Confirmation/receipt URL
-    manual_submission_url = Column(Text, nullable=True)  # URL to manual filing portal (for UI guidance)
-
-    # Manual filing tracking
-    submitted_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # User who submitted manually
-    submitted_at = Column(DateTime, nullable=True)  # When manually submitted
-    submission_notes = Column(Text, nullable=True)  # Notes from manual submission
-
-    # Error handling
-    error_message = Column(Text, nullable=True)
-    retry_count = Column(Integer, default=0, nullable=False)
-
-    # Deadline tracking
-    deadline = Column(DateTime, nullable=True, index=True)
-
-    # Timestamps
-    filed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    # Relationships
-    document = relationship("Document", back_populates="filings")
-    generated_document = relationship("GeneratedDocument", back_populates="filings")
-    deal = relationship("Deal", back_populates="filings")
-    submitted_by_user = relationship("User", foreign_keys=[submitted_by])
-
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": self.id,
-            "document_id": self.document_id,
-            "generated_document_id": self.generated_document_id,
-            "deal_id": self.deal_id,
-            "agreement_type": self.agreement_type,
-            "jurisdiction": self.jurisdiction,
-            "filing_authority": self.filing_authority,
-            "filing_system": self.filing_system,
-            "filing_reference": self.filing_reference,
-            "filing_status": self.filing_status,
-            "filing_payload": self.filing_payload,
-            "filing_response": self.filing_response,
-            "filing_url": self.filing_url,
-            "confirmation_url": self.confirmation_url,
-            "manual_submission_url": self.manual_submission_url,
-            "submitted_by": self.submitted_by,
-            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
-            "submission_notes": self.submission_notes,
-            "error_message": self.error_message,
-            "retry_count": self.retry_count,
-            "deadline": self.deadline.isoformat() if self.deadline else None,
-            "filed_at": self.filed_at.isoformat() if self.filed_at else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
 
 
 class TemplateFieldMapping(Base):
@@ -1087,62 +877,192 @@ class ClauseCache(Base):
         }
 
 
+class DocumentSignature(Base):
+    """Document signature model for tracking document signatures."""
+
+    __tablename__ = "document_signatures"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
+
+    generated_document_id = Column(
+        Integer, ForeignKey("generated_documents.id"), nullable=True, index=True
+    )
+
+    signer_name = Column(String(255), nullable=False)
+
+    signer_role = Column(String(100), nullable=True)
+
+    signature_method = Column(String(50), nullable=False)  # "electronic", "wet_ink", "blockchain"
+
+    signature_data = Column(JSONB, nullable=True)  # Signature metadata
+
+    signed_at = Column(DateTime, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    document = relationship("Document", back_populates="signatures")
+    generated_document = relationship("GeneratedDocument", back_populates="signatures")
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "generated_document_id": self.generated_document_id,
+            "signer_name": self.signer_name,
+            "signer_role": self.signer_role,
+            "signature_method": self.signature_method,
+            "signature_data": self.signature_data,
+            "signed_at": self.signed_at.isoformat() if self.signed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class DocumentFiling(Base):
+    """Tracks regulatory filings for documents."""
+
+    __tablename__ = "document_filings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
+    generated_document_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
+
+    # Filing metadata
+    agreement_type = Column(String(100), nullable=False, index=True)  # "facility_agreement", "disclosure", etc.
+    jurisdiction = Column(String(50), nullable=False, index=True)  # "US", "UK", "FR", "DE", etc.
+    filing_authority = Column(String(255), nullable=False)  # "SEC", "Companies House", "AMF", etc.
+
+    # Filing system info
+    filing_system = Column(String(50), nullable=False)  # "companies_house_api", "manual_ui", etc.
+    filing_reference = Column(String(255), nullable=True, unique=True, index=True)  # External filing ID
+    filing_status = Column(String(50), nullable=False, index=True)  # "pending", "submitted", "accepted", "rejected"
+
+    # Filing payload (for API submissions) or form data (for manual UI)
+    filing_payload = Column(JSONB, nullable=True)  # Data sent to filing system or prepared for UI
+    filing_response = Column(JSONB, nullable=True)  # Response from filing system
+
+    # Filing URLs
+    filing_url = Column(Text, nullable=True)  # URL to view filing
+    confirmation_url = Column(Text, nullable=True)  # Confirmation/receipt URL
+    manual_submission_url = Column(Text, nullable=True)  # URL to manual filing portal (for UI guidance)
+
+    # Manual filing tracking
+    submitted_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # User who submitted manually
+    submitted_at = Column(DateTime, nullable=True)  # When manually submitted
+    submission_notes = Column(Text, nullable=True)  # Notes from manual submission
+
+    # Error handling
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, default=0, nullable=False)
+
+    # Deadline tracking
+    deadline = Column(DateTime, nullable=True, index=True)
+
+    # Timestamps
+    filed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    document = relationship("Document", back_populates="filings")
+    generated_document = relationship("GeneratedDocument", back_populates="filings")
+    deal = relationship("Deal", back_populates="filings")
+    submitted_by_user = relationship("User", foreign_keys=[submitted_by])
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "generated_document_id": self.generated_document_id,
+            "deal_id": self.deal_id,
+            "agreement_type": self.agreement_type,
+            "jurisdiction": self.jurisdiction,
+            "filing_authority": self.filing_authority,
+            "filing_system": self.filing_system,
+            "filing_reference": self.filing_reference,
+            "filing_status": self.filing_status,
+            "filing_payload": self.filing_payload,
+            "filing_response": self.filing_response,
+            "filing_url": self.filing_url,
+            "confirmation_url": self.confirmation_url,
+            "manual_submission_url": self.manual_submission_url,
+            "submitted_by": self.submitted_by,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "submission_notes": self.submission_notes,
+            "error_message": self.error_message,
+            "retry_count": self.retry_count,
+            "deadline": self.deadline.isoformat() if self.deadline else None,
+            "filed_at": self.filed_at.isoformat() if self.filed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+
+    """Remote application profile for API access control."""
+
+
+
+class DealStatus(str, enum.Enum):
+    """Status of a deal."""
+
+    DRAFT = "draft"
+    PENDING = "pending"
+    ACTIVE = "active"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
 class Application(Base):
-    """Application model for individual and business applications."""
+    """Application model for loan applications."""
 
     __tablename__ = "applications"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    application_type = Column(String(20), nullable=False, index=True)
-
-    status = Column(String(20), default=ApplicationStatus.DRAFT.value, nullable=False, index=True)
-
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
+    application_type = Column(String(50), nullable=False)  # "individual", "business"
+
+    status = Column(String(50), default="pending", nullable=False, index=True)
+
+    application_data = Column(JSONB, nullable=True)
+    business_data = Column(JSONB, nullable=True)
+    individual_data = Column(JSONB, nullable=True)
     submitted_at = Column(DateTime, nullable=True)
-
     reviewed_at = Column(DateTime, nullable=True)
-
     approved_at = Column(DateTime, nullable=True)
-
     rejected_at = Column(DateTime, nullable=True)
-
     rejection_reason = Column(Text, nullable=True)
-
-    application_data = Column(JSONB, nullable=True)  # Stores form data
-
-    business_data = Column(
-        JSONB, nullable=True
-    )  # For business applications (debt selling, loan buying)
-
-    individual_data = Column(JSONB, nullable=True)  # For individual applications
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    user = relationship("User", back_populates="applications")
-    deal = relationship("Deal", back_populates="application", uselist=False)
-    inquiries = relationship("Inquiry", back_populates="application")
-    meetings = relationship("Meeting", back_populates="application")
+    user = relationship("User", foreign_keys=[user_id], back_populates="applications")
+    deal = relationship("Deal", back_populates="application")
 
     def to_dict(self):
         """Convert model to dictionary."""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "application_type": self.application_type,
             "status": self.status,
-            "user_id": self.user_id,
+            "application_data": self.application_data,
+            "business_data": self.business_data,
+            "individual_data": self.individual_data,
             "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "approved_at": self.approved_at.isoformat() if self.approved_at else None,
             "rejected_at": self.rejected_at.isoformat() if self.rejected_at else None,
             "rejection_reason": self.rejection_reason,
-            "application_data": self.application_data,
-            "business_data": self.business_data,
-            "individual_data": self.individual_data,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -1155,11 +1075,11 @@ class Inquiry(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    inquiry_type = Column(String(50), nullable=False, index=True)
+    inquiry_type = Column(String(50), nullable=False, index=True)  # "general", "application_status", "technical_support", "sales"
 
-    status = Column(String(20), default=InquiryStatus.NEW.value, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="new", index=True)  # "new", "in_progress", "resolved", "closed"
 
-    priority = Column(String(20), default="normal")  # low, normal, high, urgent
+    priority = Column(String(20), nullable=False, default="normal")  # "low", "normal", "high", "urgent"
 
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=True, index=True)
 
@@ -1173,11 +1093,11 @@ class Inquiry(Base):
 
     message = Column(Text, nullable=False)
 
-    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
+    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     resolved_at = Column(DateTime, nullable=True)
 
-    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     response_message = Column(Text, nullable=True)
 
@@ -1186,9 +1106,10 @@ class Inquiry(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    application = relationship("Application", back_populates="inquiries")
-    user = relationship("User", back_populates="inquiries", foreign_keys=[user_id])
-    assigned_user = relationship("User", foreign_keys=[assigned_to])
+    application = relationship("Application", foreign_keys=[application_id])
+    user = relationship("User", foreign_keys=[user_id])
+    assignee = relationship("User", foreign_keys=[assigned_to])
+    resolver = relationship("User", foreign_keys=[resolved_by])
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -1399,7 +1320,7 @@ class BorrowerContact(Base):
 
 
 class Meeting(Base):
-    """Meeting model for calendar and meeting management."""
+    """Meeting model for scheduling meetings related to applications."""
 
     __tablename__ = "meetings"
 
@@ -1411,29 +1332,27 @@ class Meeting(Base):
 
     scheduled_at = Column(DateTime, nullable=False, index=True)
 
-    duration_minutes = Column(Integer, default=30, nullable=False)
+    duration_minutes = Column(Integer, nullable=False, default=30)
 
-    meeting_type = Column(String(50), nullable=True)  # consultation, review, onboarding, etc.
+    meeting_type = Column(String(50), nullable=True)  # "consultation", "review", "follow_up", etc.
 
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=True, index=True)
 
-    organizer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    organizer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
-    attendees = Column(JSONB, nullable=True)  # Array of {email, name, status}
+    attendees = Column(JSONB, nullable=True)  # List of user IDs or email addresses
 
-    meeting_link = Column(String(500), nullable=True)  # Zoom/Teams link
+    meeting_link = Column(String(500), nullable=True)  # Video conference link
 
-    ics_file_path = Column(String(500), nullable=True)  # Path to generated .ics file
+    ics_file_path = Column(String(500), nullable=True)  # Path to generated ICS file
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    application = relationship("Application", back_populates="meetings")
-    organizer = relationship(
-        "User", back_populates="organized_meetings", foreign_keys=[organizer_id]
-    )
+    application = relationship("Application", foreign_keys=[application_id])
+    organizer = relationship("User", foreign_keys=[organizer_id])
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -1451,61 +1370,6 @@ class Meeting(Base):
             "ics_file_path": self.ics_file_path,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-
-class Permission(Base):
-    """Permission definition model for granular access control."""
-
-    __tablename__ = "permission_definitions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), unique=True, nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    category = Column(
-        String(50), nullable=False, index=True
-    )  # 'document', 'deal', 'user', 'policy', etc.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    role_permissions = relationship("RolePermission", back_populates="permission")
-
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": self.id,
-            "name": self.name,
-            "description": self.description,
-            "category": self.category,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-
-class RolePermission(Base):
-    """Junction table for role-permission mappings."""
-
-    __tablename__ = "role_permissions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    role = Column(String(50), nullable=False, index=True)
-    permission_id = Column(
-        Integer,
-        ForeignKey("permission_definitions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    permission = relationship("Permission", back_populates="role_permissions")
-
-    def to_dict(self):
-        """Convert model to dictionary."""
-        return {
-            "id": self.id,
-            "role": self.role,
-            "permission_id": self.permission_id,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -1566,16 +1430,17 @@ class Deal(Base):
             "deal_data": self.deal_data,
             "folder_path": self.folder_path,
             "verification_required": self.verification_required,
-            "verification_completed_at": self.verification_completed_at.isoformat()
-            if self.verification_completed_at
-            else None,
+            "verification_completed_at": self.verification_completed_at.isoformat() if self.verification_completed_at else None,
             "notarization_required": self.notarization_required,
-            "notarization_completed_at": self.notarization_completed_at.isoformat()
-            if self.notarization_completed_at
-            else None,
+            "notarization_completed_at": self.notarization_completed_at.isoformat() if self.notarization_completed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+
+    """Remote application profile for API access control."""
+
 
 
 class DealNote(Base):
@@ -1618,6 +1483,11 @@ class DealNote(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+
+    """Remote application profile for API access control."""
+
 
 
 class Policy(Base):
@@ -1681,26 +1551,22 @@ class Policy(Base):
 
 
 class PolicyVersion(Base):
-    """Policy version history for tracking changes."""
+    """Policy version model for tracking policy changes."""
 
     __tablename__ = "policy_versions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    policy_id = Column(
-        Integer, ForeignKey("policies.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    policy_id = Column(Integer, ForeignKey("policies.id", ondelete="CASCADE"), nullable=False, index=True)
+
     version = Column(Integer, nullable=False)
 
-    rules_yaml = Column(Text, nullable=False)  # YAML content for this version
-    changes_summary = Column(Text, nullable=True)  # Summary of changes from previous version
+    rules_yaml = Column(Text, nullable=False)
 
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     policy = relationship("Policy", back_populates="versions")
-    creator = relationship("User", foreign_keys=[created_by])
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -1709,8 +1575,6 @@ class PolicyVersion(Base):
             "policy_id": self.policy_id,
             "version": self.version,
             "rules_yaml": self.rules_yaml,
-            "changes_summary": self.changes_summary,
-            "created_by": self.created_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -1795,37 +1659,68 @@ class PolicyTemplate(Base):
         }
 
 
-class RemoteAppProfile(Base):
+
     """Remote application profile for API access control."""
 
-    __tablename__ = "remote_app_profiles"
+
+
+class Permission(Base):
+    """Permission definition model for granular access control."""
+
+    __tablename__ = "permission_definitions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-
-    profile_name = Column(String(100), unique=True, nullable=False, index=True)
-
-    api_key_hash = Column(String(255), nullable=False)  # bcrypt hash
-
-    allowed_ips = Column(JSONB, nullable=True)  # Array of IP addresses/CIDR blocks
-
-    permissions = Column(JSONB, nullable=True)  # {"read": True, "verify": True, "sign": False}
-
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
-
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    category = Column(
+        String(50), nullable=False, index=True
+    )  # 'document', 'deal', 'user', 'policy', etc.
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    role_permissions = relationship("RolePermission", back_populates="permission")
 
     def to_dict(self):
         """Convert model to dictionary."""
         return {
             "id": self.id,
-            "profile_name": self.profile_name,
-            "allowed_ips": self.allowed_ips,
-            "permissions": self.permissions,
-            "is_active": self.is_active,
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+
+    """Remote application profile for API access control."""
+
+
+
+class RolePermission(Base):
+    """Junction table for role-permission mappings."""
+
+    __tablename__ = "role_permissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role = Column(String(50), nullable=False, index=True)
+    permission_id = Column(
+        Integer,
+        ForeignKey("permission_definitions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    permission = relationship("Permission", back_populates="role_permissions")
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "role": self.role,
+            "permission_id": self.permission_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -1880,6 +1775,141 @@ class VerificationRequest(Base):
     verifier = relationship("User", foreign_keys=[verifier_user_id])
     creator = relationship("User", foreign_keys=[created_by])
 
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "verification_id": self.verification_id,
+            "deal_id": self.deal_id,
+            "verifier_user_id": self.verifier_user_id,
+            "status": self.status,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
+            "declined_at": self.declined_at.isoformat() if self.declined_at else None,
+            "declined_reason": self.declined_reason,
+            "verification_metadata": self.verification_metadata,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class WorkflowDelegationStatus(str, enum.Enum):
+    """Status of workflow delegation."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    DECLINED = "declined"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class WorkflowDelegation(Base):
+    """Workflow delegation model for link-based workflow distribution."""
+
+    __tablename__ = "workflow_delegations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    workflow_id = Column(String(255), unique=True, nullable=False, index=True)
+
+    workflow_type = Column(String(50), nullable=False, index=True)  # verification, notarization, document_review, etc.
+
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    sender_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=False, index=True)
+
+    receiver_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    receiver_email = Column(String(255), nullable=True, index=True)
+
+    link_payload = Column(Text, nullable=True)  # Encrypted payload (for reference, not decrypted)
+
+    workflow_metadata = Column(JSONB, nullable=True)  # Workflow-specific metadata
+
+    whitelist_config = Column(JSONB, nullable=True)  # Whitelist configuration used
+
+    status = Column(
+        String(20), default=WorkflowDelegationStatus.PENDING.value, nullable=False, index=True
+    )
+
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+    completed_at = Column(DateTime, nullable=True)
+
+    callback_url = Column(String(500), nullable=True)  # URL for state synchronization
+
+    state_synced_at = Column(DateTime, nullable=True)  # Last state sync timestamp
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    deal = relationship("Deal", backref="workflow_delegations")
+    document = relationship("Document", backref="workflow_delegations")
+    sender = relationship("User", foreign_keys=[sender_user_id], backref="sent_workflow_delegations")
+    receiver = relationship("User", foreign_keys=[receiver_user_id], backref="received_workflow_delegations")
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "workflow_id": self.workflow_id,
+            "workflow_type": self.workflow_type,
+            "deal_id": self.deal_id,
+            "document_id": self.document_id,
+            "sender_user_id": self.sender_user_id,
+            "receiver_user_id": self.receiver_user_id,
+            "receiver_email": self.receiver_email,
+            "workflow_metadata": self.workflow_metadata,
+            "whitelist_config": self.whitelist_config,
+            "status": self.status,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "callback_url": self.callback_url,
+            "state_synced_at": self.state_synced_at.isoformat() if self.state_synced_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class WorkflowDelegationState(Base):
+    """Workflow delegation state history for tracking state transitions."""
+
+    __tablename__ = "workflow_delegation_states"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    delegation_id = Column(
+        Integer, ForeignKey("workflow_delegations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    state = Column(String(50), nullable=False, index=True)  # pending, processing, completed, etc.
+
+    state_metadata = Column(JSONB, nullable=True)  # State-specific metadata (renamed from 'metadata' to avoid SQLAlchemy reserved name)
+
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Relationships
+    delegation = relationship("WorkflowDelegation", backref="state_history")
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "delegation_id": self.delegation_id,
+            "state": self.state,
+            "metadata": self.state_metadata,  # Return as 'metadata' in API response
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
 class GreenFinanceAssessment(Base):
     """Green Finance Assessment model for storing comprehensive green finance assessments."""
     
@@ -1923,16 +1953,6 @@ class GreenFinanceAssessment(Base):
         """Convert model to dictionary."""
         return {
             "id": self.id,
-            "verification_id": self.verification_id,
-            "deal_id": self.deal_id,
-            "verifier_user_id": self.verifier_user_id,
-            "status": self.status,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
-            "declined_at": self.declined_at.isoformat() if self.declined_at else None,
-            "declined_reason": self.declined_reason,
-            "verification_metadata": self.verification_metadata,
-            "created_by": self.created_by,
             "transaction_id": self.transaction_id,
             "deal_id": self.deal_id,
             "loan_asset_id": self.loan_asset_id,
@@ -1953,6 +1973,11 @@ class GreenFinanceAssessment(Base):
         }
 
 
+
+    """Remote application profile for API access control."""
+
+
+
 class NotarizationStatus(str, enum.Enum):
     """Status of notarization records."""
 
@@ -1969,7 +1994,7 @@ class NotarizationRecord(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     deal_id = Column(
-        Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=False, index=True
+        Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True  # Changed to nullable for securitization
     )
 
     notarization_hash = Column(String(255), nullable=False)  # Hash of CDM payload
@@ -1988,12 +2013,22 @@ class NotarizationRecord(Base):
 
     cdm_event_id = Column(String(255), nullable=True)  # Reference to CDM event
 
+    # Payment fields
+    payment_event_id = Column(Integer, ForeignKey("payment_events.id"), nullable=True, index=True)
+    payment_status = Column(String(20), nullable=True, default="pending")  # pending, paid, skipped, failed
+    payment_transaction_hash = Column(String(255), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+    # Securitization link
+    securitization_pool_id = Column(Integer, ForeignKey("securitization_pools.id"), nullable=True, index=True)
+    
     # Relationships
     deal = relationship("Deal", backref="notarization_records")
+    payment_event = relationship("PaymentEvent", foreign_keys=[payment_event_id], backref="notarization_records")
+    securitization_pool = relationship("SecuritizationPool", back_populates="notarizations", foreign_keys=[securitization_pool_id])
 
 class DemoSeedingStatus(Base):
     """Model for tracking demo data seeding progress."""
@@ -2026,13 +2061,6 @@ class DemoSeedingStatus(Base):
         """Convert model to dictionary."""
         return {
             "id": self.id,
-            "deal_id": self.deal_id,
-            "notarization_hash": self.notarization_hash,
-            "required_signers": self.required_signers,
-            "signatures": self.signatures,
-            "status": self.status,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "cdm_event_id": self.cdm_event_id,
             "stage": self.stage,
             "progress": float(self.progress) if self.progress else 0.0,
             "total": self.total,
@@ -2044,6 +2072,11 @@ class DemoSeedingStatus(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+
+    """Remote application profile for API access control."""
+
 
 
 class VerificationAuditLog(Base):
@@ -2082,7 +2115,7 @@ class VerificationAuditLog(Base):
             "action": self.action,
             "actor_user_id": self.actor_user_id,
             "actor_ip_address": self.actor_ip_address,
-            "metadata": self.metadata,
+            "metadata": self.audit_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 # Note: LoanAsset is a SQLModel and cannot have a direct relationship with SQLAlchemy Base models
@@ -2138,3 +2171,320 @@ class SatelliteLayer(Base):
             "crs": self.crs,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+# ============================================================================
+# Securitization Models
+# ============================================================================
+
+class SecuritizationPool(Base):
+    """Securitization pool model for structured finance products."""
+    
+    __tablename__ = "securitization_pools"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pool_id = Column(String(255), unique=True, nullable=False, index=True)
+    pool_name = Column(String(255), nullable=False)
+    pool_type = Column(String(50), nullable=False)  # 'ABS', 'CLO', 'MBS', etc.
+    originator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    trustee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    total_pool_value = Column(Numeric(20, 2), nullable=False)
+    currency = Column(String(3), nullable=False)
+    cdm_payload = Column(JSONB, nullable=False)  # Full CDM SecuritizationPool object
+    cdm_data = Column(JSONB, nullable=True)  # Additional CDM data (payment schedule, etc.)
+    status = Column(String(50), nullable=False, index=True)  # 'draft', 'pending_notarization', 'notarized', 'filed', 'active'
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    notarized_at = Column(DateTime, nullable=True)
+    filed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    originator = relationship("User", foreign_keys=[originator_id])
+    trustee = relationship("User", foreign_keys=[trustee_id])
+    tranches = relationship("SecuritizationTranche", back_populates="pool", cascade="all, delete-orphan")
+    assets = relationship("SecuritizationPoolAsset", back_populates="pool", cascade="all, delete-orphan")
+    filings = relationship("RegulatoryFiling", back_populates="pool", cascade="all, delete-orphan")
+    notarizations = relationship("NotarizationRecord", back_populates="securitization_pool")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "pool_id": self.pool_id,
+            "pool_name": self.pool_name,
+            "pool_type": self.pool_type,
+            "originator_id": self.originator_id,
+            "trustee_id": self.trustee_id,
+            "total_pool_value": str(self.total_pool_value),
+            "currency": self.currency,
+            "cdm_payload": self.cdm_payload,
+            "cdm_data": self.cdm_data,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "notarized_at": self.notarized_at.isoformat() if self.notarized_at else None,
+            "filed_at": self.filed_at.isoformat() if self.filed_at else None,
+        }
+
+
+class LoanAsset(Base):
+    """Loan asset model for ground truth protocol and securitization."""
+
+    __tablename__ = "loan_assets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    loan_id = Column(String(255), nullable=False, index=True)
+
+    # Legal Reality
+    original_text = Column(Text, nullable=True)
+    legal_vector = Column(JSONB, nullable=True)
+
+    # Physical Reality
+    geo_lat = Column(Float, nullable=True)
+    geo_lon = Column(Float, nullable=True)
+    collateral_address = Column(String(500), nullable=True)
+    satellite_snapshot_url = Column(String(1000), nullable=True)
+    geo_vector = Column(JSONB, nullable=True)
+
+    # SPT Data
+    spt_data = Column(JSONB, nullable=True)
+
+    # Verification State
+    last_verified_score = Column(Float, nullable=True)
+    spt_threshold = Column(Float, nullable=True, default=0.8)
+    risk_status = Column(String(50), nullable=False, default="PENDING", index=True)
+    base_interest_rate = Column(Float, nullable=True, default=5.0)
+    current_interest_rate = Column(Float, nullable=True, default=5.0)
+    penalty_bps = Column(Float, nullable=True, default=50.0)
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_verified_at = Column(DateTime, nullable=True)
+    verification_error = Column(Text, nullable=True)
+    asset_metadata = Column(JSONB, nullable=True, name="metadata")
+
+    # Green Finance Metrics
+    location_type = Column(String(50), nullable=True)
+    air_quality_index = Column(Float, nullable=True)
+    composite_sustainability_score = Column(Float, nullable=True)
+    green_finance_metrics = Column(JSONB, nullable=True)
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "loan_id": self.loan_id,
+            "original_text": self.original_text,
+            "collateral_address": self.collateral_address,
+            "geo_lat": self.geo_lat,
+            "geo_lon": self.geo_lon,
+            "satellite_snapshot_url": self.satellite_snapshot_url,
+            "spt_data": self.spt_data,
+            "last_verified_score": self.last_verified_score,
+            "spt_threshold": self.spt_threshold,
+            "risk_status": self.risk_status,
+            "base_interest_rate": self.base_interest_rate,
+            "current_interest_rate": self.current_interest_rate,
+            "penalty_bps": self.penalty_bps,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_verified_at": self.last_verified_at.isoformat() if self.last_verified_at else None,
+            "verification_error": self.verification_error,
+            "location_type": self.location_type,
+            "air_quality_index": self.air_quality_index,
+            "composite_sustainability_score": self.composite_sustainability_score,
+            "green_finance_metrics": self.green_finance_metrics,
+        }
+
+
+class SecuritizationTranche(Base):
+    """Securitization tranche model."""
+    
+    __tablename__ = "securitization_tranches"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pool_id = Column(Integer, ForeignKey("securitization_pools.id", ondelete="CASCADE"), nullable=False, index=True)
+    tranche_id = Column(String(255), nullable=False, index=True)
+    tranche_name = Column(String(255), nullable=False)
+    tranche_class = Column(String(50), nullable=False)  # 'Senior', 'Mezzanine', 'Equity'
+    size = Column(Numeric(20, 2), nullable=False)
+    currency = Column(String(3), nullable=False)
+    interest_rate = Column(Numeric(10, 4), nullable=False)
+    risk_rating = Column(String(10), nullable=True)  # 'AAA', 'AA', 'A', 'BBB', etc.
+    payment_priority = Column(Integer, nullable=False)  # Lower = higher priority
+    principal_remaining = Column(Numeric(20, 2), nullable=False)
+    interest_accrued = Column(Numeric(20, 2), nullable=False, default=0)
+    token_id = Column(String(255), nullable=True, unique=True, index=True)  # ERC-721 token ID
+    owner_wallet_address = Column(String(255), nullable=True, index=True)  # Token owner wallet
+    cdm_data = Column(JSONB, nullable=False)  # Full CDM Tranche data
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    pool = relationship("SecuritizationPool", back_populates="tranches")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "pool_id": self.pool_id,
+            "tranche_id": self.tranche_id,
+            "tranche_name": self.tranche_name,
+            "tranche_class": self.tranche_class,
+            "size": str(self.size),
+            "currency": self.currency,
+            "interest_rate": float(self.interest_rate),
+            "risk_rating": self.risk_rating,
+            "payment_priority": self.payment_priority,
+            "principal_remaining": str(self.principal_remaining),
+            "interest_accrued": str(self.interest_accrued),
+            "token_id": self.token_id,
+            "owner_wallet_address": self.owner_wallet_address,
+            "cdm_data": self.cdm_data,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SecuritizationPoolAsset(Base):
+    """Pool asset model (many-to-many: Pools <-> Deals/Loans)."""
+    
+    __tablename__ = "securitization_pool_assets"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pool_id = Column(Integer, ForeignKey("securitization_pools.id", ondelete="CASCADE"), nullable=False, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
+    loan_asset_id = Column(Integer, ForeignKey("loan_assets.id"), nullable=True, index=True)
+    asset_type = Column(String(50), nullable=False)  # 'deal', 'loan_asset'
+    asset_id = Column(String(255), nullable=False)  # Composite identifier
+    asset_value = Column(Numeric(20, 2), nullable=False)
+    currency = Column(String(3), nullable=False)
+    allocation_percentage = Column(Numeric(5, 2), nullable=True)
+    allocation_amount = Column(Numeric(20, 2), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    pool = relationship("SecuritizationPool", back_populates="assets")
+    deal = relationship("Deal")
+    # Note: LoanAsset is SQLModel, so relationship handled via foreign key
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "pool_id": self.pool_id,
+            "deal_id": self.deal_id,
+            "loan_asset_id": self.loan_asset_id,
+            "asset_type": self.asset_type,
+            "asset_id": self.asset_id,
+            "asset_value": str(self.asset_value),
+            "currency": self.currency,
+            "allocation_percentage": float(self.allocation_percentage) if self.allocation_percentage else None,
+            "allocation_amount": str(self.allocation_amount) if self.allocation_amount else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class RegulatoryFiling(Base):
+    """Regulatory filing model for securitization pools."""
+    
+    __tablename__ = "regulatory_filings"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pool_id = Column(Integer, ForeignKey("securitization_pools.id", ondelete="CASCADE"), nullable=False, index=True)
+    filing_type = Column(String(50), nullable=False)  # 'SEC_10D', 'PROSPECTUS', 'PSA', 'TRUST_AGREEMENT'
+    regulatory_body = Column(String(100), nullable=False)  # 'SEC', 'FINRA', etc. (mapped from filing_body in migration)
+    filing_number = Column(String(255), nullable=True)  # External filing number/receipt
+    status = Column(String(50), nullable=False, index=True)  # 'pending', 'submitted', 'accepted', 'rejected' (mapped from filing_status)
+    document_path = Column(String(500), nullable=True)
+    filed_at = Column(DateTime, nullable=True)  # When filed (mapped from submitted_at)
+    accepted_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    filing_metadata = Column(JSONB, name="metadata", nullable=True)  # Additional filing metadata (receipt, etc.)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    pool = relationship("SecuritizationPool", back_populates="filings")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "pool_id": self.pool_id,
+            "filing_type": self.filing_type,
+            "regulatory_body": self.regulatory_body,
+            "filing_number": self.filing_number,
+            "status": self.status,
+            "document_path": self.document_path,
+            "filed_at": self.filed_at.isoformat() if self.filed_at else None,
+            "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
+            "rejection_reason": self.rejection_reason,
+            "metadata": self.filing_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
+# Payment Models
+# ============================================================================
+
+class PaymentEvent(Base):
+    """Payment event model for x402 payment tracking."""
+    
+    __tablename__ = "payment_events"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    payment_id = Column(String(255), unique=True, nullable=False, index=True)
+    payment_type = Column(String(50), nullable=False, index=True)  # 'trade_settlement', 'loan_disbursement', 'notarization_fee', etc.
+    amount = Column(Numeric(20, 2), nullable=False)
+    currency = Column(String(3), nullable=False)
+    payer_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    payer_wallet_address = Column(String(255), nullable=True, index=True)
+    receiver_wallet_address = Column(String(255), nullable=True, index=True)
+    transaction_hash = Column(String(255), nullable=True, index=True)
+    payment_status = Column(String(50), nullable=False, index=True)  # 'pending', 'paid', 'failed', 'refunded'
+    facilitator_url = Column(String(500), nullable=True)
+    payment_payload = Column(JSONB, nullable=True)
+    cdm_event = Column(JSONB, nullable=True)  # Full CDM PaymentEvent
+    related_deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
+    related_notarization_id = Column(Integer, ForeignKey("notarization_records.id"), nullable=True, index=True)
+    related_trade_id = Column(Integer, nullable=True)
+    related_loan_id = Column(Integer, nullable=True)
+    payment_metadata = Column(JSONB, name="metadata", nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    payer = relationship("User", foreign_keys=[payer_id])
+    receiver = relationship("User", foreign_keys=[receiver_id])
+    deal = relationship("Deal", foreign_keys=[related_deal_id])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "payment_id": self.payment_id,
+            "payment_type": self.payment_type,
+            "amount": str(self.amount),
+            "currency": self.currency,
+            "payer_id": self.payer_id,
+            "receiver_id": self.receiver_id,
+            "payer_wallet_address": self.payer_wallet_address,
+            "receiver_wallet_address": self.receiver_wallet_address,
+            "transaction_hash": self.transaction_hash,
+            "payment_status": self.payment_status,
+            "facilitator_url": self.facilitator_url,
+            "payment_payload": self.payment_payload,
+            "cdm_event": self.cdm_event,
+            "related_deal_id": self.related_deal_id,
+            "related_notarization_id": self.related_notarization_id,
+            "related_trade_id": self.related_trade_id,
+            "related_loan_id": self.related_loan_id,
+            "metadata": self.payment_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+
+    """Remote application profile for API access control."""
+

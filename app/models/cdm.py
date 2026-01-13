@@ -8,7 +8,7 @@ with other CDM-compliant financial systems.
 from decimal import Decimal
 from datetime import date
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -685,5 +685,88 @@ class ExtractionResult(BaseModel):
             object.__setattr__(self, 'message', "Could not extract data from this document")
         elif self.agreement.extraction_status != ExtractionStatus.SUCCESS:
             object.__setattr__(self, 'status', self.agreement.extraction_status)
+        return self
+
+
+# ============================================================================
+# Securitization CDM Models
+# ============================================================================
+
+
+class UnderlyingAsset(BaseModel):
+    """Underlying asset in securitization pool."""
+    asset_id: str = Field(..., description="Asset identifier")
+    asset_type: str = Field(..., description="Type: 'deal', 'loan_asset'")
+    deal_id: Optional[str] = Field(None, description="Deal ID if applicable")
+    loan_asset_id: Optional[str] = Field(None, description="Loan asset ID if applicable")
+    asset_value: Money = Field(..., description="Asset value")
+    allocation_percentage: Decimal = Field(..., description="Allocation percentage")
+
+
+class PaymentRule(BaseModel):
+    """Payment rule in waterfall."""
+    priority: int = Field(..., description="Priority (lower = higher priority)")
+    tranche_id: str = Field(..., description="Tranche ID")
+    payment_type: str = Field(..., description="Type: 'interest', 'principal', 'fees'")
+    percentage: Decimal = Field(..., description="Percentage allocation")
+
+
+class PaymentWaterfall(BaseModel):
+    """Payment waterfall rules for securitization."""
+    rules: List[PaymentRule] = Field(..., description="List of payment rules")
+    
+    @model_validator(mode='after')
+    def validate_waterfall(self) -> 'PaymentWaterfall':
+        """Validate waterfall rules."""
+        # Rules must be ordered by priority
+        priorities = [r.priority for r in self.rules]
+        if priorities != sorted(priorities):
+            raise ValueError("Payment rules must be ordered by priority")
+        return self
+
+
+class Tranche(BaseModel):
+    """Tranche in securitization pool."""
+    tranche_id: str = Field(..., description="Tranche identifier")
+    tranche_name: str = Field(..., description="Tranche name")
+    tranche_class: str = Field(..., description="Class: Senior, Mezzanine, Equity")
+    size: Money = Field(..., description="Tranche size")
+    interest_rate: Decimal = Field(..., description="Interest rate (as decimal, e.g., 0.05 for 5%)")
+    risk_rating: Optional[str] = Field(None, description="Risk rating: AAA, AA, A, etc.")
+    payment_priority: int = Field(..., description="Payment priority (lower = higher priority)")
+    cdm_tranche_data: Dict[str, Any] = Field(default_factory=dict, description="Full CDM tranche data")
+
+
+class SecuritizationPool(BaseModel):
+    """CDM-compliant Securitization Pool model."""
+    pool_id: str = Field(..., description="Unique pool identifier")
+    pool_name: str = Field(..., description="Pool name")
+    pool_type: str = Field(..., description="Type: ABS, CLO, MBS, etc.")
+    originator: Party = Field(..., description="Originator party")
+    trustee: Party = Field(..., description="Trustee party")
+    servicer: Optional[Party] = Field(None, description="Servicer party")
+    total_pool_value: Money = Field(..., description="Total value of pool")
+    underlying_assets: List[UnderlyingAsset] = Field(
+        ..., description="List of underlying assets (deals/loans)"
+    )
+    tranches: List[Tranche] = Field(..., description="List of tranches")
+    payment_waterfall: PaymentWaterfall = Field(..., description="Payment waterfall rules")
+    creation_date: date = Field(..., description="Pool creation date")
+    effective_date: date = Field(..., description="Pool effective date")
+    maturity_date: Optional[date] = Field(None, description="Pool maturity date")
+    
+    @model_validator(mode='after')
+    def validate_pool_structure(self) -> 'SecuritizationPool':
+        """Validate pool structure."""
+        # Sum of tranche sizes must equal total pool value
+        tranche_sum = sum(t.size.amount for t in self.tranches)
+        if abs(tranche_sum - self.total_pool_value.amount) > Decimal('0.01'):
+            raise ValueError("Tranche sizes must sum to total pool value")
+        
+        # Payment priorities must be unique
+        priorities = [t.payment_priority for t in self.tranches]
+        if len(priorities) != len(set(priorities)):
+            raise ValueError("Payment priorities must be unique")
+        
         return self
 
