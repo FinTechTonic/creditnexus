@@ -10556,6 +10556,224 @@ async def get_filing_status(
     }
 
 
+@router.post("/payments/process/{payload}")
+async def process_payment_link(
+    payload: str,
+    payment_payload: Optional[Dict[str, Any]] = Body(None, description="x402 payment payload from wallet"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user)
+):
+    """Process payment link and complete payment flow.
+    
+    This endpoint:
+    1. Parses the encrypted payment link payload
+    2. Extracts payment information (amount, currency, type, etc.)
+    3. Processes payment via x402 if payment_payload provided
+    4. Updates related records (notarization, tranche purchase, etc.)
+    5. Creates CDM PaymentEvent
+    
+    Args:
+        payload: Encrypted payment link payload
+        payment_payload: Optional x402 payment payload from wallet
+        db: Database session
+        current_user: Current authenticated user (optional for public links)
+    
+    Returns:
+        Payment processing result or 402 Payment Required
+    """
+    from app.utils.link_payload import LinkPayloadGenerator
+    from app.services.x402_payment_service import X402PaymentService, get_x402_payment_service
+    from app.services.notarization_payment_service import NotarizationPaymentService
+    from app.models.cdm import Party, Money, Currency
+    from app.models.cdm_payment import PaymentEvent, PaymentType, PaymentMethod
+    from app.db.models import PaymentEvent as PaymentEventModel, NotarizationRecord
+    from fastapi.responses import JSONResponse
+    
+    try:
+        # Parse payload
+        payload_generator = LinkPayloadGenerator()
+        link_data = payload_generator.parse_payment_link_payload(payload)
+        
+        if not link_data:
+            raise HTTPException(status_code=400, detail="Invalid or expired payment link")
+        
+        payment_id = link_data["payment_id"]
+        payment_type = link_data["payment_type"]
+        amount = link_data["amount"]
+        currency = link_data["currency"]
+        notarization_id = link_data.get("notarization_id")
+        deal_id = link_data.get("deal_id")
+        pool_id = link_data.get("pool_id")
+        tranche_id = link_data.get("tranche_id")
+        facilitator_url = link_data.get("facilitator_url")
+        
+        # Get payment service
+        payment_service = get_x402_payment_service(request) if request else None
+        if not payment_service:
+            raise HTTPException(
+                status_code=503,
+                detail={"status": "error", "message": "x402 payment service is not available"}
+            )
+        
+        # Process payment based on type
+        if payment_type == "notarization_fee":
+            if not notarization_id:
+                raise HTTPException(status_code=400, detail="Notarization ID missing from payment link")
+            
+            notarization = db.query(NotarizationRecord).filter(
+                NotarizationRecord.id == notarization_id
+            ).first()
+            
+            if not notarization:
+                raise HTTPException(status_code=404, detail="Notarization not found")
+            
+            # Process notarization payment
+            notarization_payment_service = NotarizationPaymentService(db, payment_service)
+            
+            payer_party = Party(
+                id=link_data.get("payer_info", {}).get("wallet_address", "unknown"),
+                name=link_data.get("payer_info", {}).get("name", "Unknown"),
+                lei=None
+            )
+            
+            receiver_party = Party(
+                id=link_data.get("receiver_info", {}).get("wallet_address", "system"),
+                name=link_data.get("receiver_info", {}).get("name", "CreditNexus System"),
+                lei=None
+            )
+            
+            if not payment_payload:
+                # Return 402 Payment Required
+                fee = notarization_payment_service.get_notarization_fee()
+                return JSONResponse(
+                    status_code=402,
+                    content={
+                        "status": "Payment Required",
+                        "payment_id": payment_id,
+                        "notarization_id": notarization_id,
+                        "amount": str(fee.amount),
+                        "currency": fee.currency.value,
+                        "payment_type": payment_type,
+                        "facilitator_url": facilitator_url or payment_service.facilitator_url
+                    }
+                )
+            
+            # Process payment
+            payment_result = await notarization_payment_service.request_notarization_payment(
+                notarization=notarization,
+                payer=payer_party,
+                receiver=receiver_party,
+                payment_payload=payment_payload
+            )
+            
+            if payment_result.get("status") == "paid":
+                # Update notarization record
+                payment_event_data = payment_result.get("payment_event_data")
+                if payment_event_data:
+                    payment_event = PaymentEventModel(**payment_event_data)
+                    payment_event.related_notarization_id = notarization_id
+                    db.add(payment_event)
+                    db.flush()
+                    
+                    notarization.payment_event_id = payment_event.id
+                    notarization.payment_status = "paid"
+                    notarization.payment_transaction_hash = payment_event.transaction_hash
+                    db.commit()
+                
+                return {
+                    "status": "success",
+                    "payment_id": payment_id,
+                    "notarization_id": notarization_id,
+                    "transaction_hash": payment_result.get("transaction_hash"),
+                    "message": "Payment processed successfully"
+                }
+            else:
+                return JSONResponse(
+                    status_code=402,
+                    content=payment_result
+                )
+        
+        elif payment_type == "tranche_purchase":
+            # Handle tranche purchase payment
+            if not pool_id or not tranche_id:
+                raise HTTPException(status_code=400, detail="Pool ID or Tranche ID missing from payment link")
+            
+            from app.services.securitization_service import SecuritizationService
+            
+            service = SecuritizationService(db)
+            
+            # Get pool to find pool_id string
+            from app.db.models import SecuritizationPool, SecuritizationTranche
+            pool = db.query(SecuritizationPool).filter(SecuritizationPool.id == pool_id).first()
+            if not pool:
+                raise HTTPException(status_code=404, detail="Securitization pool not found")
+            
+            tranche_db = db.query(SecuritizationTranche).filter(
+                SecuritizationTranche.id == tranche_id
+            ).first()
+            if not tranche_db:
+                raise HTTPException(status_code=404, detail="Tranche not found")
+            
+            if not payment_payload:
+                return JSONResponse(
+                    status_code=402,
+                    content={
+                        "status": "Payment Required",
+                        "payment_id": payment_id,
+                        "pool_id": pool_id,
+                        "tranche_id": tranche_id,
+                        "amount": str(tranche_db.size),
+                        "currency": tranche_db.currency,
+                        "payment_type": payment_type,
+                        "facilitator_url": facilitator_url or payment_service.facilitator_url
+                    }
+                )
+            
+            # Process tranche purchase
+            buyer_id = link_data.get("payer_info", {}).get("user_id")
+            if not buyer_id and current_user:
+                buyer_id = current_user.id
+            
+            if not buyer_id:
+                raise HTTPException(status_code=400, detail="Buyer user ID required")
+            
+            result = service.purchase_tranche_with_payment(
+                pool_id=pool.pool_id,
+                tranche_id=tranche_db.tranche_name,
+                buyer_id=buyer_id,
+                payment_payload=payment_payload,
+                payment_service=payment_service
+            )
+            
+            if result.get("status") == "payment_required":
+                return JSONResponse(status_code=402, content=result)
+            
+            return {
+                "status": "success",
+                "payment_id": payment_id,
+                "pool_id": pool_id,
+                "tranche_id": tranche_id,
+                "transaction_hash": result.get("transaction_hash"),
+                "message": "Tranche purchase completed successfully"
+            }
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported payment type: {payment_type}"
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to process payment link: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to process payment: {str(e)}"}
+        )
+
+
 @router.get("/filings/deadline-alerts")
 async def get_deadline_alerts(
     deal_id: Optional[int] = Query(None, description="Optional deal ID to filter"),

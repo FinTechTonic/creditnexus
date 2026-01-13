@@ -1,7 +1,5 @@
 # Verification File Whitelist Configuration
-
-# File whitelist configuration for verification links
-# Controls which files and categories can be included in verification links
+# Controls which files and categories are included in verification links
 
 enabled_categories:
   - legal

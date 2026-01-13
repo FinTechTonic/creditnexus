@@ -35,16 +35,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       window.ethereum.on('accountsChanged', handleAccountsChanged);
       window.ethereum.on('chainChanged', handleChainChanged);
       window.ethereum.on('disconnect', handleDisconnect);
+      window.ethereum.on('connect', handleConnect);
     }
+
+    // Periodic connection check (hot reload support)
+    const connectionCheckInterval = setInterval(() => {
+      if (state.isConnected) {
+        checkConnection();
+      }
+    }, 30000); // Check every 30 seconds
 
     return () => {
       if (typeof window.ethereum !== 'undefined') {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
         window.ethereum.removeListener('chainChanged', handleChainChanged);
         window.ethereum.removeListener('disconnect', handleDisconnect);
+        window.ethereum.removeListener('connect', handleConnect);
       }
+      clearInterval(connectionCheckInterval);
     };
-  }, []);
+  }, [state.isConnected]);
 
   const checkConnection = async () => {
     if (typeof window.ethereum === 'undefined') {
@@ -56,19 +66,49 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       if (accounts.length > 0) {
         const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        setState({
-          isConnected: true,
-          account: accounts[0],
-          chainId: parseInt(chainId, 16),
-          provider: window.ethereum,
-          error: null,
+        const currentAccount = accounts[0] as string;
+        const currentChainId = parseInt(chainId as string, 16);
+        
+        // Only update state if connection status changed
+        setState(prev => {
+          if (prev.isConnected && prev.account === currentAccount && prev.chainId === currentChainId) {
+            return prev; // No change needed
+          }
+          return {
+            isConnected: true,
+            account: currentAccount,
+            chainId: currentChainId,
+            provider: window.ethereum,
+            error: null,
+          };
+        });
+      } else {
+        // No accounts - disconnect if previously connected
+        setState(prev => {
+          if (prev.isConnected) {
+            return {
+              isConnected: false,
+              account: null,
+              chainId: null,
+              provider: null,
+              error: null,
+            };
+          }
+          return prev;
         });
       }
     } catch (err) {
-      setState(prev => ({
-        ...prev,
-        error: err instanceof Error ? err.message : 'Failed to check connection',
-      }));
+      // Only update error if it's a new error
+      setState(prev => {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to check connection';
+        if (prev.error === errorMessage) {
+          return prev; // No change needed
+        }
+        return {
+          ...prev,
+          error: errorMessage,
+        };
+      });
     }
   };
 
@@ -104,6 +144,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       provider: null,
       error: null,
     });
+  };
+
+  const handleConnect = async (connectInfo: { chainId: string }) => {
+    // Auto-reconnect when MetaMask reconnects
+    try {
+      const accounts = await window.ethereum?.request({ method: 'eth_accounts' });
+      if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+        setState(prev => ({
+          ...prev,
+          isConnected: true,
+          account: accounts[0] as string,
+          chainId: parseInt(connectInfo.chainId, 16),
+          provider: window.ethereum,
+          error: null,
+        }));
+      }
+    } catch (err) {
+      // Silently fail - connection check will retry
+      console.warn('Auto-reconnect failed:', err);
+    }
   };
 
   const connect = async () => {

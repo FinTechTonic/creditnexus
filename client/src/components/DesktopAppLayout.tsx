@@ -1,9 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { DocumentParser } from '@/apps/docu-digitizer/DocumentParser';
-import { TailwindTest } from '@/components/TailwindTest';
-import { MinimalCSSTest } from '@/components/MinimalCSSTest';
-import { SimpleTailwindTest } from '@/components/SimpleTailwindTest';
+
 import { DemoStats } from '@/components/DemoStats';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
@@ -21,14 +19,22 @@ import { DealDetail } from '@/components/DealDetail';
 import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
-import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext } from '@/context/FDC3Context';
+import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext, WorkflowLinkContext } from '@/context/FDC3Context';
 import VerificationDashboard from '@/components/VerificationDashboard';
 import { DemoDataDashboard } from '@/components/DemoDataDashboard';
 import RiskWarRoom from '@/components/RiskWarRoom';
 import { AuditorRouter } from '@/apps/auditor/AuditorRouter';
+import { SecuritizationWorkflow } from '@/apps/securitization/SecuritizationWorkflow';
+import { SecuritizationPoolDetail } from '@/components/SecuritizationPoolDetail';
+import { TranchePurchase } from '@/components/TranchePurchase';
+import { VerificationFileConfigEditor } from '@/apps/verification-config/VerificationFileConfigEditor';
+import { WorkflowShareInterface } from '@/components/WorkflowShareInterface';
+import { WorkflowDelegationDashboard } from '@/components/WorkflowDelegationDashboard';
+import { WorkflowProcessingPage } from '@/components/WorkflowProcessingPage';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   PERMISSION_DOCUMENT_VIEW,
@@ -44,7 +50,7 @@ import {
   PERMISSION_AUDIT_VIEW,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'loan-recovery' | 'auditor';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'loan-recovery' | 'auditor' | 'securitization' | 'verification-config' | 'workflow-processor' | 'workflow-share';
 
 interface AppConfig {
   id: AppView;
@@ -167,6 +173,48 @@ const sidebarApps: AppConfig[] = [
     description: 'Audit dashboard & compliance monitoring',
     requiredPermission: PERMISSION_AUDIT_VIEW,
   },
+  {
+    id: 'securitization',
+    name: 'Securitization',
+    icon: <Building2 className="h-5 w-5 text-cyan-400" />,
+    description: 'Bundle deals into structured finance products',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+  },
+  {
+    id: 'verification-config',
+    name: 'Verification Config',
+    icon: <Shield className="h-5 w-5 text-cyan-400" />,
+    description: 'Configure verification file whitelist',
+    requiredPermission: PERMISSION_USER_VIEW,
+  },
+  {
+    id: 'workflow-processor',
+    name: 'Workflow Processor',
+    icon: <Share2 className="h-5 w-5 text-yellow-400" />,
+    description: 'Process incoming workflow links',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW, // Assuming a general view permission
+  },
+  {
+    id: 'workflow-share',
+    name: 'Workflow Share',
+    icon: <Share2 className="h-5 w-5 text-purple-400" />,
+    description: 'Share workflow links securely',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW, // Assuming a general view permission
+  },
+  {
+    id: 'securitization',
+    name: 'Securitization',
+    icon: <Building2 className="h-5 w-5 text-cyan-400" />,
+    description: 'Bundle deals into structured finance products',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+  },
+  {
+    id: 'verification-config',
+    name: 'Verification Config',
+    icon: <Shield className="h-5 w-5 text-cyan-400" />,
+    description: 'Configure verification file whitelist',
+    requiredPermission: PERMISSION_USER_VIEW,
+  },
 ];
 
 interface PolicyDecision {
@@ -220,7 +268,7 @@ export function DesktopAppLayout() {
       'dashboard', 'applications', 'admin-signups', 'calendar', 'deals',
       'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
       'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
-      'policy-editor', 'library', 'loan-recovery', 'auditor'
+      'policy-editor', 'library', 'loan-recovery', 'auditor', 'securitization', 'verification-config', 'workflow-processor', 'workflow-share'
     ];
     
     // Try to restore from sessionStorage first
@@ -241,12 +289,15 @@ export function DesktopAppLayout() {
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
+      '/app/workflow/share': 'workflow-share',
+      '/app/workflow/process': 'workflow-processor',
       '/app/green-lens': 'green-lens',
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
       '/app/demo-data': 'demo-data',
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
+      '/app/verification-config': 'verification-config',
       '/library': 'library',
       '/app/loan-recovery': 'loan-recovery',
       '/auditor': 'auditor',
@@ -419,12 +470,15 @@ export function DesktopAppLayout() {
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
+      '/app/workflow/share': 'workflow-share',
+      '/app/workflow/process': 'workflow-processor',
       '/app/green-lens': 'green-lens',
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
       '/app/demo-data': 'demo-data',
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
+      '/app/verification-config': 'verification-config',
       '/library': 'library',
       '/app/loan-recovery': 'loan-recovery',
       '/auditor': 'auditor',
@@ -450,6 +504,10 @@ export function DesktopAppLayout() {
     // Handle auditor routes
     if (!app && basePathname.startsWith('/auditor')) {
       app = 'auditor';
+    }
+    // Handle securitization routes (pool detail, tranche purchase)
+    if (!app && basePathname.startsWith('/app/securitization')) {
+      app = 'securitization';
     }
     
     // Only sync if the pathname is actually in our mapping (not a route we don't handle)
@@ -555,9 +613,15 @@ export function DesktopAppLayout() {
       'demo-data': '/app/demo-data',
       'risk-war-room': '/app/risk-war-room',
       'policy-editor': '/app/policy-editor',
+      'verification-config': '/app/verification-config',
+      'securitization': '/app/securitization',
       'library': '/library',
       'loan-recovery': '/app/loan-recovery',
       'auditor': '/auditor',
+      'workflow-share': '/app/workflow/share',
+      'workflow-processor': '/app/workflow/process',
+      'workflow-share': '/app/workflow/share',
+      'workflow-processor': '/app/workflow/process',
     };
     const path = appToPath[app];
     
@@ -640,6 +704,29 @@ export function DesktopAppLayout() {
         handleAppChange('dashboard');
         break;
       }
+      case 'ShareWorkflowLink': {
+        const workflowCtx = context as WorkflowLinkContext;
+        if (workflowCtx && workflowCtx.linkPayload) {
+          // Display link sharing UI or copy to clipboard
+          console.log('[DesktopAppLayout] ShareWorkflowLink intent received:', workflowCtx);
+          // TODO: Open link sharing dialog or copy link to clipboard
+          // For now, just log - will be handled by WorkflowLinkSharer component
+        }
+        break;
+      }
+      case 'ProcessWorkflowLink': {
+        const workflowCtx = context as WorkflowLinkContext;
+        if (workflowCtx && workflowCtx.linkPayload) {
+          // Navigate to workflow processing page with the link payload
+          console.log('[DesktopAppLayout] ProcessWorkflowLink intent received:', workflowCtx);
+          // Navigate to workflow processing page
+          navigate(`/app/workflow/process?payload=${encodeURIComponent(workflowCtx.linkPayload)}`);
+          handleAppChange('workflow-processor' as AppView);
+        }
+        break;
+      }
+      default:
+        console.warn('[DesktopAppLayout] Unknown intent:', intent);
     }
   };
 
@@ -911,7 +998,26 @@ export function DesktopAppLayout() {
           {activeApp === 'risk-war-room' && <RiskWarRoom />}
           {activeApp === 'policy-editor' && <PolicyEditor />}
           {activeApp === 'loan-recovery' && <LoanRecovery />}
+          {activeApp === 'verification-config' && <VerificationFileConfigEditor />}
+          {activeApp === 'workflow-share' && <WorkflowShareInterface />}
+          {activeApp === 'workflow-processor' && <WorkflowProcessingPage />}
           {activeApp === 'auditor' && <AuditorRouter />}
+          {activeApp === 'securitization' && (() => {
+            // Check if we're on a tranche purchase page
+            if (location.pathname.includes('/tranches/') && location.pathname.includes('/purchase')) {
+              const poolIdMatch = location.pathname.match(/\/pools\/([^/]+)/);
+              const trancheIdMatch = location.pathname.match(/\/tranches\/([^/]+)/);
+              if (poolIdMatch && trancheIdMatch) {
+                return <TranchePurchase poolId={poolIdMatch[1]} trancheId={trancheIdMatch[1]} />;
+              }
+            }
+            // Check if we're on a pool detail page
+            if (location.pathname.startsWith('/app/securitization/pools/')) {
+              return <SecuritizationPoolDetail />;
+            }
+            // Default to workflow
+            return <SecuritizationWorkflow />;
+          })()}
         </main>
       </div>
 
@@ -919,6 +1025,33 @@ export function DesktopAppLayout() {
         <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400">
           <p>Powered by OpenAI GPT-4o and LangChain</p>
           <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // Get current context (dealId, documentId) from URL or FDC3
+                const currentPath = location.pathname
+                let shareUrl = '/app/workflow/share?view=dashboard'
+                
+                // Try to extract dealId or documentId from current route
+                const dealMatch = currentPath.match(/\/deals\/(\d+)/)
+                const docMatch = currentPath.match(/\/documents\/(\d+)/)
+                
+                if (dealMatch) {
+                  shareUrl = `/app/workflow/share?view=create&dealId=${dealMatch[1]}`
+                } else if (docMatch) {
+                  shareUrl = `/app/workflow/share?view=create&documentId=${docMatch[1]}`
+                }
+                
+                navigate(shareUrl)
+                handleAppChange('workflow-share' as AppView)
+              }}
+              className="text-slate-400 hover:text-slate-100 hover:bg-slate-800"
+              title="Open Workflow Share Interface"
+            >
+              <Share2 className="h-4 w-4 mr-2" />
+              Workflow Links
+            </Button>
             <span className="flex items-center gap-1">
               <Radio className="h-3 w-3 text-emerald-500" />
               FDC3 Desktop Interoperability
@@ -928,10 +1061,7 @@ export function DesktopAppLayout() {
         </div>
       </footer>
       <DemoStats />
-      <SimpleTailwindTest />
-      <MinimalCSSTest />
-      <TailwindTest />
-      <div className="tailwind-test">PLAIN CSS TEST</div>
+
     </div>
   );
 }

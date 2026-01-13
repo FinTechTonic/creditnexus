@@ -2,12 +2,15 @@
 
 import logging
 import os
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List
 from pydantic import SecretStr, field_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+
+from app.models.cdm import Currency
 
 # Load environment variables from .env file
 load_dotenv()
@@ -142,6 +145,65 @@ class Settings(BaseSettings):
     X402_FACILITATOR_URL: str = "https://facilitator.x402.org"  # x402 facilitator service URL
     X402_NETWORK: str = "base"  # Blockchain network (base, ethereum, etc.)
     X402_TOKEN: str = "USDC"  # Token symbol (USDC, USDT, etc.)
+    X402_NETWORK_RPC_URL: str = Field(
+        default="https://mainnet.base.org",
+        description="RPC URL for Base network (use https://sepolia.base.org for testnet)"
+    )
+
+    # Securitization Smart Contracts (Base network)
+    # If empty, contracts will be auto-deployed on first use
+    SECURITIZATION_NOTARIZATION_CONTRACT: str = Field(
+        default="",
+        description="SecuritizationNotarization contract address (auto-deployed if empty)"
+    )
+    SECURITIZATION_TOKEN_CONTRACT: str = Field(
+        default="",
+        description="SecuritizationToken (ERC-721) contract address (auto-deployed if empty)"
+    )
+    SECURITIZATION_PAYMENT_ROUTER_CONTRACT: str = Field(
+        default="",
+        description="SecuritizationPaymentRouter contract address (auto-deployed if empty)"
+    )
+    
+    # USDC Token Address (Base network)
+    USDC_TOKEN_ADDRESS: str = Field(
+        default="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        description="USDC token address on Base network"
+    )
+    
+    # Smart Contract Auto-Deployment
+    BLOCKCHAIN_DEPLOYER_PRIVATE_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Private key for contract deployment (auto-generated in dev if not provided)"
+    )
+    BLOCKCHAIN_AUTO_DEPLOY: bool = Field(
+        default=True,
+        description="Auto-deploy contracts if addresses not in config"
+    )
+    
+    # Wallet Auto-Generation
+    WALLET_AUTO_GENERATE_DEMO: bool = Field(
+        default=True,
+        description="Auto-generate demo wallet addresses for users without wallets"
+    )
+
+    # Notarization Payment Configuration
+    NOTARIZATION_FEE_ENABLED: bool = Field(
+        default=True,
+        description="Feature flag to enable/disable notarization fees"
+    )
+    NOTARIZATION_FEE_AMOUNT: Decimal = Field(
+        default=Decimal("50.00"),
+        description="Default notarization fee in USD"
+    )
+    NOTARIZATION_FEE_CURRENCY: Currency = Field(
+        default=Currency.USD,
+        description="Notarization fee currency"
+    )
+    NOTARIZATION_FEE_ADMIN_SKIP: bool = Field(
+        default=True,
+        description="Allow admin users to skip payment requirement"
+    )
 
     # Audio Transcription (STT) Configuration
     STT_API_URL: Optional[str] = None  # Gradio Space URL (default: nvidia/canary-1b-v2)
@@ -214,6 +276,9 @@ class Settings(BaseSettings):
     VERIFICATION_BASE_URL: Optional[str] = None
     LINK_ENCRYPTION_KEY: Optional[SecretStr] = None  # Fernet key for link encryption
     VERIFICATION_FILE_CONFIG_PATH: Optional[Path] = None  # YAML config for file whitelist
+    
+    # Workflow Delegation Configuration
+    WORKFLOW_DELEGATION_BASE_URL: Optional[str] = None  # Base URL for workflow delegation links (e.g., "https://app.creditnexus.com")
 
     
     # Demo Data Configuration

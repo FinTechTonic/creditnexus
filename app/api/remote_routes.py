@@ -1,19 +1,28 @@
 """Remote API routes for verification and notarization."""
 
 import logging
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional, Dict, Any
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.db import get_db
-from app.db.models import RemoteAppProfile, VerificationRequest, NotarizationRecord, Deal, User
+from app.db.models import RemoteAppProfile, VerificationRequest, NotarizationRecord, Deal, User, PaymentEvent as PaymentEventModel
 from app.services.verification_service import VerificationService
 from app.utils.link_payload import LinkPayloadGenerator
 from app.core.verification_file_config import VerificationFileConfig
 from app.utils.crypto_verification import verify_ethereum_signature
 from app.auth.remote_auth import get_remote_profile
 from app.services.cdm_payload_generator import get_deal_cdm_payload
+from app.services.notarization_service import NotarizationService
+from app.services.notarization_payment_service import NotarizationPaymentService
+from app.services.x402_payment_service import X402PaymentService
+from app.models.cdm import Party, Money, Currency
+from app.models.cdm_payment import PaymentEvent, PaymentType, PaymentMethod
+from app.core.config import settings
+from app.utils.audit import log_audit_action, AuditAction
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +60,10 @@ class NotarizationSignRequest(BaseModel):
 
 
 class CreateNotarizationRequest(BaseModel):
-    deal_id: int
-    required_signers: list[str]
-    message_prefix: Optional[str] = "CreditNexus Notarization"
+    required_signers: list[str] = Field(..., description="List of wallet addresses required to sign")
+    message_prefix: Optional[str] = Field("CreditNexus Notarization", description="Message prefix for signing")
+    payment_payload: Optional[dict] = Field(None, description="x402 payment payload (optional, required for non-admin)")
+    skip_payment: Optional[bool] = Field(False, description="Skip payment (admin only, requires admin role)")
 
 
 # ============================================================================
@@ -473,37 +483,169 @@ async def create_notarization(
     request: CreateNotarizationRequest,
     profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
+    http_request: Request = None,
 ):
-    """Create notarization request."""
-    from app.utils.crypto_verification import generate_nonce, compute_payload_hash
-
+    """Create notarization request with x402 payment requirement.
+    
+    Returns 402 Payment Required if payment_payload not provided (unless admin).
+    """
     deal = db.query(Deal).filter(Deal.id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
 
-    # Get or create CDM payload
-    cdm_payload = {}  # TODO: Build from deal.deal_data
+    # Get CDM payload
+    cdm_payload = get_deal_cdm_payload(db, deal)
 
-    # Generate hash
-    notarization_hash = compute_payload_hash(cdm_payload)
+    # Create notarization service
+    notarization_service = NotarizationService(db)
 
-    # Create notarization record
-    notarization = NotarizationRecord(
+    # Create notarization request
+    notarization = notarization_service.create_notarization_request(
         deal_id=deal_id,
-        notarization_hash=notarization_hash,
         required_signers=request.required_signers,
-        signatures=[],
-        status="pending",
+        message_prefix=request.message_prefix
     )
 
-    db.add(notarization)
-    db.commit()
-    db.refresh(notarization)
-
+    # Check if payment is required
+    if settings.NOTARIZATION_FEE_ENABLED:
+        # Get x402 payment service
+        payment_service = None
+        if http_request and hasattr(http_request.app.state, 'x402_payment_service'):
+            payment_service = http_request.app.state.x402_payment_service
+        
+        payment_service_wrapper = NotarizationPaymentService(db, payment_service)
+        
+        # Try to get current user (optional for remote API)
+        current_user = None
+        try:
+            from app.auth.dependencies import get_optional_user
+            if http_request:
+                current_user = await get_optional_user(http_request, db)
+        except:
+            pass
+        
+        # Check if admin can skip
+        if current_user and payment_service_wrapper.can_skip_payment(current_user):
+            # Admin skip - log audit action
+            log_audit_action(
+                db,
+                AuditAction.UPDATE,
+                "notarization",
+                notarization.id,
+                current_user.id,
+                metadata={"payment_skipped": True, "reason": "admin_privilege"}
+            )
+            return {
+                "status": "success",
+                "notarization_id": notarization.id,
+                "notarization_hash": notarization.notarization_hash,
+                "payment_skipped": True,
+                "payment_status": "skipped_admin"
+            }
+        
+        # Extract payer and receiver from deal
+        payer = Party(
+            id="notarization_payer",
+            name=current_user.display_name if current_user else profile.profile_name,
+            lei=None
+        )
+        
+        receiver = Party(
+            id="creditnexus_notarization_service",
+            name="CreditNexus Notarization Service",
+            lei=None
+        )
+        
+        # Check for payment payload in request
+        payment_payload = request.payment_payload
+        
+        # Request payment
+        payment_result = await payment_service_wrapper.request_notarization_payment(
+            notarization=notarization,
+            payer=payer,
+            receiver=receiver,
+            payment_payload=payment_payload
+        )
+        
+        # If payment not provided, return 402
+        if payment_payload is None or payment_result.get("status") != "settled":
+            return JSONResponse(
+                status_code=402,
+                content={
+                    "status": "Payment Required",
+                    "notarization_id": notarization.id,
+                    "payment_request": payment_result.get("payment_request"),
+                    "amount": str(payment_service_wrapper.get_notarization_fee().amount),
+                    "currency": payment_service_wrapper.get_notarization_fee().currency.value,
+                    "payer": {
+                        "id": payer.id,
+                        "name": payer.name
+                    },
+                    "receiver": {
+                        "id": receiver.id,
+                        "name": receiver.name
+                    },
+                    "facilitator_url": payment_service.facilitator_url if payment_service else None
+                }
+            )
+        
+        # Payment successful - create CDM payment event
+        fee = payment_service_wrapper.get_notarization_fee()
+        payment_event = PaymentEvent.from_cdm_party(
+            payer=payer,
+            receiver=receiver,
+            amount=Money(amount=fee.amount, currency=fee.currency),
+            payment_type=PaymentType.NOTARIZATION_FEE,
+            payment_method=PaymentMethod.X402,
+            trade_id=None
+        )
+        
+        payment_event = payment_event.model_copy(update={
+            "x402PaymentDetails": {
+                "payment_payload": payment_payload,
+                "verification": payment_result.get("verification"),
+                "settlement": payment_result.get("settlement")
+            },
+            "transactionHash": payment_result.get("transaction_hash")
+        })
+        
+        payment_event = payment_event.transition_to_verified()
+        payment_event = payment_event.transition_to_settled(payment_result.get("transaction_hash", ""))
+        
+        # Store payment event
+        payment_event_db = PaymentEventModel(
+            payment_id=payment_event.paymentIdentifier.assignedIdentifier[0]["identifier"]["value"],
+            payment_method=payment_event.paymentMethod.value,
+            payment_type=payment_event.paymentType.value,
+            payer_id=payment_event.payerPartyReference.globalReference,
+            payer_name=payer.name,
+            receiver_id=payment_event.receiverPartyReference.globalReference,
+            receiver_name=receiver.name,
+            amount=payment_event.paymentAmount.amount,
+            currency=payment_event.paymentAmount.currency.value,
+            status=payment_event.paymentStatus.value,
+            x402_payment_payload=payment_payload,
+            x402_verification=payment_result.get("verification"),
+            x402_settlement=payment_result.get("settlement"),
+            transaction_hash=payment_result.get("transaction_hash"),
+            related_notarization_id=notarization.id,  # Link to notarization
+            cdm_event=payment_event.to_cdm_json(),
+            settled_at=datetime.utcnow()
+        )
+        db.add(payment_event_db)
+        
+        # Update notarization with payment info
+        notarization.payment_event_id = payment_event_db.id
+        notarization.payment_status = "paid"
+        notarization.payment_transaction_hash = payment_result.get("transaction_hash")
+        db.commit()
+    
     return {
         "status": "success",
         "notarization_id": notarization.id,
-        "notarization_hash": notarization_hash,
+        "notarization_hash": notarization.notarization_hash,
+        "payment_status": "paid" if settings.NOTARIZATION_FEE_ENABLED else "not_required",
+        "transaction_hash": payment_result.get("transaction_hash") if settings.NOTARIZATION_FEE_ENABLED else None
     }
 
 
@@ -522,6 +664,54 @@ async def get_notarization(
         raise HTTPException(status_code=404, detail="Notarization not found")
 
     return notarization.to_dict()
+
+
+@remote_router.get("/notarization/{notarization_id}/payment-status")
+async def get_notarization_payment_status(
+    notarization_id: int,
+    profile: RemoteAppProfile = Depends(get_remote_profile),
+    db: Session = Depends(get_db),
+):
+    """Get payment status for notarization."""
+    notarization = (
+        db.query(NotarizationRecord)
+        .filter(NotarizationRecord.id == notarization_id)
+        .first()
+    )
+    
+    if not notarization:
+        raise HTTPException(status_code=404, detail="Notarization not found")
+    
+    payment_status = {
+        "notarization_id": notarization_id,
+        "payment_required": settings.NOTARIZATION_FEE_ENABLED,
+        "payment_status": "not_required"
+    }
+    
+    if settings.NOTARIZATION_FEE_ENABLED:
+        # Check for payment event
+        payment_event = (
+            db.query(PaymentEventModel)
+            .filter(PaymentEventModel.related_notarization_id == notarization_id)
+            .order_by(PaymentEventModel.created_at.desc())
+            .first()
+        )
+        
+        if payment_event:
+            payment_status.update({
+                "payment_status": payment_event.status,
+                "payment_id": payment_event.payment_id,
+                "transaction_hash": payment_event.transaction_hash,
+                "amount": str(payment_event.amount),
+                "currency": payment_event.currency,
+                "settled_at": payment_event.settled_at.isoformat() if payment_event.settled_at else None
+            })
+        elif notarization.payment_status == "skipped_admin":
+            payment_status["payment_status"] = "skipped_admin"
+        else:
+            payment_status["payment_status"] = "pending"
+    
+    return payment_status
 
 
 @remote_router.get("/notarization/{notarization_id}/nonce")

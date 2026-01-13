@@ -76,6 +76,13 @@ yarn-error.log*
 .eslintcache
 
 temp_dev_notes/
+debug_notes/
+# Smart Contract Development
+contracts/.env
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+contracts/coverage/
 # Security reports and scan results
 *.sarif
 *-report.json

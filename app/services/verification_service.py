@@ -99,7 +99,12 @@ class VerificationService:
         from app.core.config import settings
 
         if not base_url:
-            base_url = getattr(settings, "VERIFICATION_BASE_URL", "https://verify.creditnexus.app")
+            base_url = getattr(settings, "VERIFICATION_BASE_URL", None)
+            if not base_url:
+                raise ValueError(
+                    "VERIFICATION_BASE_URL must be set in configuration. "
+                    "Please set VERIFICATION_BASE_URL environment variable."
+                )
 
         # Build file references
         file_references = []
