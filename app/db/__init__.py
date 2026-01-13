@@ -24,13 +24,29 @@ if DATABASE_URL:
         )
         logger.info(f"Database initialized: SQLite ({DATABASE_URL})")
     else:
+        # PostgreSQL connection with SSL/TLS support
+        from app.db.ssl_config import get_ssl_connection_string
+        
+        # Get SSL-enabled connection string (auto-generates certificates if enabled)
+        try:
+            database_url_with_ssl = get_ssl_connection_string(DATABASE_URL)
+            if database_url_with_ssl != DATABASE_URL:
+                logger.info("Database SSL/TLS enabled")
+        except ValueError as e:
+            # SSL configuration error - if required, fail; otherwise continue without SSL
+            if settings.DB_SSL_REQUIRED:
+                logger.error(f"Database SSL required but configuration failed: {e}")
+                raise
+            logger.warning(f"Database SSL configuration error (not required): {e}")
+            database_url_with_ssl = DATABASE_URL
+        
         engine = create_engine(
-            DATABASE_URL,
+            database_url_with_ssl,
             pool_recycle=300,
             pool_pre_ping=True,
             echo=False,
         )
-        logger.info(f"Database initialized: PostgreSQL")
+        logger.info("Database initialized: PostgreSQL")
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 else:
     engine = None

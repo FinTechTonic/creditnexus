@@ -109,28 +109,124 @@ class VerificationService:
 
             for subdir in enabled_subdirs:
                 if subdir == "documents":
-                    # Get deal documents (TODO: actual implementation)
+                    # Get deal documents from database
                     if verification.deal_id:
-                        file_references.append(
-                            {
-                                "document_id": f"doc_1",
-                                "filename": "credit_agreement.pdf",
-                                "category": "legal",
-                                "subdirectory": subdir,
-                                "size": 1024000,
-                                "download_url": f"/api/deals/{verification.deal_id}/files/doc_1",
-                            }
-                        )
+                        from app.db.models import Document, DocumentVersion
+                        from app.services.file_storage_service import FileStorageService
+                        
+                        # Get deal
+                        deal = self.db.query(Deal).filter(Deal.id == verification.deal_id).first()
+                        if not deal:
+                            logger.warning(f"Deal {verification.deal_id} not found for verification {verification.verification_id}")
+                        else:
+                            # Get documents associated with deal
+                            documents_query = self.db.query(Document).filter(Document.deal_id == verification.deal_id)
+                            
+                            # Filter by document IDs if specified
+                            if file_document_ids:
+                                documents_query = documents_query.filter(Document.id.in_(file_document_ids))
+                            
+                            documents = documents_query.all()
+                            
+                            for doc in documents:
+                                # Get latest version
+                                latest_version = (
+                                    self.db.query(DocumentVersion)
+                                    .filter(DocumentVersion.document_id == doc.id)
+                                    .order_by(DocumentVersion.version_number.desc())
+                                    .first()
+                                )
+                                
+                                if latest_version:
+                                    # Determine category and subdirectory
+                                    category = "legal"  # Default category
+                                    
+                                    # Filter by categories if specified
+                                    if file_categories and category not in file_categories:
+                                        continue
+                                    
+                                    # Get file size from version or filesystem
+                                    file_size = 0
+                                    if latest_version.source_filename:
+                                        try:
+                                            file_storage = FileStorageService()
+                                            deal_docs = file_storage.get_deal_documents(
+                                                user_id=deal.applicant_id,
+                                                deal_id=deal.deal_id,
+                                                subdirectory=subdir
+                                            )
+                                            # Find matching file
+                                            for stored_file in deal_docs:
+                                                if str(doc.id) in stored_file.get("filename", ""):
+                                                    file_size = stored_file.get("size", 0)
+                                                    break
+                                        except Exception as e:
+                                            logger.warning(f"Failed to get file size for document {doc.id}: {e}")
+                                    
+                                    file_references.append({
+                                        "document_id": doc.id,
+                                        "filename": latest_version.source_filename or doc.title,
+                                        "category": category,
+                                        "subdirectory": subdir,
+                                        "size": file_size,
+                                        "download_url": f"/api/deals/{verification.deal_id}/documents/{doc.id}/download",
+                                    })
 
+        # Get deal data and CDM payload
+        deal_data = {}
+        cdm_payload = {}
+        
+        if verification.deal_id:
+            deal = self.db.query(Deal).filter(Deal.id == verification.deal_id).first()
+            if deal:
+                # Get deal data
+                deal_data = {
+                    "deal_id": deal.deal_id,
+                    "status": deal.status,
+                    "deal_type": deal.deal_type,
+                    "deal_data": deal.deal_data or {},
+                    "applicant_id": deal.applicant_id,
+                }
+                
+                # Get CDM payload from deal documents
+                # Look for CDM data in document source_cdm_data or extracted_data
+                from app.db.models import Document, DocumentVersion
+                documents = self.db.query(Document).filter(Document.deal_id == verification.deal_id).all()
+                
+                for doc in documents:
+                    if doc.source_cdm_data:
+                        cdm_payload = doc.source_cdm_data
+                        break
+                    else:
+                        # Check latest version for extracted CDM data
+                        latest_version = (
+                            self.db.query(DocumentVersion)
+                            .filter(DocumentVersion.document_id == doc.id)
+                            .order_by(DocumentVersion.version_number.desc())
+                            .first()
+                        )
+                        if latest_version and latest_version.extracted_data:
+                            extracted = latest_version.extracted_data
+                            if isinstance(extracted, dict) and "agreement" in extracted:
+                                cdm_payload = extracted
+                                break
+        
+        # Calculate expiration hours from verification.expires_at
+        expires_in_hours = 72  # Default
+        if verification.expires_at:
+            time_remaining = verification.expires_at - datetime.utcnow()
+            if time_remaining.total_seconds() > 0:
+                expires_in_hours = int(time_remaining.total_seconds() / 3600)
+        
         # Generate encrypted link payload
         payload_generator = LinkPayloadGenerator()
         encrypted_payload = payload_generator.generate_verification_link_payload(
             verification_id=verification.verification_id,
             deal_id=verification.deal_id or 0,
-            deal_data={},
-            cdm_payload={},  # TODO: Get actual CDM payload
+            deal_data=deal_data,
+            cdm_payload=cdm_payload,
             file_references=file_references if file_references else None,
-            expires_in_hours=72,  # TODO: Use verification.expires_at
+            expires_in_hours=expires_in_hours,
         )
 
         # Construct full URL

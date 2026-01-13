@@ -1,4 +1,24 @@
-import { AlertTriangle, TrendingUp, DollarSign, ArrowUpRight } from 'lucide-react';
+import { AlertTriangle, TrendingUp, DollarSign, ArrowUpRight, TrendingDown, BarChart3, Users, Activity } from 'lucide-react';
+
+interface HistoricalDataPoint {
+    date: string;
+    ndvi_score: number;
+    compliance_status: string;
+}
+
+interface PortfolioComparison {
+    portfolio_avg_ndvi: number;
+    portfolio_avg_spread_bps: number;
+    portfolio_breach_rate: number;
+    portfolio_avg_impact: number;
+}
+
+interface RiskAdjustedMetrics {
+    risk_adjusted_return?: number;
+    sharpe_ratio?: number;
+    volatility?: number;
+    value_at_risk?: number;
+}
 
 interface FinancialImpactData {
     compliance_status: string;
@@ -15,6 +35,9 @@ interface FinancialImpactData {
     principal: number;
     is_breach: boolean;
     message: string;
+    historical_data?: HistoricalDataPoint[];
+    portfolio_comparison?: PortfolioComparison;
+    risk_metrics?: RiskAdjustedMetrics;
 }
 
 interface RiskImpactCardProps {
@@ -76,6 +99,87 @@ export function RiskImpactCard({ impactData, isLoading = false }: RiskImpactCard
                         <span className="text-white font-mono">{impactData.spt_threshold}</span>
                     </div>
                 </div>
+
+                {/* Historical Trends */}
+                {impactData.historical_data && impactData.historical_data.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-green-500/20">
+                        <div className="flex items-center gap-2 mb-2">
+                            <BarChart3 className="w-3 h-3 text-green-400" />
+                            <span className="text-xs text-zinc-400 uppercase tracking-wider">Historical Trend</span>
+                        </div>
+                        <div className="flex items-end gap-1 h-12">
+                            {impactData.historical_data.slice(-6).map((point, idx) => {
+                                const height = (point.ndvi_score / impactData.spt_threshold) * 100;
+                                const isCompliant = point.compliance_status === 'COMPLIANT' || point.compliance_status === 'EXCEEDS_TARGET';
+                                return (
+                                    <div key={idx} className="flex-1 flex flex-col items-center">
+                                        <div
+                                            className={`w-full rounded-t ${isCompliant ? 'bg-green-500/60' : 'bg-yellow-500/60'}`}
+                                            style={{ height: `${Math.min(height, 100)}%` }}
+                                            title={`${point.date}: ${point.ndvi_score.toFixed(2)}`}
+                                        />
+                                        <span className="text-[10px] text-zinc-500 mt-1">
+                                            {new Date(point.date).toLocaleDateString('en-US', { month: 'short' })}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Portfolio Comparison */}
+                {impactData.portfolio_comparison && (
+                    <div className="mt-4 pt-3 border-t border-green-500/20">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Users className="w-3 h-3 text-green-400" />
+                            <span className="text-xs text-zinc-400 uppercase tracking-wider">Portfolio Comparison</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                                <span className="text-zinc-500 block">vs Portfolio Avg NDVI</span>
+                                <span className={`font-mono ${impactData.ndvi_score >= impactData.portfolio_comparison.portfolio_avg_ndvi ? 'text-green-400' : 'text-yellow-400'}`}>
+                                    {impactData.ndvi_score >= impactData.portfolio_comparison.portfolio_avg_ndvi ? '+' : ''}
+                                    {(impactData.ndvi_score - impactData.portfolio_comparison.portfolio_avg_ndvi).toFixed(2)}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-zinc-500 block">Portfolio Breach Rate</span>
+                                <span className="text-white font-mono">
+                                    {(impactData.portfolio_comparison.portfolio_breach_rate * 100).toFixed(1)}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Risk-Adjusted Metrics */}
+                {impactData.risk_metrics && (
+                    <div className="mt-4 pt-3 border-t border-green-500/20">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Activity className="w-3 h-3 text-green-400" />
+                            <span className="text-xs text-zinc-400 uppercase tracking-wider">Risk Metrics</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                            {impactData.risk_metrics.risk_adjusted_return !== undefined && (
+                                <div>
+                                    <span className="text-zinc-500 block">Risk-Adjusted Return</span>
+                                    <span className="text-white font-mono">
+                                        {(impactData.risk_metrics.risk_adjusted_return * 100).toFixed(2)}%
+                                    </span>
+                                </div>
+                            )}
+                            {impactData.risk_metrics.sharpe_ratio !== undefined && (
+                                <div>
+                                    <span className="text-zinc-500 block">Sharpe Ratio</span>
+                                    <span className="text-white font-mono">
+                                        {impactData.risk_metrics.sharpe_ratio.toFixed(2)}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -152,6 +256,121 @@ export function RiskImpactCard({ impactData, isLoading = false }: RiskImpactCard
                 <p className={`mt-4 text-sm ${isBreach ? 'text-red-300/80' : 'text-yellow-300/80'}`}>
                     {impactData.message}
                 </p>
+
+                {/* Historical Trends */}
+                {impactData.historical_data && impactData.historical_data.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-red-500/20">
+                        <div className="flex items-center gap-2 mb-2">
+                            <BarChart3 className="w-3 h-3 text-red-400" />
+                            <span className="text-xs text-zinc-400 uppercase tracking-wider">Historical Trend</span>
+                        </div>
+                        <div className="flex items-end gap-1 h-12">
+                            {impactData.historical_data.slice(-6).map((point, idx) => {
+                                const height = (point.ndvi_score / impactData.spt_threshold) * 100;
+                                const isCompliant = point.compliance_status === 'COMPLIANT' || point.compliance_status === 'EXCEEDS_TARGET';
+                                return (
+                                    <div key={idx} className="flex-1 flex flex-col items-center">
+                                        <div
+                                            className={`w-full rounded-t ${isCompliant ? 'bg-green-500/60' : isBreach ? 'bg-red-500/60' : 'bg-yellow-500/60'}`}
+                                            style={{ height: `${Math.min(height, 100)}%` }}
+                                            title={`${point.date}: ${point.ndvi_score.toFixed(2)}`}
+                                        />
+                                        <span className="text-[10px] text-zinc-500 mt-1">
+                                            {new Date(point.date).toLocaleDateString('en-US', { month: 'short' })}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 text-xs">
+                            <TrendingDown className={`w-3 h-3 ${isBreach ? 'text-red-400' : 'text-yellow-400'}`} />
+                            <span className="text-zinc-400">
+                                {isBreach ? 'Declining trend detected' : 'Performance below target'}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Portfolio Comparison */}
+                {impactData.portfolio_comparison && (
+                    <div className={`mt-4 pt-3 border-t ${isBreach ? 'border-red-500/20' : 'border-yellow-500/20'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Users className={`w-3 h-3 ${isBreach ? 'text-red-400' : 'text-yellow-400'}`} />
+                            <span className="text-xs text-zinc-400 uppercase tracking-wider">Portfolio Comparison</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                                <span className="text-zinc-500 block">vs Portfolio Avg NDVI</span>
+                                <span className={`font-mono ${impactData.ndvi_score >= impactData.portfolio_comparison.portfolio_avg_ndvi ? 'text-green-400' : isBreach ? 'text-red-400' : 'text-yellow-400'}`}>
+                                    {impactData.ndvi_score >= impactData.portfolio_comparison.portfolio_avg_ndvi ? '+' : ''}
+                                    {(impactData.ndvi_score - impactData.portfolio_comparison.portfolio_avg_ndvi).toFixed(2)}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-zinc-500 block">Portfolio Breach Rate</span>
+                                <span className="text-white font-mono">
+                                    {(impactData.portfolio_comparison.portfolio_breach_rate * 100).toFixed(1)}%
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-zinc-500 block">vs Portfolio Avg Impact</span>
+                                <span className={`font-mono ${Math.abs(impactData.annualized_impact) < Math.abs(impactData.portfolio_comparison.portfolio_avg_impact) ? 'text-green-400' : isBreach ? 'text-red-400' : 'text-yellow-400'}`}>
+                                    {Math.abs(impactData.annualized_impact) < Math.abs(impactData.portfolio_comparison.portfolio_avg_impact) ? 'Better' : 'Worse'}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-zinc-500 block">Portfolio Avg Spread</span>
+                                <span className="text-white font-mono">
+                                    {impactData.portfolio_comparison.portfolio_avg_spread_bps} bps
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Risk-Adjusted Metrics */}
+                {impactData.risk_metrics && (
+                    <div className={`mt-4 pt-3 border-t ${isBreach ? 'border-red-500/20' : 'border-yellow-500/20'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Activity className={`w-3 h-3 ${isBreach ? 'text-red-400' : 'text-yellow-400'}`} />
+                            <span className="text-xs text-zinc-400 uppercase tracking-wider">Risk Metrics</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                            {impactData.risk_metrics.risk_adjusted_return !== undefined && (
+                                <div>
+                                    <span className="text-zinc-500 block">Risk-Adjusted Return</span>
+                                    <span className={`font-mono ${impactData.risk_metrics.risk_adjusted_return > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {(impactData.risk_metrics.risk_adjusted_return * 100).toFixed(2)}%
+                                    </span>
+                                </div>
+                            )}
+                            {impactData.risk_metrics.sharpe_ratio !== undefined && (
+                                <div>
+                                    <span className="text-zinc-500 block">Sharpe Ratio</span>
+                                    <span className={`font-mono ${impactData.risk_metrics.sharpe_ratio > 1 ? 'text-green-400' : impactData.risk_metrics.sharpe_ratio > 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                        {impactData.risk_metrics.sharpe_ratio.toFixed(2)}
+                                    </span>
+                                </div>
+                            )}
+                            {impactData.risk_metrics.volatility !== undefined && (
+                                <div>
+                                    <span className="text-zinc-500 block">Volatility</span>
+                                    <span className="text-white font-mono">
+                                        {(impactData.risk_metrics.volatility * 100).toFixed(2)}%
+                                    </span>
+                                </div>
+                            )}
+                            {impactData.risk_metrics.value_at_risk !== undefined && (
+                                <div>
+                                    <span className="text-zinc-500 block">Value at Risk (95%)</span>
+                                    <span className="text-white font-mono">
+                                        ${impactData.risk_metrics.value_at_risk.toLocaleString()}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

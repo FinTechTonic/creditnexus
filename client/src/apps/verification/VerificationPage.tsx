@@ -1,4 +1,6 @@
-// Enhanced verification page with file references
+/**
+ * Enhanced verification page with file references.
+ */
 
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -260,12 +262,12 @@ export function VerificationPage() {
                         <CheckCircleIcon className="h-5 w-5 mr-2" />
                         Accept Verification
                       </>
-                    ) : (
+                    ) : isPending ? (
                       <>
                         <CheckCircleIcon className="h-5 w-5 mr-2" />
                         Verification Accepted
                       </>
-                    )}
+                    ) : null}
                   </button>
                   <button
                     onClick={handleDecline}
@@ -277,12 +279,12 @@ export function VerificationPage() {
                         <XCircleIcon className="h-5 w-5 mr-2" />
                         Decline Verification
                       </>
-                    ) : (
+                    ) : isPending ? (
                       <>
                         <XCircleIcon className="h-5 w-5 mr-2" />
                         Verification Declined
                       </>
-                    )}
+                    ) : null}
                   </button>
                 </div>
               </div>

@@ -45,9 +45,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from openai import OpenAI
-
 from app.core.config import settings
+from app.core.llm_client import get_chat_model
+from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
 
@@ -313,26 +313,30 @@ class EntityExtractor:
     """Specialized extractors for each entity type."""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY.get_secret_value())
+        # Use LLM client abstraction instead of direct OpenAI client
+        self.llm = get_chat_model(temperature=0)
     
     def _call_llm(self, prompt: str, content: str, model: str = None) -> Dict[str, Any]:
-        """Make LLM call with robust error handling."""
-        model = model or Config.FAST_MODEL
+        """Make LLM call with robust error handling using LangChain.
         
+        Note: model parameter is kept for compatibility but LLM provider/model
+        is configured via environment variables (LLM_PROVIDER, LLM_MODEL).
+        """
         for attempt in range(Config.MAX_RETRIES + 1):
             try:
-                response = self.client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": prompt},
-                        {"role": "user", "content": content}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0,
-                    max_tokens=4000,
-                    timeout=Config.API_TIMEOUT
-                )
-                return json.loads(response.choices[0].message.content)
+                # Use LangChain message format
+                messages = [
+                    SystemMessage(content=prompt),
+                    HumanMessage(content=content)
+                ]
+                
+                # Invoke LLM
+                response = self.llm.invoke(messages)
+                
+                # Extract content from LangChain response
+                response_text = response.content if hasattr(response, 'content') else str(response)
+                
+                return json.loads(response_text)
             except json.JSONDecodeError:
                 logger.warning(f"JSON parse error on attempt {attempt + 1}")
                 continue
@@ -580,7 +584,8 @@ class Enricher:
     """Fill gaps with targeted queries."""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY.get_secret_value())
+        # Use LLM client abstraction instead of direct OpenAI client
+        self.llm = get_chat_model(temperature=0)
         self.extractor = EntityExtractor()
     
     def enrich(self, agreement: ExtractedAgreement, text: str) -> ExtractedAgreement:

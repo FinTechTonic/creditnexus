@@ -1,4 +1,6 @@
-"""Verification link creator component with file selection."""
+/**
+ * Verification link creator component with file selection.
+ */
 
 import { useState, useEffect } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'

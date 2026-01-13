@@ -12,7 +12,7 @@
     "backend": "python scripts/run_dev.py",
     "frontend": "cd client && npm run dev",
     "client:build": "cd client && npm run build",
-    "openfin:launch": "openfin launch --config openfin/app.json",
+    "openfin:launch": "powershell -ExecutionPolicy Bypass -File scripts/launch_openfin.ps1",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

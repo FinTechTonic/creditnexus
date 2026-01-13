@@ -146,9 +146,10 @@ function App() {
             <div>
               <h3 className="text-2xl font-semibold mb-4">Our Mission</h3>
               <p className="text-slate-300 mb-4">
-                CreditNexus was founded by a two-person team with a vision to bridge the gap between
-                complex financial regulations and accessible credit services. We believe that compliance
-                shouldn't be a barrier to financial inclusion.
+                CreditNexus was founded by a team with over 20 years of combined experience in the financial industry.
+                Our deep understanding of banking operations, payment systems, and regulatory compliance drives our
+                mission to bridge the gap between complex financial regulations and accessible credit services.
+                We believe that compliance shouldn't be a barrier to financial inclusion.
               </p>
               <p className="text-slate-300 mb-4">
                 Our platform automates the tedious process of credit agreement verification, making it
@@ -201,6 +202,50 @@ function App() {
                   </div>
                 </li>
               </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Team Section */}
+      <section className="py-20 px-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4">Our Team</h2>
+            <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+              Experienced professionals with deep financial industry expertise
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="p-6 bg-slate-800/50 border border-slate-700 rounded-lg text-center">
+              <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                <Users className="h-12 w-12 text-white" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Joseph Pollack</h3>
+              <p className="text-emerald-400 mb-2">Chief Information Officer</p>
+              <p className="text-sm text-slate-400">Strategic technology leadership and architecture</p>
+            </div>
+
+            <div className="p-6 bg-slate-800/50 border border-slate-700 rounded-lg text-center">
+              <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                <Users className="h-12 w-12 text-white" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Biniyam Ajew</h3>
+              <p className="text-emerald-400 mb-2">Senior Developer</p>
+              <p className="text-sm text-slate-400">Full-stack development and system architecture</p>
+            </div>
+
+            <div className="p-6 bg-slate-800/50 border border-slate-700 rounded-lg text-center">
+              <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                <Users className="h-12 w-12 text-white" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Boris Li</h3>
+              <p className="text-emerald-400 mb-2">Junior Developer</p>
+              <p className="text-sm text-slate-400">
+                10 years of experience at Citibank and Mastercard in payment systems, 
+                banking operations, and financial technology
+              </p>
             </div>
           </div>
         </div>
