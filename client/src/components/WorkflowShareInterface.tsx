@@ -9,18 +9,16 @@ import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  Share2, 
-  FileText, 
-  Send, 
-  Eye, 
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Share2,
+  Send,
+  Eye,
   Settings,
-  Loader2,
-  ArrowRight,
   Link as LinkIcon,
   Copy,
-  Check
+  Check,
+  X
 } from 'lucide-react'
 import { WorkflowLinkCreator } from '@/apps/workflow/WorkflowLinkCreator'
 import { WorkflowProcessingPage } from './WorkflowProcessingPage'
@@ -36,25 +34,21 @@ interface WorkflowShareInterfaceProps {
   initialView?: ShareView
   dealId?: number
   documentId?: number
-  workflowPayload?: string
   onWorkflowCreated?: (link: string, workflowId: string) => void
-  onWorkflowProcessed?: () => void
 }
 
 export function WorkflowShareInterface({
   initialView = 'create',
   dealId: propDealId,
   documentId: propDocumentId,
-  workflowPayload,
-  onWorkflowCreated,
-  onWorkflowProcessed
+  onWorkflowCreated
 }: WorkflowShareInterfaceProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const { context, listenForWorkflowLinks } = useFDC3()
+  const { listenForWorkflowLinks } = useFDC3()
   const classes = useThemeClasses()
-  
+
   const [activeView, setActiveView] = useState<ShareView>(initialView)
   const [generatedLink, setGeneratedLink] = useState<string | null>(null)
   const [generatedWorkflowId, setGeneratedWorkflowId] = useState<string | null>(null)
@@ -69,7 +63,7 @@ export function WorkflowShareInterface({
   useEffect(() => {
     const viewParam = searchParams.get('view')
     const payloadParam = searchParams.get('payload')
-    
+
     if (payloadParam) {
       setActiveView('process')
     } else if (viewParam && ['create', 'process', 'dashboard', 'share'].includes(viewParam)) {
@@ -95,11 +89,11 @@ export function WorkflowShareInterface({
     setGeneratedLink(link)
     setGeneratedWorkflowId(workflowId)
     setActiveView('share')
-    
+
     // Extract encrypted payload from link
     const url = new URL(link)
     const payload = url.searchParams.get('payload') || workflowId
-    
+
     setSharerData({
       workflowId: workflowId,
       workflowType: 'verification', // This would come from the creator
@@ -110,7 +104,7 @@ export function WorkflowShareInterface({
         description: 'Share this workflow link with others',
       },
     })
-    
+
     onWorkflowCreated?.(link, workflowId)
   }
 
@@ -200,8 +194,8 @@ export function WorkflowShareInterface({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <WorkflowLinkSharer 
-                  {...sharerData} 
+                <WorkflowLinkSharer
+                  {...sharerData}
                   onClose={() => {
                     setSharerData(null)
                     navigateToView('create')

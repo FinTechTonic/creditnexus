@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, FileText, BarChart3, Settings, RefreshCw, Play, Trash2, Loader2, Search, Filter, Eye, ChevronLeft, ChevronRight, AlertCircle, CheckCircle, Clock, Download, RotateCcw, Radio, Copy } from 'lucide-react';
+import { Database, FileText, BarChart3, Settings, RefreshCw, Trash2, Loader2, Search, Filter, Eye, ChevronLeft, ChevronRight, AlertCircle, CheckCircle, Clock, Download, RotateCcw, Copy, ExternalLink, PlusCircle, Radio } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -155,7 +155,7 @@ export function DemoDataDashboard() {
       active: 'bg-emerald-500/20 text-emerald-300',
       closed: 'bg-slate-600/20 text-slate-400',
     };
-    return colors[status] || 'bg-slate-500/20 text-slate-300';
+    return colors[status] || 'bg-muted text-muted-foreground';
   };
 
   // Fetch deals when tab is active or filters change
@@ -300,7 +300,7 @@ export function DemoDataDashboard() {
       case 'failed':
         return 'bg-red-500/20 text-red-400 border-red-500/30';
       default:
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+        return 'bg-muted text-muted-foreground border-border';
     }
   };
 
@@ -414,7 +414,7 @@ export function DemoDataDashboard() {
             disabled={!isAvailable || deals.length === 0}
             title={!isAvailable ? 'FDC3 not available' : 'Broadcast portfolio to FDC3 network'}
           >
-            <Radio className="w-4 h-4 mr-2" />
+            <ExternalLink className="w-4 h-4 mr-2" />
             Broadcast Portfolio
           </Button>
           <Button variant="outline" size="sm">
@@ -643,7 +643,7 @@ export function DemoDataDashboard() {
                       <Button
                         onClick={handleStartSeeding}
                         disabled={loading}
-                        className="bg-indigo-600 hover:bg-indigo-700"
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground"
                       >
                         {loading ? (
                           <>
@@ -652,7 +652,7 @@ export function DemoDataDashboard() {
                           </>
                         ) : (
                           <>
-                            <Play className="w-4 h-4 mr-2" />
+                            <PlusCircle className="w-4 h-4 mr-2" />
                             Start Seeding
                           </>
                         )}
