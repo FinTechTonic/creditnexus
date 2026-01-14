@@ -1,0 +1,25 @@
+============================================================
+TEST 1: Twilio Service Initialization
+============================================================
+✅ Service initialized: True
+✅ Phone number: +12128191188
+  Phone +1234567890: ✅ Valid
+  Phone 1234567890: ❌ Invalid
+  Phone +447911123456: ✅ Valid
+
+============================================================
+TEST 2: API Endpoints
+============================================================
+✅ Webhook test endpoint: SUCCESS
+  Message: Twilio webhook endpoint is working
+  Endpoints: ['sms', 'voice', 'status']
+
+============================================================
+SUMMARY
+============================================================
+✅ Twilio service fully functional
+✅ Phone number validation working
+✅ API endpoints responding
+✅ Webhook configuration ready
+
+Test completed: 2026-01-13 20:28:33
