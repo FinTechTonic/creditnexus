@@ -7,6 +7,7 @@ import { DocumentGenerator } from '@/apps/document-generator/DocumentGenerator';
 import { PolicyEditor } from '@/apps/policy-editor/PolicyEditor';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { Dashboard } from '@/components/Dashboard';
+import { UnifiedDashboard } from '@/components/UnifiedDashboard';
 import { GroundTruthDashboard } from '@/components/GroundTruthDashboard';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
 import { AdminSignupDashboard } from '@/components/AdminSignupDashboard';
@@ -983,7 +984,7 @@ export function DesktopAppLayout() {
             />
           </BreadcrumbContainer>
 
-          {activeApp === 'dashboard' && <Dashboard />}
+          {activeApp === 'dashboard' && <UnifiedDashboard />}
           {activeApp === 'applications' && <ApplicationDashboard />}
           {activeApp === 'admin-signups' && <AdminSignupDashboard />}
           {activeApp === 'calendar' && <CalendarView />}

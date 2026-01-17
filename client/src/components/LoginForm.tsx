@@ -15,6 +15,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [organizationIdentifier, setOrganizationIdentifier] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -48,7 +49,12 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
       if (mode === 'login') {
         success = await login({ email, password });
       } else {
-        success = await register({ email, password, display_name: displayName });
+        success = await register({ 
+          email, 
+          password, 
+          display_name: displayName,
+          organization_identifier: organizationIdentifier || undefined
+        });
       }
       
       if (success) {
@@ -56,6 +62,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
         setEmail('');
         setPassword('');
         setDisplayName('');
+        setOrganizationIdentifier('');
       }
     } finally {
       setIsSubmitting(false);
@@ -124,20 +131,38 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
             </div>
 
             {mode === 'register' && (
-              <div>
-                <label htmlFor="displayName" className="block text-sm font-medium text-slate-300 mb-2">
-                  Display Name
-                </label>
-                <input
-                  id="displayName"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                  placeholder="John Smith"
-                />
-              </div>
+              <>
+                <div>
+                  <label htmlFor="displayName" className="block text-sm font-medium text-slate-300 mb-2">
+                    Display Name
+                  </label>
+                  <input
+                    id="displayName"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                    placeholder="John Smith"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="organizationIdentifier" className="block text-sm font-medium text-slate-300 mb-2">
+                    Organization Identifier <span className="text-slate-500 text-xs">(Optional)</span>
+                  </label>
+                  <input
+                    id="organizationIdentifier"
+                    type="text"
+                    value={organizationIdentifier}
+                    onChange={(e) => setOrganizationIdentifier(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                    placeholder="org-alias, 0x1234..., or org-key"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Enter your organization alias, blockchain address, or organization key to connect to your organization
+                  </p>
+                </div>
+              </>
             )}
 
             <div>

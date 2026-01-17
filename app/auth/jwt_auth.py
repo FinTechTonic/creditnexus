@@ -104,6 +104,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     display_name: str
+    organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
 
     @field_validator("password")
     @classmethod
@@ -634,6 +635,7 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name,
+        organization_identifier=user_data.organization_identifier,
         role=UserRole.ANALYST.value,
         is_active=False,  # Require admin approval
         is_email_verified=False,

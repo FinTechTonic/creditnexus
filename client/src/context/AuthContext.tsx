@@ -26,6 +26,7 @@ interface RegisterData {
   email: string;
   password: string;
   display_name: string;
+  organization_identifier?: string;  // Organization alias, blockchain address, or key
 }
 
 interface AuthContextType {

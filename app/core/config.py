@@ -400,6 +400,12 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: Optional[SecretStr] = None  # JWT secret key (required in production)
     JWT_REFRESH_SECRET_KEY: Optional[SecretStr] = None  # JWT refresh secret key (required in production)
     
+    # Prometheus Metrics Configuration
+    METRICS_ENABLED: bool = Field(default=True, description="Enable Prometheus metrics")
+    METRICS_PATH: str = Field(default="/metrics", description="Metrics endpoint path")
+    SYSTEM_METRICS_ENABLED: bool = Field(default=False, description="Enable system metrics (requires psutil)")
+    METRICS_COLLECT_INTERVAL: int = Field(default=60, description="System metrics collection interval (seconds)")
+    
     # Encryption at Rest Configuration
     ENCRYPTION_KEY: Optional[SecretStr] = None  # Master encryption key for data at rest (Fernet key or password)
     ENCRYPTION_ENABLED: bool = True  # Enable encryption for sensitive fields

@@ -8,6 +8,7 @@ abstraction instead of directly instantiating provider-specific clients.
 
 import logging
 import json
+import time
 from typing import Optional, Dict, Any
 from enum import Enum
 
@@ -16,6 +17,19 @@ from langchain_core.embeddings import Embeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
+
+# Import metrics (optional - only if metrics are enabled)
+try:
+    from app.core.metrics import (
+        llm_calls_total,
+        llm_call_duration_seconds,
+        llm_tokens_total,
+        llm_cost_total
+    )
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    logger.debug("Metrics not available for LLM tracking")
 
 # Global LLM configuration (set at startup)
 _llm_config: Optional[Dict[str, Any]] = None
@@ -494,6 +508,125 @@ def get_embeddings_model(
         model_kwargs=embeddings_config.get("model_kwargs"),
         **kwargs
     )
+
+
+async def invoke_with_metrics(
+    model: BaseChatModel,
+    messages: Any,
+    provider: Optional[str] = None,
+    model_name: Optional[str] = None
+) -> Any:
+    """
+    Invoke LLM model with metrics tracking.
+    
+    This wrapper function tracks LLM calls, duration, tokens, and cost.
+    Use this instead of directly calling model.ainvoke() or model.invoke().
+    
+    Args:
+        model: The chat model instance to invoke
+        messages: Input messages for the model
+        provider: Provider name (e.g., 'openai', 'huggingface') - auto-detected if None
+        model_name: Model name (e.g., 'gpt-4o') - auto-detected if None
+    
+    Returns:
+        Model response
+    
+    Example:
+        >>> model = get_chat_model()
+        >>> response = await invoke_with_metrics(model, [{"role": "user", "content": "Hello"}])
+    """
+    if not METRICS_AVAILABLE:
+        # If metrics not available, just call the model directly
+        return await model.ainvoke(messages)
+    
+    # Auto-detect provider and model if not provided
+    if provider is None:
+        provider = _llm_config["provider"] if _llm_config else "unknown"
+    
+    if model_name is None:
+        model_name = _llm_config["model"] if _llm_config else "unknown"
+    
+    start_time = time.time()
+    
+    try:
+        result = await model.ainvoke(messages)
+        duration = time.time() - start_time
+        
+        # Extract token usage and cost
+        prompt_tokens = 0
+        completion_tokens = 0
+        cost = 0.0
+        
+        # Try to extract token usage from response
+        if hasattr(result, 'response_metadata'):
+            usage = result.response_metadata.get('token_usage', {})
+            prompt_tokens = usage.get('prompt_tokens', 0)
+            completion_tokens = usage.get('completion_tokens', 0)
+        
+        # Calculate cost (simplified - would need actual pricing tables)
+        # This is a placeholder - actual cost calculation should use provider-specific pricing
+        if provider == "openai":
+            # Rough estimates (would need actual pricing)
+            if "gpt-4" in model_name.lower():
+                cost = (prompt_tokens / 1000 * 0.03) + (completion_tokens / 1000 * 0.06)
+            elif "gpt-3.5" in model_name.lower():
+                cost = (prompt_tokens / 1000 * 0.0015) + (completion_tokens / 1000 * 0.002)
+        
+        # Record metrics
+        llm_calls_total.labels(
+            provider=provider,
+            model=model_name,
+            status="success"
+        ).inc()
+        
+        llm_call_duration_seconds.labels(
+            provider=provider,
+            model=model_name
+        ).observe(duration)
+        
+        if prompt_tokens > 0:
+            llm_tokens_total.labels(
+                provider=provider,
+                model=model_name,
+                type="input"
+            ).inc(prompt_tokens)
+        
+        if completion_tokens > 0:
+            llm_tokens_total.labels(
+                provider=provider,
+                model=model_name,
+                type="output"
+            ).inc(completion_tokens)
+        
+        if cost > 0:
+            llm_cost_total.labels(
+                provider=provider,
+                model=model_name
+            ).inc(cost)
+        
+        return result
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        
+        # Determine error status
+        error_status = "error"
+        if "rate limit" in str(e).lower() or "429" in str(e):
+            error_status = "rate_limited"
+        
+        # Record error metrics
+        llm_calls_total.labels(
+            provider=provider,
+            model=model_name,
+            status=error_status
+        ).inc()
+        
+        llm_call_duration_seconds.labels(
+            provider=provider,
+            model=model_name
+        ).observe(duration)
+        
+        raise
 
 
 

@@ -2,7 +2,7 @@
   "name": "workspace",
   "version": "1.0.0",
   "description": "A production-grade financial AI agent that extracts structured data from credit agreements using OpenAI's GPT-4o, LangChain, and the FINOS Common Domain Model (CDM). Built as a full-stack application with a React frontend and Python backend.",
-  "main": "index.js",
+  "main": "electron/main.js",
   "directories": {
     "test": "tests"
   },
@@ -13,6 +13,11 @@
     "frontend": "cd client && npm run dev",
     "client:build": "cd client && npm run build",
     "openfin:launch": "powershell -ExecutionPolicy Bypass -File scripts/launch_openfin.ps1",
+    "electron:dev": "concurrently \"npm run frontend\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "npm run client:build && electron-builder",
+    "electron:build:win": "electron-builder --win",
+    "electron:build:mac": "electron-builder --mac",
+    "electron:build:linux": "electron-builder --linux",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -27,5 +32,12 @@
     "react-big-calendar": "^1.19.4",
     "react-router-dom": "^7.12.0",
     "recharts": "^3.5.1"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "@electron/notarize": "^2.2.0",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0"
   }
 }
