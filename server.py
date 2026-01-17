@@ -30,6 +30,8 @@ from app.api.workflow_delegation_routes import router as workflow_delegation_rou
 from app.api.recovery_routes import router as recovery_router
 from app.api.twilio_routes import router as twilio_router
 from app.api.remote_routes import remote_router
+from app.api.nexus_routes import router as nexus_router
+from app.api.p2p_routes import router as p2p_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
@@ -563,6 +565,8 @@ app.include_router(config_router)
 app.include_router(workflow_delegation_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
+app.include_router(nexus_router)
+app.include_router(p2p_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
