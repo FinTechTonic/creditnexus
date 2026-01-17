@@ -162,6 +162,23 @@ async def lifespan(app: FastAPI):
         logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
         app.state.x402_payment_service = None
     
+    # Initialize system metrics collector (if enabled)
+    if settings.METRICS_ENABLED and settings.SYSTEM_METRICS_ENABLED:
+        try:
+            from app.core.system_metrics import start_system_metrics_collector
+            import asyncio
+            
+            # Start background task for system metrics
+            metrics_task = asyncio.create_task(
+                start_system_metrics_collector(settings.METRICS_COLLECT_INTERVAL)
+            )
+            app.state.system_metrics_task = metrics_task
+            logger.info(
+                f"System metrics collector started (interval: {settings.METRICS_COLLECT_INTERVAL}s)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to start system metrics collector: {e}")
+    
     # Initialize database
     if settings.DATABASE_ENABLED:
         try:
@@ -444,6 +461,19 @@ async def lifespan(app: FastAPI):
                     raise
                 except Exception as e:
                     logger.error(f"Error closing x402 payment service: {e}")
+        
+        # Cleanup system metrics collector
+        if settings.METRICS_ENABLED and settings.SYSTEM_METRICS_ENABLED:
+            if hasattr(app.state, 'system_metrics_task'):
+                metrics_task = app.state.system_metrics_task
+                if metrics_task and not metrics_task.done():
+                    metrics_task.cancel()
+                    try:
+                        await metrics_task
+                    except asyncio.CancelledError:
+                        logger.info("System metrics collector stopped")
+                    except Exception as e:
+                        logger.error(f"Error stopping system metrics collector: {e}")
     except asyncio.CancelledError:
         logger.warning("Shutdown cleanup was cancelled")
         raise
@@ -545,6 +575,11 @@ if settings.SECURITY_HEADERS_ENABLED:
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         return response
 
+# Metrics middleware (if enabled)
+if settings.METRICS_ENABLED:
+    from app.middleware.metrics_middleware import MetricsMiddleware
+    app.add_middleware(MetricsMiddleware)
+
 # Make limiter available globally for route decorators
 # Routes can access it via: from server import limiter (if enabled)
 # Or use: request.app.state.limiter in route functions
@@ -570,6 +605,11 @@ app.include_router(fdc3_router, prefix="/api/fdc3")
 # GDPR compliance routes
 from app.api.gdpr_routes import gdpr_router
 app.include_router(gdpr_router, prefix="/api")
+
+# Metrics routes (if enabled)
+if settings.METRICS_ENABLED:
+    from app.api.metrics_routes import router as metrics_router
+    app.include_router(metrics_router)
 
 # FDC3 App Directory API
 app.include_router(fdc3_router, prefix="/api/fdc3")
@@ -628,7 +668,7 @@ else:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        app, 
+        "server:app",  # Use import string for reload to work properly
         host="127.0.0.1", 
         port=8000, 
         reload=True,

@@ -115,23 +115,61 @@ class PolicyService:
         Returns:
             PolicyDecision with ALLOW/BLOCK/FLAG
         """
-        # Convert CDM to policy transaction
-        tx = self._cdm_to_policy_transaction(
-            credit_agreement=credit_agreement,
-            transaction_type="facility_creation"
+        import time
+        from app.core.metrics import (
+            policy_decisions_total,
+            policy_decision_duration_seconds,
         )
         
-        # Evaluate
-        result = self.engine.evaluate(tx)
+        start_time = time.time()
+        category = "facility_creation"
         
-        return PolicyDecision(
-            decision=result["decision"],
-            rule_applied=result.get("rule"),
-            trace_id=f"facility_{document_id}_{datetime.utcnow().isoformat()}" if document_id else f"facility_{datetime.utcnow().isoformat()}",
-            trace=result.get("trace", []),
-            matched_rules=result.get("matched_rules", []),
-            metadata={"document_id": document_id}
-        )
+        try:
+            # Convert CDM to policy transaction
+            tx = self._cdm_to_policy_transaction(
+                credit_agreement=credit_agreement,
+                transaction_type="facility_creation"
+            )
+            
+            # Evaluate
+            result = self.engine.evaluate(tx)
+            decision = result["decision"]
+            rule_applied = result.get("rule", "default")
+            
+            # Track metrics
+            policy_decisions_total.labels(
+                decision=decision,
+                rule_applied=rule_applied,
+                category=category,
+            ).inc()
+            
+            duration = time.time() - start_time
+            policy_decision_duration_seconds.labels(
+                decision=decision,
+                category=category,
+            ).observe(duration)
+            
+            return PolicyDecision(
+                decision=decision,
+                rule_applied=rule_applied,
+                trace_id=f"facility_{document_id}_{datetime.utcnow().isoformat()}" if document_id else f"facility_{datetime.utcnow().isoformat()}",
+                trace=result.get("trace", []),
+                matched_rules=result.get("matched_rules", []),
+                metadata={"document_id": document_id}
+            )
+        except Exception as e:
+            # Track error metrics
+            policy_decisions_total.labels(
+                decision="ERROR",
+                rule_applied="none",
+                category=category,
+            ).inc()
+            duration = time.time() - start_time
+            policy_decision_duration_seconds.labels(
+                decision="ERROR",
+                category=category,
+            ).observe(duration)
+            raise
     
     def evaluate_trade_execution(
         self,

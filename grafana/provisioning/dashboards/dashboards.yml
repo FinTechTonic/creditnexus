@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: 'CreditNexus Dashboards'
+    orgId: 1
+    folder: 'CreditNexus'
+    type: file
+    disableDeletion: false
+    editable: true
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

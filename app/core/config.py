@@ -370,6 +370,12 @@ class Settings(BaseSettings):
     DB_SSL_AUTO_CERT_DIR: str = "./ssl_certs/db"  # Directory for auto-generated certificates
     DB_SSL_AUTO_CERT_VALIDITY_DAYS: int = 365  # Certificate validity period (1 year default)
 
+    # Metrics & Observability Configuration
+    METRICS_ENABLED: bool = True  # Enable Prometheus metrics collection
+    METRICS_PATH: str = "/metrics"  # Path for metrics endpoint
+    SYSTEM_METRICS_ENABLED: bool = False  # Enable system metrics (CPU, memory, disk)
+    METRICS_COLLECT_INTERVAL: int = 60  # System metrics collection interval in seconds
+
     # Seeding Configuration
     SEED_PERMISSIONS: bool = False  # Seed permission definitions and role mappings on startup
     SEED_PERMISSIONS_FORCE: bool = False  # Force update existing permissions (use with caution)

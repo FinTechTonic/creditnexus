@@ -48,6 +48,15 @@ if DATABASE_URL:
         )
         logger.info("Database initialized: PostgreSQL")
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    
+    # Setup database metrics if enabled
+    try:
+        if settings.METRICS_ENABLED and engine is not None:
+            from app.db.metrics import setup_db_metrics
+            setup_db_metrics(engine)
+            logger.info("Database metrics collection enabled")
+    except Exception as e:
+        logger.warning(f"Failed to setup database metrics: {e}")
 else:
     engine = None
     SessionLocal = None
