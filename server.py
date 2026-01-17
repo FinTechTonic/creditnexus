@@ -32,6 +32,7 @@ from app.api.twilio_routes import router as twilio_router
 from app.api.remote_routes import remote_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.fdc3_routes import router as fdc3_router
+from app.api.implementation_routes import router as implementation_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -566,6 +567,7 @@ app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
 app.include_router(fdc3_router, prefix="/api/fdc3")
+app.include_router(implementation_router)
 
 # GDPR compliance routes
 from app.api.gdpr_routes import gdpr_router

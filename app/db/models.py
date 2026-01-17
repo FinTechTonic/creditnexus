@@ -20,6 +20,8 @@ class UserRole(str, enum.Enum):
     LAW_OFFICER = "law_officer"  # Write/edit for legal documents
     ACCOUNTANT = "accountant"  # Write/edit for financial data
     APPLICANT = "applicant"  # Apply and track applications
+    TRADER = "trader"  # Trading and portfolio management
+    COMPLIANCE_OFFICER = "compliance_officer"  # Compliance monitoring and reporting
     # Legacy roles for backward compatibility
     VIEWER = "viewer"
     ANALYST = "analyst"
@@ -153,6 +155,22 @@ class InquiryStatus(str, enum.Enum):
     CLOSED = "closed"
 
 
+class SubscriptionTier(str, enum.Enum):
+    """Subscription tier levels."""
+    FREE = "free"
+    PRO = "pro"
+    PREMIUM = "premium"
+    LIFETIME = "lifetime"
+
+
+class SubscriptionType(str, enum.Enum):
+    """Subscription payment types."""
+    PAY_AS_YOU_GO = "pay_as_you_go"  # Pro tier
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+    LIFETIME = "lifetime"
+
+
 class User(Base):
     """User model for authentication and authorization."""
 
@@ -215,6 +233,10 @@ class User(Base):
     organized_meetings = relationship(
         "Meeting", back_populates="organizer", foreign_keys="Meeting.organizer_id"
     )
+    implementation_connections = relationship("UserImplementationConnection", back_populates="user")
+    organization_identifier = Column(EncryptedString(255), nullable=True, index=True)  # Organization alias, blockchain address, or key
+    subscriptions = relationship("UserSubscription", back_populates="user")
+    subscription_tier = Column(String(20), default=SubscriptionTier.FREE.value, nullable=False)
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -2908,6 +2930,204 @@ class ChatbotMessage(Base):
             "content": self.content,
             "workflow_launched": self.workflow_launched,
             "cdm_events": self.cdm_events,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class VerifiedImplementation(Base):
+    """Verified implementation provider (e.g., Alpaca, Plaid, Polymarket)."""
+    
+    __tablename__ = "verified_implementations"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), unique=True, nullable=False)  # "alpaca", "plaid", "polymarket"
+    display_name = Column(String(255), nullable=False)
+    category = Column(String(50), nullable=False)  # "trading", "banking", "market", "payment"
+    api_key_encrypted = Column(EncryptedString(500), nullable=True)
+    api_secret_encrypted = Column(EncryptedString(500), nullable=True)
+    base_url = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    configuration = Column(JSONB, nullable=True)  # Provider-specific config
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    user_connections = relationship("UserImplementationConnection", back_populates="implementation")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "display_name": self.display_name,
+            "category": self.category,
+            "base_url": self.base_url,
+            "is_active": self.is_active,
+            "configuration": self.configuration,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class UserImplementationConnection(Base):
+    """User's connection to a verified implementation."""
+    
+    __tablename__ = "user_implementation_connections"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    implementation_id = Column(Integer, ForeignKey("verified_implementations.id"), nullable=False)
+    connection_data = Column(EncryptedJSON(), nullable=True)  # OAuth tokens, API keys, etc.
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    user = relationship("User", back_populates="implementation_connections")
+    implementation = relationship("VerifiedImplementation", back_populates="user_connections")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "implementation_id": self.implementation_id,
+            "is_active": self.is_active,
+            "last_synced_at": self.last_synced_at.isoformat() if self.last_synced_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class UserSubscription(Base):
+    """User subscription record."""
+    
+    __tablename__ = "user_subscriptions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    tier = Column(String(20), nullable=False)  # SubscriptionTier enum
+    subscription_type = Column(String(20), nullable=False)  # SubscriptionType enum
+    is_active = Column(Boolean, default=True, nullable=False)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True)  # NULL for lifetime
+    payment_id = Column(Integer, ForeignKey("payment_events.id"), nullable=True)
+    auto_renew = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    user = relationship("User", back_populates="subscriptions")
+    payment = relationship("PaymentEvent", foreign_keys=[payment_id])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "tier": self.tier,
+            "subscription_type": self.subscription_type,
+            "is_active": self.is_active,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "payment_id": self.payment_id,
+            "auto_renew": self.auto_renew,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SubscriptionUsage(Base):
+    """Pay-as-you-go usage tracking for Pro tier."""
+    
+    __tablename__ = "subscription_usage"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    subscription_id = Column(Integer, ForeignKey("user_subscriptions.id"), nullable=False)
+    feature = Column(String(50), nullable=False)  # "trade_execution", "market_creation", etc.
+    usage_count = Column(Integer, default=0, nullable=False)
+    billing_period_start = Column(DateTime, nullable=False)
+    billing_period_end = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    user = relationship("User")
+    subscription = relationship("UserSubscription")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "subscription_id": self.subscription_id,
+            "feature": self.feature,
+            "usage_count": self.usage_count,
+            "billing_period_start": self.billing_period_start.isoformat() if self.billing_period_start else None,
+            "billing_period_end": self.billing_period_end.isoformat() if self.billing_period_end else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class CommissionConfig(Base):
+    """Configurable commission and fee structure."""
+    
+    __tablename__ = "commission_configs"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)  # "trade_execution", "market_creation", "deal_processing"
+    category = Column(String(50), nullable=False)  # "trading", "market", "deal", "payment"
+    fee_type = Column(String(20), nullable=False)  # "percentage", "fixed", "tiered"
+    fee_value = Column(Numeric(10, 4), nullable=False)  # Percentage (0.01 = 1%) or fixed amount
+    min_fee = Column(Numeric(19, 4), nullable=True)
+    max_fee = Column(Numeric(19, 4), nullable=True)
+    currency = Column(String(3), default="USD", nullable=False)
+    applies_to = Column(JSONB, nullable=True)  # Conditions: deal_type, workflow_type, etc.
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category": self.category,
+            "fee_type": self.fee_type,
+            "fee_value": float(self.fee_value) if self.fee_value else None,
+            "min_fee": float(self.min_fee) if self.min_fee else None,
+            "max_fee": float(self.max_fee) if self.max_fee else None,
+            "currency": self.currency,
+            "applies_to": self.applies_to,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CommissionCharge(Base):
+    """Record of commission charges applied."""
+    
+    __tablename__ = "commission_charges"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    config_id = Column(Integer, ForeignKey("commission_configs.id"), nullable=False)
+    transaction_id = Column(String(255), nullable=False, index=True)  # Deal ID, Trade ID, etc.
+    transaction_type = Column(String(50), nullable=False)  # "trade", "deal", "market", etc.
+    amount = Column(Numeric(19, 4), nullable=False)
+    currency = Column(String(3), nullable=False)
+    payer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    calculation_details = Column(JSONB, nullable=True)  # How fee was calculated
+    payment_event_id = Column(Integer, ForeignKey("payment_events.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    config = relationship("CommissionConfig")
+    payer = relationship("User")
+    payment_event = relationship("PaymentEvent", foreign_keys=[payment_event_id])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "config_id": self.config_id,
+            "transaction_id": self.transaction_id,
+            "transaction_type": self.transaction_type,
+            "amount": float(self.amount) if self.amount else None,
+            "currency": self.currency,
+            "payer_id": self.payer_id,
+            "calculation_details": self.calculation_details,
+            "payment_event_id": self.payment_event_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
