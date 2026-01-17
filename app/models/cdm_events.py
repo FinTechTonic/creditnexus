@@ -993,3 +993,67 @@ def generate_cdm_research_query(
             "version": 1
         }
     }
+
+
+def generate_cdm_sharing_event(
+    event_id: str,
+    event_type: str,  # "send" or "receive"
+    sender_user_id: Optional[int],
+    receiver_user_id: Optional[int],
+    receiver_email: Optional[str],
+    receiver_wallet_address: Optional[str],
+    file_hash: str,
+    workflow_id: Optional[str] = None,
+    deal_id: Optional[str] = None,
+    blockchain_tx_hash: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Generate CDM-compliant Sharing event.
+
+    Args:
+        event_id: Sharing event ID
+        event_type: "send" or "receive"
+        sender_user_id: Sender user ID
+        receiver_user_id: Receiver user ID
+        receiver_email: Receiver email
+        receiver_wallet_address: Receiver wallet address
+        file_hash: SHA-256 hash of shared file
+        workflow_id: Optional workflow ID
+        deal_id: Optional deal ID
+        blockchain_tx_hash: Optional blockchain transaction hash
+
+    Returns:
+        CDM-compliant Sharing event dictionary
+    """
+    return {
+        "eventType": "Sharing",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "sharing": {
+            "sharingIdentifier": {
+                "issuer": "CreditNexus_SharingService",
+                "assignedIdentifier": [{"identifier": {"value": f"SHARING_{event_id}"}}]
+            },
+            "eventType": event_type,  # send or receive
+            "senderPartyReference": {
+                "globalReference": str(sender_user_id) if sender_user_id else None
+            } if sender_user_id else None,
+            "receiverPartyReference": {
+                "globalReference": str(receiver_user_id) if receiver_user_id else None,
+                "email": receiver_email,
+                "walletAddress": receiver_wallet_address,
+            } if receiver_user_id or receiver_email or receiver_wallet_address else None,
+            "fileHash": file_hash,
+            "workflowIdentifier": {
+                "assignedIdentifier": [{"identifier": {"value": workflow_id}}]
+            } if workflow_id else None,
+            "dealIdentifier": {
+                "assignedIdentifier": [{"identifier": {"value": deal_id}}]
+            } if deal_id else None,
+            "blockchainTransactionHash": blockchain_tx_hash,
+            "sharingDate": {"date": datetime.date.today().isoformat()}
+        },
+        "meta": {
+            "globalKey": str(uuid.uuid4()),
+            "sourceSystem": "CreditNexus_SharingService_v1",
+            "version": 1
+        }
+    }
