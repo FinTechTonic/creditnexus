@@ -1,0 +1,79 @@
+# TODO: Task 4.6 - Stock Prediction Metrics Implementation
+# 
+# This file will be created when the stock prediction service is implemented.
+# 
+# File: app/services/stock_prediction_service.py (to be created)
+# 
+# Implementation Requirements:
+# 
+# 1. Import metrics at top of file:
+#    ```python
+#    try:
+#        from app.core.metrics import (
+#            stock_predictions_total,
+#            stock_prediction_duration_seconds,
+#            stock_prediction_gpu_memory_bytes
+#        )
+#        METRICS_AVAILABLE = True
+#    except ImportError:
+#        METRICS_AVAILABLE = False
+#    ```
+# 
+# 2. Add time tracking to prediction methods:
+#    - Line: At start of prediction method
+#    - Code: `start_time = time.time()`
+# 
+# 3. Record duration after successful prediction:
+#    - Line: After successful prediction result
+#    - Code:
+#      ```python
+#      duration = time.time() - start_time
+#      if METRICS_AVAILABLE:
+#          stock_predictions_total.labels(
+#              timeframe=timeframe,  # "daily", "hourly", "15min"
+#              status="success"
+#          ).inc()
+#          stock_prediction_duration_seconds.labels(
+#              timeframe=timeframe
+#          ).observe(duration)
+#      ```
+# 
+# 4. Record GPU memory if available:
+#    - Line: After successful prediction (if GPU used)
+#    - Code:
+#      ```python
+#      if METRICS_AVAILABLE and gpu_memory_available:
+#          gpu_memory = get_gpu_memory_usage()  # Requires pynvml or similar
+#          stock_prediction_gpu_memory_bytes.labels(
+#              timeframe=timeframe
+#          ).observe(gpu_memory)
+#      ```
+# 
+# 5. Record error metrics in exception handlers:
+#    - Line: In exception handler
+#    - Code:
+#      ```python
+#      duration = time.time() - start_time
+#      if METRICS_AVAILABLE:
+#          stock_predictions_total.labels(
+#              timeframe=timeframe,
+#              status="error"
+#          ).inc()
+#          stock_prediction_duration_seconds.labels(
+#              timeframe=timeframe
+#          ).observe(duration)
+#      ```
+# 
+# 6. Support all timeframes:
+#    - "daily" - Daily stock predictions
+#    - "hourly" - Hourly stock predictions  
+#    - "15min" - 15-minute stock predictions
+# 
+# Related Files:
+# - dev/STOCK_PREDICTION_VENDORING_PLAN.md - Service implementation plan
+# - app/core/metrics.py - Metrics definitions (already implemented)
+# - dev/PROMETHEUS_METRICS_OUTSTANDING_TASKS.md - This task documentation
+# 
+# Status: Pending - Waiting for stock prediction service implementation
+# Priority: Low
+# Estimated Time: 1 hour (when service exists)

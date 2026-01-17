@@ -35,6 +35,7 @@ from app.api.p2p_routes import router as p2p_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
+from app.api.metrics_routes import router as metrics_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -161,6 +162,35 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize x402 payment service: {e}")
             if settings.X402_ENABLED:
                 raise  # Fail fast if x402 is required
+    
+    # Initialize metrics
+    if settings.METRICS_ENABLED:
+        try:
+            from app.core.metrics import initialize_app_info
+            from app.core.config import settings
+            
+            # Determine environment
+            environment = "production" if os.environ.get("REPLIT_DEPLOYMENT") == "1" or os.environ.get("ENVIRONMENT") == "production" else "development"
+            
+            # Initialize app info
+            initialize_app_info(version="1.0.0", environment=environment)
+            logger.info("Prometheus metrics initialized")
+            
+            # Start system metrics collector (optional)
+            if settings.SYSTEM_METRICS_ENABLED:
+                from app.core.system_metrics import start_system_metrics_collector
+                app.state.metrics_task = asyncio.create_task(
+                    start_system_metrics_collector(interval=settings.METRICS_COLLECT_INTERVAL)
+                )
+                logger.info(f"System metrics collector started (interval: {settings.METRICS_COLLECT_INTERVAL}s)")
+            else:
+                app.state.metrics_task = None
+        except Exception as e:
+            logger.error(f"Failed to initialize metrics: {e}", exc_info=True)
+            # Don't fail startup if metrics fail
+            app.state.metrics_task = None
+    else:
+        app.state.metrics_task = None
     else:
         logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
         app.state.x402_payment_service = None
@@ -430,6 +460,15 @@ async def lifespan(app: FastAPI):
     
     # Cleanup
     try:
+        # Stop system metrics collector
+        if settings.METRICS_ENABLED and hasattr(app.state, 'metrics_task') and app.state.metrics_task:
+            app.state.metrics_task.cancel()
+            try:
+                await app.state.metrics_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("System metrics collector stopped")
+        
         if settings.POLICY_ENABLED and hasattr(app.state, 'policy_config_loader'):
             policy_config_loader = app.state.policy_config_loader
             if policy_config_loader:
@@ -548,6 +587,11 @@ if settings.SECURITY_HEADERS_ENABLED:
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         return response
 
+# Metrics middleware (after security headers)
+if settings.METRICS_ENABLED:
+    from app.middleware.metrics_middleware import MetricsMiddleware
+    app.add_middleware(MetricsMiddleware)
+
 # Make limiter available globally for route decorators
 # Routes can access it via: from server import limiter (if enabled)
 # Or use: request.app.state.limiter in route functions
@@ -572,6 +616,10 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
 app.include_router(fdc3_router, prefix="/api/fdc3")
 app.include_router(implementation_router)
+
+# Metrics routes
+if settings.METRICS_ENABLED:
+    app.include_router(metrics_router)
 
 # GDPR compliance routes
 from app.api.gdpr_routes import gdpr_router

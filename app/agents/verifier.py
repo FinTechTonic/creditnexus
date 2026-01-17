@@ -8,6 +8,7 @@ This agent handles:
 """
 
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import os
@@ -20,6 +21,17 @@ from app.core.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import metrics (optional - only if metrics are enabled)
+try:
+    from app.core.metrics import (
+        verifications_total,
+        verification_duration_seconds
+    )
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    logger.debug("Metrics not available for verification tracking")
 
 
 # Sentinel Hub configuration
@@ -324,19 +336,36 @@ async def verify_asset_location(
     Returns:
         Dictionary with verification results
     """
+    start_time = time.time()
+    verification_type = "satellite" if get_sentinel_config() else "ground_truth"
+    
     logger.info(f"Starting verification for location ({lat}, {lon})")
     
-    # Fetch satellite data
-    bands = await fetch_sentinel_data(lat, lon)
-    
-    if bands is None:
-        return {
-            "success": False,
-            "error": "Failed to fetch satellite data",
-            "ndvi_score": None,
-            "risk_status": "ERROR",
-            "verified_at": datetime.utcnow().isoformat()
-        }
+    try:
+        # Fetch satellite data
+        bands = await fetch_sentinel_data(lat, lon)
+        
+        if bands is None:
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                verifications_total.labels(
+                    status="failed",
+                    type=verification_type
+                ).inc()
+                
+                verification_duration_seconds.labels(
+                    type=verification_type
+                ).observe(duration)
+            
+            return {
+                "success": False,
+                "error": "Failed to fetch satellite data",
+                "ndvi_score": None,
+                "risk_status": "ERROR",
+                "verified_at": datetime.utcnow().isoformat()
+            }
     
     nir_band, red_band = bands
     
@@ -420,8 +449,39 @@ async def verify_asset_location(
             logger.warning(f"Enhanced metrics failed, continuing with basic verification: {e}", exc_info=True)
             # Continue with basic result if enhanced metrics fail
     
-    logger.info(f"Verification complete: NDVI={ndvi_score:.4f}, status={risk_status}")
-    return result
+        logger.info(f"Verification complete: NDVI={ndvi_score:.4f}, status={risk_status}")
+        
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            verifications_total.labels(
+                status="success",
+                type=verification_type
+            ).inc()
+            
+            verification_duration_seconds.labels(
+                type=verification_type
+            ).observe(duration)
+        
+        return result
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        
+        # Record error metrics
+        if METRICS_AVAILABLE:
+            verifications_total.labels(
+                status="failed",
+                type=verification_type
+            ).inc()
+            
+            verification_duration_seconds.labels(
+                type=verification_type
+            ).observe(duration)
+        
+        logger.error(f"Verification failed: {e}", exc_info=True)
+        raise
 
 
 # Demo function

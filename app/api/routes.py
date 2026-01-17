@@ -3,6 +3,7 @@
 import logging
 import io
 import json
+import time
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
@@ -11,6 +12,20 @@ from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
 import pandas as pd
+
+# Import metrics (optional - only if metrics are enabled)
+try:
+    from app.core.metrics import (
+        documents_processed_total,
+        document_processing_duration_seconds,
+        trades_executed_total,  # TODO: Task 4.4 - Trade execution metrics
+        trade_value_total  # TODO: Task 4.4 - Trade execution metrics
+    )
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.debug("Metrics not available for document processing tracking")
 
 from app.chains.extraction_chain import extract_data, extract_data_smart
 from app.models.cdm import ExtractionResult, CreditAgreement
@@ -188,6 +203,9 @@ async def extract_credit_agreement(
     from app.db.models import PolicyDecision as PolicyDecisionModel
     from app.models.cdm_events import generate_cdm_policy_evaluation
     
+    start_time = time.time()
+    file_type = "text"  # Default for text extraction
+    
     try:
         logger.info(f"Received extraction request for {len(request.text)} characters")
         
@@ -195,6 +213,19 @@ async def extract_credit_agreement(
             text=request.text,
             force_map_reduce=request.force_map_reduce
         )
+        
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="success",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
         
         if result is None:
             raise HTTPException(
@@ -421,6 +452,8 @@ async def upload_and_extract(file: UploadFile = File(...)):
             detail={"status": "error", "message": f"Unsupported file type: {extension or file.content_type}. Supported types: PDF, TXT"}
         )
     
+    start_time = time.time()
+    
     try:
         content = await file.read()
         
@@ -430,6 +463,19 @@ async def upload_and_extract(file: UploadFile = File(...)):
             text = content.decode("utf-8", errors="replace")
         
         if not text.strip():
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                documents_processed_total.labels(
+                    status="error",
+                    type=file_type
+                ).inc()
+                
+                document_processing_duration_seconds.labels(
+                    type=file_type
+                ).observe(duration)
+            
             raise HTTPException(
                 status_code=422,
                 detail={"status": "error", "message": "The uploaded file contains no extractable text."}
@@ -439,6 +485,19 @@ async def upload_and_extract(file: UploadFile = File(...)):
         
         result = extract_data_smart(text=text, force_map_reduce=False)
         
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="success",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         if result is None:
             raise HTTPException(
                 status_code=422,
@@ -446,6 +505,19 @@ async def upload_and_extract(file: UploadFile = File(...)):
             )
         
         if result.status == ExtractionStatus.FAILURE:
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                documents_processed_total.labels(
+                    status="error",
+                    type=file_type
+                ).inc()
+                
+                document_processing_duration_seconds.labels(
+                    type=file_type
+                ).observe(duration)
+            
             raise HTTPException(
                 status_code=422,
                 detail={"status": "irrelevant_document", "message": result.message or "This document does not appear to be a credit agreement."}
@@ -1827,6 +1899,9 @@ async def extract_from_images(
     from app.chains.extraction_chain import extract_data_smart
     from app.models.cdm import ExtractionStatus
     
+    start_time = time.time()
+    file_type = "image"
+    
     # Validate file types
     supported_extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"]
     image_files = []
@@ -1890,6 +1965,19 @@ async def extract_from_images(
         
         logger.info(f"OCR complete: {len(combined_text)} characters extracted from {len(image_files)} image(s)")
         
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="success",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         # Prepare response
         response_data = {
             "status": "success",
@@ -1946,8 +2034,34 @@ async def extract_from_images(
         return response_data
         
     except HTTPException:
+        duration = time.time() - start_time
+        
+        # Record error metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="error",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         raise
     except Exception as e:
+        duration = time.time() - start_time
+        
+        # Record error metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="error",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         logger.error(f"Unexpected error during image extraction: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -8208,6 +8322,11 @@ async def execute_trade(
     from app.db.models import PolicyDecision as PolicyDecisionModel
     from app.models.cdm import CreditAgreement
     
+    # TODO: Task 4.4 - Trade Execution Metrics
+    # Add metrics tracking: start_time = time.time() at line ~8323
+    # Determine trade type (default to "buy" for loan trades)
+    trade_type = "buy"  # Default for loan trades (can be extracted from CDM event if needed)
+    
     try:
         logger.info(
             f"Trade execution request: trade_id={trade_request.trade_id}, "
@@ -8296,6 +8415,10 @@ async def execute_trade(
                         # Handle foreign key validation errors gracefully
                         logger.warning(f"Could not persist policy decision to database: {e}. Continuing with block decision.")
                         db.rollback()
+                    
+                    # TODO: Task 4.4 - Trade Execution Metrics
+                    # Record metrics for BLOCK decision at line ~8412
+                    # trades_executed_total.labels(status="blocked", type=trade_type).inc()
                     
                     return {
                         "status": "blocked",
@@ -8395,6 +8518,11 @@ async def execute_trade(
             # Don't fail the request if vector store storage fails
         
         # Step 5: Return trade execution result
+        # TODO: Task 4.4 - Trade Execution Metrics
+        # Record success metrics at line ~8510 (after successful execution)
+        # trades_executed_total.labels(status="success", type=trade_type).inc()
+        # trade_value_total.labels(type=trade_type).inc(float(trade_request.amount))
+        
         return {
             "status": "executed",
             "trade_id": trade_request.trade_id,
@@ -8410,6 +8538,10 @@ async def execute_trade(
     except HTTPException:
         raise
     except Exception as e:
+        # TODO: Task 4.4 - Trade Execution Metrics
+        # Record error metrics at line ~8524 (in exception handler)
+        # trades_executed_total.labels(status="failed", type=trade_type).inc()
+        
         logger.error(f"Unexpected error during trade execution: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
