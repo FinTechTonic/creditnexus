@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
 import type { CreditAgreementData, Facility, CreditNexusLoanContext } from '@/context/FDC3Context';
 import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTriangle, Shield, XCircle, Wallet, Loader2, Search, ChevronDown } from 'lucide-react';
 import { PermissionGate } from '@/components/PermissionGate';
@@ -299,7 +300,7 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
     }));
     
     try {
-      const response = await fetch(`/api/trades/${tradeId}/settle`, {
+      const response = await fetch(resolveApiUrl(`/api/trades/${tradeId}/settle`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

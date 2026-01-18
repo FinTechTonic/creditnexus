@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { MapView } from './MapView';
 import { useVerificationWebSocket } from '@/hooks/useVerificationWebSocket';
+import { resolveApiUrl } from '@/utils/apiBase';
 import { useLayerStore } from '@/stores/layerStore';
 import { VerificationProgress } from './VerificationProgress';
 import type { LayerUpdate, VerificationProgress as VerificationProgressType, VerificationComplete } from '@/types/layers';
@@ -117,7 +118,7 @@ export function RealTimeMapView({
   const fetchLayers = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/layers/${assetId}`, {
+      const response = await fetch(resolveApiUrl(`/api/layers/${assetId}`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }

@@ -1,6 +1,8 @@
+import { resolveApiUrl } from './apiBase';
+
 /**
  * Utility function to download ICS file for a meeting.
- * 
+ *
  * @param meetingId - The ID of the meeting to download ICS file for
  * @returns Promise that resolves when download is complete
  */
@@ -11,7 +13,7 @@ export async function downloadICSFile(meetingId: number): Promise<void> {
       'Authorization': `Bearer ${token}`,
     };
 
-    const response = await fetch(`/api/meetings/${meetingId}/ics`, {
+    const response = await fetch(resolveApiUrl(`/api/meetings/${meetingId}/ics`), {
       method: 'GET',
       headers,
     });

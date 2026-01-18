@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useFDC3 } from '@/context/FDC3Context';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
 import { DropZone } from './DropZone';
 import { AgentTerminal } from './AgentTerminal';
 import { MapView } from './MapView';
@@ -326,7 +327,7 @@ export default function VerificationDashboard() {
             setTimeout(async () => {
                 // We'll keep this mock or connect to real event endpoint if time permits, 
                 // but for now the audit workflow is the key.
-                const cdmRes = await fetch('/api/cdm/events/LOAN-2024-KILLSHOT');
+                const cdmRes = await fetch(resolveApiUrl('/api/cdm/events/LOAN-2024-KILLSHOT'));
                 const cdmData = await cdmRes.json();
                 setCdmEvents(cdmData);
 

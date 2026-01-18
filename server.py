@@ -1,6 +1,12 @@
 """FastAPI application entry point for CreditNexus backend."""
 
 import logging
+import warnings
+
+# Suppress Pydantic Annotated/Field metadata warnings from deps (e.g. repr=, frozen= in Field())
+warnings.filterwarnings('ignore', message=".*'repr' attribute.*", module='pydantic.*')
+warnings.filterwarnings('ignore', message=".*'frozen' attribute.*", module='pydantic.*')
+
 # Trigger reload
 import os
 import asyncio

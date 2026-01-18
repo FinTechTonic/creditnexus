@@ -382,7 +382,7 @@ class Settings(BaseSettings):
     SEED_APPLICANT: bool = False  # Seed applicant demo user
     
     # Security Configuration
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:8000", "https://josephrp.github.io"]  # CORS allowed origins
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:8000", "https://josephrp.github.io", "null"]  # "null" = Origin for file:// (Electron loadFile)
     CORS_ALLOW_CREDENTIALS: bool = True  # Allow credentials in CORS
     SESSION_SAME_SITE: str = "strict"  # Session cookie same-site policy: "strict", "lax", or "none"
     SESSION_SECURE: bool = True  # Require HTTPS for session cookies
