@@ -247,8 +247,8 @@ export function SignatureStatus({ documentId, signatureId }: SignatureStatusProp
   }
 
   const daysUntilExpiry = getDaysUntilExpiry(signature.expires_at);
-  const allSigned = signature.signers.every((s) => s.signed_at);
-  const pendingSigners = signature.signers.filter((s) => !s.signed_at);
+  // const allSigned = signature.signers.every((s) => s.signed_at); // unused
+  // const pendingSigners = signature.signers.filter((s) => !s.signed_at); // unused
 
   return (
     <Card className="bg-slate-800 border-slate-700">

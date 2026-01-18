@@ -6,25 +6,11 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
   Search, 
   FileText, 
-  Building2, 
-  Calendar, 
-  DollarSign, 
-  Scale, 
-  CheckCircle2,
-  Loader2,
   AlertCircle,
-  Eye,
-  X,
-  Users,
-  Briefcase,
-  Info,
-  ExternalLink,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -68,7 +54,7 @@ export function DocumentCdmSelector({
   const [documents, setDocuments] = useState<DocumentWithCdm[]>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSelecting, setIsSelecting] = useState(false);
+  // const [isSelecting, setIsSelecting] = useState(false); // Unused - kept for future use
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -190,7 +176,7 @@ export function DocumentCdmSelector({
 
   const handleDocumentSelect = useCallback(async (documentId: number) => {
     try {
-      setIsSelecting(true);
+      // setIsSelecting(true); // Unused
       setError(null);
       
       const response = await fetchWithAuth(`/api/documents/${documentId}?include_cdm_data=true`);
@@ -220,41 +206,42 @@ export function DocumentCdmSelector({
       setError(err instanceof Error ? err.message : 'Failed to select document');
       console.error('Error selecting document:', err);
     } finally {
-      setIsSelecting(false);
+      // setIsSelecting(false); // Unused
     }
   }, [onCdmDataSelect]);
 
-  const formatCurrency = (amount: number | null, currency: string | null): string => {
-    if (!amount) return 'N/A';
-    const currencySymbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency || '';
-    return `${currencySymbol}${amount.toLocaleString()}`;
-  };
+  // Helper functions - unused but kept for future use
+  // const formatCurrency = (amount: number | null, currency: string | null): string => {
+  //   if (!amount) return 'N/A';
+  //   const currencySymbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency || '';
+  //   return `${currencySymbol}${amount.toLocaleString()}`;
+  // };
 
-  const formatDate = (dateString: string | null): string => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleDateString();
-    } catch {
-      return dateString;
-    }
-  };
+  // const formatDate = (dateString: string | null): string => {
+  //   if (!dateString) return 'N/A';
+  //   try {
+  //     return new Date(dateString).toLocaleDateString();
+  //   } catch {
+  //     return dateString;
+  //   }
+  // };
 
-  const getStatusBadge = (state: string | null | undefined) => {
-    if (!state) return null;
-    const stateColors: Record<string, string> = {
-      'approved': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-      'published': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-      'under_review': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-      'draft': 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-    };
-    return stateColors[state] || 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-  };
+  // const getStatusBadge = (state: string | null | undefined) => {
+  //   if (!state) return null;
+  //   const stateColors: Record<string, string> = {
+  //     'approved': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  //     'published': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  //     'under_review': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  //     'draft': 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+  //   };
+  //   return stateColors[state] || 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+  // };
 
-  const getCompletenessColor = (score: number): string => {
-    if (score >= 80) return 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30';
-    if (score >= 50) return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
-    return 'text-red-400 bg-red-500/20 border-red-500/30';
-  };
+  // const getCompletenessColor = (score: number): string => {
+  //   if (score >= 80) return 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30';
+  //   if (score >= 50) return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
+  //   return 'text-red-400 bg-red-500/20 border-red-500/30';
+  // };
 
   const handlePreview = useCallback((doc: DocumentWithCdm) => {
     if (doc.cdmData && onPreview) {

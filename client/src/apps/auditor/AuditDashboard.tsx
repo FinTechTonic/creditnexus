@@ -5,7 +5,7 @@ import type { AuditEvent } from '@/components/audit/AuditTimeline';
 import { AuditFilters, AuditFilters as AuditFiltersType } from '@/components/audit/AuditFilters';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Download, RefreshCw, TrendingUp, Users, FileText, Shield, FileSearch } from 'lucide-react';
+import { Download, RefreshCw, TrendingUp, FileText, Shield, FileSearch } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface DashboardStatistics {

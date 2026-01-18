@@ -60,7 +60,7 @@ export interface UseX402PaymentReturn {
  * - Error handling
  */
 export function useX402Payment(): UseX402PaymentReturn {
-  const { isConnected, account, connect, signMessage } = useWallet();
+  const { isConnected, account, connect, signMessage: _signMessage } = useWallet(); // signMessage unused - prefix with _
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastTransactionHash, setLastTransactionHash] = useState<string | null>(null);

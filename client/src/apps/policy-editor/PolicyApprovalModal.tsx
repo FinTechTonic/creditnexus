@@ -14,7 +14,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { 
   CheckCircle2, 
   XCircle, 
-  X,
+  // X removed - unused
   Loader2,
   FileText,
   AlertCircle,

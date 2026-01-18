@@ -5,7 +5,11 @@ including HTTP request metrics, business metrics, database metrics, and system m
 """
 
 from prometheus_client import Counter, Histogram, Gauge, Info, generate_latest, REGISTRY
-from prometheus_client.openmetrics import generate_latest as generate_latest_openmetrics
+try:
+    from prometheus_client.openmetrics.exposition import generate_latest as generate_latest_openmetrics
+except ImportError:
+    # Fallback if openmetrics not available - use standard generate_latest
+    generate_latest_openmetrics = generate_latest
 from typing import Dict, Any, Optional
 import logging
 

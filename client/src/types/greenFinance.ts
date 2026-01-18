@@ -62,6 +62,7 @@ export interface GreenFinanceMetrics {
     data_source?: string;
   };
   sdg_alignment?: SDGAlignment;
+  last_verified_at?: string; // Timestamp of last verification
 }
 
 export interface GreenFinanceAssessment {

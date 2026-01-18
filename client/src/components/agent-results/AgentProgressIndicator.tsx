@@ -9,7 +9,6 @@
  * - Cancel action (if supported)
  */
 
-import React from 'react';
 import {
   Loader2,
   CheckCircle2,

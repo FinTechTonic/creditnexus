@@ -38,4 +38,4 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 }
 
-export { ErrorBoundary }
+// ErrorBoundary already exported above

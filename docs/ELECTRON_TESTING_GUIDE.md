@@ -1,0 +1,222 @@
+# Electron Testing Guide
+
+This guide explains how to test the CreditNexus Electron desktop application in both development and production modes.
+
+## Prerequisites
+
+Before testing, ensure you have:
+- ✅ Node.js 20+ installed
+- ✅ Python 3.11+ installed
+- ✅ PostgreSQL database running
+- ✅ `.env` file configured with database credentials
+- ✅ All dependencies installed (`npm install` in root and `client/`)
+
+## Development Testing
+
+### Step 1: Install Dependencies
+
+```bash
+# Install root dependencies (Electron, electron-builder, etc.)
+npm install
+
+# Install frontend dependencies
+cd client
+npm install
+cd ..
+```
+
+### Step 2: Start Development Mode
+
+The `electron:dev` script will:
+1. Start the Vite dev server (frontend) on port 5173
+2. Wait for the frontend to be ready
+3. Launch Electron with hot-reload enabled
+
+```bash
+npm run electron:dev
+```
+
+**What happens:**
+- Electron main process starts
+- Python FastAPI server is automatically spawned on port 8000
+- Electron window opens and loads `http://localhost:5173`
+- DevTools are automatically opened for debugging
+
+### Step 3: Verify Functionality
+
+Check the following:
+
+1. **Window Opens**: Electron window should appear with CreditNexus UI
+2. **Backend Connection**: Check DevTools console for API connection status
+3. **IPC Communication**: Test `window.electronAPI.getServerUrl()` in console
+4. **Server Health**: Backend should be accessible at `http://localhost:8000`
+5. **Hot Reload**: Make frontend changes and verify they appear automatically
+
+### Step 4: Test Key Features
+
+- ✅ Login/Registration
+- ✅ Unified Dashboard tabs
+- ✅ Permission-based UI (tabs should show/hide based on user role)
+- ✅ API calls to backend
+- ✅ FDC3 context broadcasting (if OpenFin/FDC3 available)
+
+## Production Build Testing
+
+### Step 1: Build the Frontend
+
+```bash
+npm run client:build
+```
+
+This creates optimized production files in `client/dist/`
+
+### Step 2: Build Electron App
+
+**For Windows:**
+```bash
+npm run electron:build:win
+```
+
+**For macOS:**
+```bash
+npm run electron:build:mac
+```
+
+**For Linux:**
+```bash
+npm run electron:build:linux
+```
+
+**For all platforms:**
+```bash
+npm run electron:build
+```
+
+### Step 3: Find Build Artifacts
+
+Builds are output to `dist-electron/`:
+- **Windows**: `CreditNexus Setup X.X.X.exe` (NSIS installer) and `CreditNexus X.X.X.exe` (portable)
+- **macOS**: `CreditNexus-X.X.X.dmg` and `CreditNexus-X.X.X-mac.zip`
+- **Linux**: `CreditNexus-X.X.X.AppImage` and `CreditNexus_X.X.X_amd64.deb`
+
+### Step 4: Test Production Build
+
+1. **Install/Run the built application**
+   - Windows: Run the `.exe` installer or portable executable
+   - macOS: Open the `.dmg` and drag to Applications
+   - Linux: Make AppImage executable (`chmod +x`) and run, or install `.deb`
+
+2. **Verify Production Mode**
+   - Window should load from `file://` protocol (not `http://localhost`)
+   - No DevTools should be open by default
+   - Backend server should still auto-start
+
+3. **Test Offline Capability**
+   - Close the app
+   - Disconnect from internet
+   - Reopen app - backend should still work (local server)
+
+## Manual Testing Checklist
+
+### Electron Main Process
+- [ ] Window opens with correct size (1400x900)
+- [ ] Window is resizable and has minimum size (1024x768)
+- [ ] Icon displays correctly
+- [ ] Python server starts automatically
+- [ ] Server health check works
+- [ ] IPC handlers respond correctly
+
+### Frontend Integration
+- [ ] React app loads in Electron window
+- [ ] API calls work (check Network tab in DevTools)
+- [ ] Authentication flow works
+- [ ] Unified Dashboard displays correctly
+- [ ] Tabs show/hide based on permissions
+- [ ] Navigation works
+
+### Backend Integration
+- [ ] FastAPI server starts on port 8000
+- [ ] API endpoints respond correctly
+- [ ] Database connections work
+- [ ] Authentication endpoints work
+- [ ] CORS is properly configured
+
+### FDC3/Desktop Integration
+- [ ] FDC3 bridge initializes (if available)
+- [ ] Context broadcasting works
+- [ ] Intent handling works
+- [ ] Interoperability with other FDC3 apps (if installed)
+
+## Debugging Tips
+
+### View Main Process Logs
+
+Electron main process logs appear in the terminal where you ran `npm run electron:dev`.
+
+### View Renderer Process Logs
+
+Open DevTools (automatically opened in dev mode):
+- **Windows/Linux**: `Ctrl+Shift+I` or `F12`
+- **macOS**: `Cmd+Option+I`
+
+### Check Server Status
+
+In DevTools console:
+```javascript
+// Check server URL
+window.electronAPI.getServerUrl().then(url => console.log('Server:', url));
+
+// Check server health
+window.electronAPI.checkServerHealth().then(health => console.log('Health:', health));
+```
+
+### Common Issues
+
+**Issue: "Cannot find module 'electron'"**
+- Solution: Run `npm install` in the root directory
+
+**Issue: Frontend doesn't load**
+- Solution: Ensure `npm run frontend` works separately, check port 5173 is available
+
+**Issue: Backend server doesn't start**
+- Solution: Check Python is in PATH, verify `server.py` exists, check `.env` file
+
+**Issue: "Module not found" in renderer**
+- Solution: Ensure `client/dist` exists (run `npm run client:build` first for production)
+
+**Issue: Window is blank**
+- Solution: Check DevTools console for errors, verify frontend build completed
+
+## Testing with Different User Roles
+
+Test permission-based UI by logging in as different user roles:
+
+1. **Admin**: Should see all tabs
+2. **Trader**: Should see Trading, Portfolio, Market tabs
+3. **Compliance Officer**: Should see Compliance tab
+4. **Applicant**: Should see limited tabs (Applications, Deals)
+
+## Automated Testing (Future)
+
+Consider adding:
+- Electron-specific unit tests with Spectron or Playwright
+- E2E tests for critical user flows
+- Integration tests for IPC communication
+- Backend API tests
+
+## CI/CD Testing
+
+The GitHub Actions workflow (`.github/workflows/build-electron.yml`) automatically:
+- Builds for Windows, macOS, and Linux
+- Uploads artifacts for download
+- Can be extended to run automated tests
+
+## Next Steps
+
+After successful testing:
+1. Test on different operating systems
+2. Test with different screen resolutions
+3. Test offline functionality
+4. Test with different database configurations
+5. Performance testing with large datasets
+6. Security testing (especially IPC communication)

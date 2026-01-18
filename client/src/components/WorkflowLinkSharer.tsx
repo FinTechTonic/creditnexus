@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Copy, Check, Share2, ExternalLink, Loader2, X } from 'lucide-react';
 import { useFDC3, createWorkflowLinkContext } from '@/context/FDC3Context';
-import { fetchWithAuth } from '@/context/AuthContext';
+// fetchWithAuth removed - unused
 import { useThemeClasses } from '@/utils/themeUtils';
 
 interface WorkflowLinkSharerProps {
@@ -18,6 +18,7 @@ interface WorkflowLinkSharerProps {
     description?: string;
     dealId?: number;
     documentId?: number;
+    workflowType?: string;
     senderInfo?: {
       user_id?: number;
       email?: string;
@@ -188,10 +189,10 @@ export function WorkflowLinkSharer({
                 <span className={classes.text.primary}>{metadata.description}</span>
               </div>
             )}
-            {metadata.workflowType && (
+            {(metadata?.workflowType || workflowType) && (
               <div>
                 <span className={classes.text.secondary}>Type: </span>
-                <span className={`${classes.text.primary} capitalize`}>{metadata.workflowType.replace('_', ' ')}</span>
+                <span className={`${classes.text.primary} capitalize`}>{(metadata?.workflowType || workflowType).replace('_', ' ')}</span>
               </div>
             )}
             {metadata.filesIncluded !== undefined && (
@@ -235,7 +236,7 @@ export function WorkflowLinkSharer({
           )}
 
           {/* Native Share */}
-          {navigator.share && (
+          {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
             <Button
               onClick={handleNativeShare}
               disabled={sharing}

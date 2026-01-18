@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
 interface WalletState {
   isConnected: boolean;
@@ -31,11 +31,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     checkConnection();
     
     // Listen for account changes
-    if (typeof window.ethereum !== 'undefined') {
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
+    if (typeof window.ethereum !== 'undefined' && window.ethereum.on) {
+      window.ethereum.on('accountsChanged', handleAccountsChanged as (accounts: unknown) => void);
+      window.ethereum.on('chainChanged', handleChainChanged as (chainId: unknown) => void);
       window.ethereum.on('disconnect', handleDisconnect);
-      window.ethereum.on('connect', handleConnect);
+      window.ethereum.on('connect', handleConnect as (connectInfo: unknown) => void);
     }
 
     // Periodic connection check (hot reload support)
@@ -46,11 +46,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }, 30000); // Check every 30 seconds
 
     return () => {
-      if (typeof window.ethereum !== 'undefined') {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
+      if (typeof window.ethereum !== 'undefined' && window.ethereum.removeListener) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged as (accounts: unknown) => void);
+        window.ethereum.removeListener('chainChanged', handleChainChanged as (chainId: unknown) => void);
         window.ethereum.removeListener('disconnect', handleDisconnect);
-        window.ethereum.removeListener('connect', handleConnect);
+        window.ethereum.removeListener('connect', handleConnect as (connectInfo: unknown) => void);
       }
       clearInterval(connectionCheckInterval);
     };
@@ -63,11 +63,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      if (accounts.length > 0) {
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        const currentAccount = accounts[0] as string;
-        const currentChainId = parseInt(chainId as string, 16);
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[];
+      if (Array.isArray(accounts) && accounts.length > 0) {
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' }) as string;
+        const currentAccount = accounts[0];
+        const currentChainId = parseInt(chainId, 16);
         
         // Only update state if connection status changed
         setState(prev => {
@@ -112,8 +112,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleAccountsChanged = (accounts: string[]) => {
-    if (accounts.length === 0) {
+  const handleAccountsChanged = (accounts: unknown) => {
+    if (!Array.isArray(accounts) || accounts.length === 0) {
       setState({
         isConnected: false,
         account: null,
@@ -129,10 +129,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleChainChanged = (chainId: string) => {
+  const handleChainChanged = (chainId: unknown) => {
+    const chainIdStr = typeof chainId === 'string' ? chainId : String(chainId);
     setState(prev => ({
       ...prev,
-      chainId: parseInt(chainId, 16),
+      chainId: parseInt(chainIdStr, 16),
     }));
   };
 
@@ -146,16 +147,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const handleConnect = async (connectInfo: { chainId: string }) => {
+  const handleConnect = async (connectInfo: unknown) => {
     // Auto-reconnect when MetaMask reconnects
     try {
-      const accounts = await window.ethereum?.request({ method: 'eth_accounts' });
+      if (!window.ethereum) return;
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+        const connectInfoObj = connectInfo as { chainId?: string };
+        const chainId = connectInfoObj?.chainId || '0x1';
         setState(prev => ({
           ...prev,
           isConnected: true,
           account: accounts[0] as string,
-          chainId: parseInt(connectInfo.chainId, 16),
+          chainId: parseInt(chainId, 16),
           provider: window.ethereum,
           error: null,
         }));
@@ -175,13 +179,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts',
-      });
+      }) as string[];
 
-      if (accounts.length === 0) {
+      if (!Array.isArray(accounts) || accounts.length === 0) {
         throw new Error('No accounts found');
       }
 
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' }) as string;
 
       setState({
         isConnected: true,
@@ -212,6 +216,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       throw new Error('Wallet not connected');
     }
 
+    if (typeof window.ethereum === 'undefined') {
+      throw new Error('Ethereum provider not available');
+    }
+
     try {
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
@@ -228,7 +236,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   };
 
   const signMessage = async (message: string): Promise<string> => {
-    if (!state.account || !state.provider) {
+    if (!state.account || !state.provider || !window.ethereum) {
       throw new Error('Wallet not connected');
     }
 

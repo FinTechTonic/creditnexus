@@ -366,89 +366,89 @@ async def verify_asset_location(
                 "risk_status": "ERROR",
                 "verified_at": datetime.utcnow().isoformat()
             }
+        
+        nir_band, red_band = bands
+        
+        # Calculate NDVI
+        ndvi_score = calculate_ndvi(nir_band, red_band)
+        
+        # Determine risk status
+        risk_status = determine_risk_status(ndvi_score, threshold)
+        
+        result = {
+            "success": True,
+            "ndvi_score": ndvi_score,
+            "risk_status": risk_status,
+            "threshold": threshold,
+            "verified_at": datetime.utcnow().isoformat(),
+            "data_source": "sentinel_hub" if get_sentinel_config() else "synthetic"
+        }
     
-    nir_band, red_band = bands
-    
-    # Calculate NDVI
-    ndvi_score = calculate_ndvi(nir_band, red_band)
-    
-    # Determine risk status
-    risk_status = determine_risk_status(ndvi_score, threshold)
-    
-    result = {
-        "success": True,
-        "ndvi_score": ndvi_score,
-        "risk_status": risk_status,
-        "threshold": threshold,
-        "verified_at": datetime.utcnow().isoformat(),
-        "data_source": "sentinel_hub" if get_sentinel_config() else "synthetic"
-    }
-    
-    # Enhanced metrics if enabled
-    if include_enhanced and settings.ENHANCED_SATELLITE_ENABLED:
-        try:
-            from app.services.osm_service import OSMService
-            from app.services.location_classifier import LocationClassifier
-            from app.services.air_quality_service import AirQualityService
-            from app.services.sustainability_scorer import SustainabilityScorer
+        # Enhanced metrics if enabled
+        if include_enhanced and settings.ENHANCED_SATELLITE_ENABLED:
+            try:
+                from app.services.osm_service import OSMService
+                from app.services.location_classifier import LocationClassifier
+                from app.services.air_quality_service import AirQualityService
+                from app.services.sustainability_scorer import SustainabilityScorer
+                
+                logger.info("Fetching enhanced satellite metrics (OSM, air quality, sustainability)")
+                
+                osm_service = OSMService()
+                location_classifier = LocationClassifier()
+                air_quality_service = AirQualityService()
+                sustainability_scorer = SustainabilityScorer()
+                
+                # Get OSM data
+                osm_data = await osm_service.get_osm_features(lat, lon)
+                
+                # Classify location
+                location_type, confidence = await location_classifier.classify(
+                    lat, lon, osm_data
+                )
+                
+                # Get air quality
+                air_quality = await air_quality_service.get_air_quality(lat, lon)
+                
+                # Calculate sustainability score
+                sustainability = sustainability_scorer.calculate(
+                    ndvi_score=ndvi_score,
+                    air_quality=air_quality,
+                    location_type=location_type,
+                    osm_data=osm_data
+                )
+                
+                # Add enhanced metrics to result
+                result.update({
+                    "location_type": location_type,
+                    "location_confidence": confidence,
+                    "air_quality_index": air_quality.get("aqi"),
+                    "air_quality": {
+                        "pm25": air_quality.get("pm25"),
+                        "pm10": air_quality.get("pm10"),
+                        "no2": air_quality.get("no2"),
+                        "data_source": air_quality.get("data_source", "unknown")
+                    },
+                    "composite_sustainability_score": sustainability.get("composite_score"),
+                    "sustainability_components": sustainability.get("components"),
+                    "osm_metrics": {
+                        "building_count": osm_data.get("building_count"),
+                        "road_density": osm_data.get("road_density"),
+                        "building_density": osm_data.get("building_density"),
+                        "green_infrastructure_coverage": osm_data.get("green_coverage")
+                    }
+                })
+                
+                logger.info(
+                    f"Enhanced metrics: location={location_type}, "
+                    f"AQI={air_quality.get('aqi', 'N/A')}, "
+                    f"sustainability={sustainability.get('composite_score', 0):.3f}"
+                )
             
-            logger.info("Fetching enhanced satellite metrics (OSM, air quality, sustainability)")
-            
-            osm_service = OSMService()
-            location_classifier = LocationClassifier()
-            air_quality_service = AirQualityService()
-            sustainability_scorer = SustainabilityScorer()
-            
-            # Get OSM data
-            osm_data = await osm_service.get_osm_features(lat, lon)
-            
-            # Classify location
-            location_type, confidence = await location_classifier.classify(
-                lat, lon, osm_data
-            )
-            
-            # Get air quality
-            air_quality = await air_quality_service.get_air_quality(lat, lon)
-            
-            # Calculate sustainability score
-            sustainability = sustainability_scorer.calculate(
-                ndvi_score=ndvi_score,
-                air_quality=air_quality,
-                location_type=location_type,
-                osm_data=osm_data
-            )
-            
-            # Add enhanced metrics to result
-            result.update({
-                "location_type": location_type,
-                "location_confidence": confidence,
-                "air_quality_index": air_quality.get("aqi"),
-                "air_quality": {
-                    "pm25": air_quality.get("pm25"),
-                    "pm10": air_quality.get("pm10"),
-                    "no2": air_quality.get("no2"),
-                    "data_source": air_quality.get("data_source", "unknown")
-                },
-                "composite_sustainability_score": sustainability.get("composite_score"),
-                "sustainability_components": sustainability.get("components"),
-                "osm_metrics": {
-                    "building_count": osm_data.get("building_count"),
-                    "road_density": osm_data.get("road_density"),
-                    "building_density": osm_data.get("building_density"),
-                    "green_infrastructure_coverage": osm_data.get("green_coverage")
-                }
-            })
-            
-            logger.info(
-                f"Enhanced metrics: location={location_type}, "
-                f"AQI={air_quality.get('aqi', 'N/A')}, "
-                f"sustainability={sustainability.get('composite_score', 0):.3f}"
-            )
-            
-        except Exception as e:
-            logger.warning(f"Enhanced metrics failed, continuing with basic verification: {e}", exc_info=True)
-            # Continue with basic result if enhanced metrics fail
-    
+            except Exception as e:
+                logger.warning(f"Enhanced metrics failed, continuing with basic verification: {e}", exc_info=True)
+                # Continue with basic result if enhanced metrics fail
+        
         logger.info(f"Verification complete: NDVI={ndvi_score:.4f}, status={risk_status}")
         
         duration = time.time() - start_time

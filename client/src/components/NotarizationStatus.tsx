@@ -7,14 +7,11 @@ import {
   Shield,
   CheckCircle,
   Clock,
-  XCircle,
   AlertCircle,
-  Download,
   RefreshCw,
   Loader2,
   Wallet,
   Calendar,
-  ExternalLink,
   Copy,
 } from 'lucide-react';
 
@@ -190,7 +187,7 @@ export function NotarizationStatus({
 
   const signedCount = notarization.signatures?.filter(s => s.signed_at).length || 0;
   const requiredCount = notarization.required_signers?.length || 0;
-  const allSigned = signedCount >= requiredCount;
+  // const allSigned = signedCount >= requiredCount; // unused
 
   if (compact) {
     return (

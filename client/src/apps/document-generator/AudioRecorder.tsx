@@ -5,7 +5,7 @@
  * Records audio, transcribes it, and optionally extracts CDM data.
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, Square, Loader2, AlertCircle, CheckCircle2, Play, Pause } from 'lucide-react';
 import { fetchWithAuth } from '../../context/AuthContext';
 

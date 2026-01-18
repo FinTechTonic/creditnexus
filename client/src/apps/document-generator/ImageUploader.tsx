@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Camera, X, Loader2, AlertCircle, CheckCircle2, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Upload, Camera, X, Loader2, AlertCircle, CheckCircle2, Image as ImageIcon } from 'lucide-react';
 import { fetchWithAuth } from '../../context/AuthContext';
 
 interface ImageFile {

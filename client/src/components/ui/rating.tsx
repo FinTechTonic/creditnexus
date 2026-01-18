@@ -1,4 +1,4 @@
-import * as React from "react"
+// React import removed - unused (using JSX transform)
 import { cn } from "@/lib/utils"
 
 export interface RatingProps {
@@ -38,4 +38,4 @@ export function Rating({
   )
 }
 
-export { Rating }
+// Rating already exported above

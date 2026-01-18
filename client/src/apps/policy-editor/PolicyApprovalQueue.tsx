@@ -8,7 +8,7 @@
  * - View policy details
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { 
@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 

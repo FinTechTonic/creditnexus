@@ -15,19 +15,16 @@ import {
   MessageSquare,
   Send,
   Loader2,
-  X,
-  Sparkles,
-  Workflow,
+  // X, Sparkles, Workflow removed - unused
   Search,
   BarChart3,
   User,
-  CheckCircle2,
-  AlertCircle,
+  // CheckCircle2, AlertCircle removed - unused
   Minimize2,
   Maximize2
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
-import { useFDC3 } from '@/context/FDC3Context';
+import { useFDC3, type WorkflowLinkContext } from '@/context/FDC3Context';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -62,7 +59,7 @@ export function DashboardChatbotPanel({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [workflowLaunching, setWorkflowLaunching] = useState<string | null>(null);
+  const [_workflowLaunching, setWorkflowLaunching] = useState<string | null>(null); // Prefix with _ - unused
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { broadcast } = useFDC3();
   const { addToast } = useToast();
@@ -149,13 +146,13 @@ export function DashboardChatbotPanel({
         // Broadcast FDC3 context if workflow was launched
         if (data.workflow_launched && data.workflow_result) {
           try {
-            await broadcast({
-              type: 'fdc3.creditnexus.workflow',
-              workflow: {
-                type: data.workflow_launched,
-                result: data.workflow_result
-              }
-            });
+            const workflowContext: WorkflowLinkContext = {
+              type: 'finos.creditnexus.workflow',
+              id: { workflowId: `workflow_${Date.now()}` },
+              workflowType: data.workflow_launched,
+              linkPayload: JSON.stringify(data.workflow_result)
+            };
+            await broadcast(workflowContext);
           } catch (e) {
             console.warn('Failed to broadcast FDC3 context:', e);
           }
@@ -238,13 +235,13 @@ export function DashboardChatbotPanel({
 
       // Broadcast FDC3 context
       try {
-        await broadcast({
-          type: 'fdc3.creditnexus.workflow',
-          workflow: {
-            type: workflowType,
-            result: result
-          }
-        });
+        const workflowContext: WorkflowLinkContext = {
+          type: 'finos.creditnexus.workflow',
+          id: { workflowId: `workflow_${Date.now()}` },
+          workflowType: workflowType,
+          linkPayload: JSON.stringify(result)
+        };
+        await broadcast(workflowContext);
       } catch (e) {
         console.warn('Failed to broadcast FDC3 context:', e);
       }

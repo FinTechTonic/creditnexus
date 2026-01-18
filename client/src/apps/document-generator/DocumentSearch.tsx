@@ -52,6 +52,7 @@ interface DocumentSearchProps {
   topK?: number;
   className?: string;
   theme?: 'light' | 'dark';
+  onError?: (error: string) => void;
 }
 
 export function DocumentSearch({

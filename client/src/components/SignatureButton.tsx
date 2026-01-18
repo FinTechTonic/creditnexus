@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenTool, Loader2, CheckCircle, AlertCircle, FileText } from 'lucide-react';
 import { SignatureRequestModal } from './SignatureRequestModal';
-import { fetchWithAuth, useAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext';
 
 interface SignatureButtonProps {
   documentId: number;

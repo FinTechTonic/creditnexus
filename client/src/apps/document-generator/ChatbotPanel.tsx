@@ -9,25 +9,20 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useParams, useLocation } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
-  MessageSquare,
   Send,
   Loader2,
   AlertCircle,
   Sparkles,
   FileText,
-  CheckCircle2,
-  ChevronRight,
   X,
   Building2,
-  Calendar,
   Clock,
   Folder,
   ListChecks,
   Info,
   Search,
-  ChevronDown,
 } from 'lucide-react';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { Button } from '../../components/ui/button';
@@ -108,7 +103,7 @@ interface ChatbotPanelProps {
 
 export function ChatbotPanel({
   cdmData = {},
-  onCdmDataUpdate,
+  onCdmDataUpdate: _onCdmDataUpdate, // Prefix with _ - unused
   onTemplateSelect,
   onClose,
   className = '',
@@ -116,7 +111,7 @@ export function ChatbotPanel({
   onDealIdChange,
 }: ChatbotPanelProps) {
   const { dealId: urlDealId } = useParams<{ dealId?: string }>();
-  const location = useLocation();
+  // const location = useLocation(); // Unused
   
   // Auto-select deal from URL if on deal detail page
   const [internalDealId, setInternalDealId] = useState<number | null>(() => {
@@ -138,17 +133,17 @@ export function ChatbotPanel({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [templateSuggestions, setTemplateSuggestions] = useState<TemplateSuggestion[]>([]);
+  const [_showSuggestions, setShowSuggestions] = useState(false); // Prefix with _ - setter is used
+  const [_templateSuggestions, setTemplateSuggestions] = useState<TemplateSuggestion[]>([]); // Prefix with _ - setter is used
   const [deal, setDeal] = useState<Deal | null>(null);
   const [dealDocuments, setDealDocuments] = useState<DealDocument[]>([]);
   const [templateRecommendations, setTemplateRecommendations] = useState<TemplateRecommendations | null>(null);
   const [loadingDealContext, setLoadingDealContext] = useState(false);
   const [showDealContext, setShowDealContext] = useState(true);
-  const [availableDeals, setAvailableDeals] = useState<Deal[]>([]);
-  const [loadingDeals, setLoadingDeals] = useState(false);
+  const [_availableDeals, setAvailableDeals] = useState<Deal[]>([]); // Prefix with _ to indicate setter is used
+  const [_loadingDeals, setLoadingDeals] = useState(false); // Prefix with _ to indicate setter is used
   const [showDealSelector, setShowDealSelector] = useState(false);
-  const [dealSearchQuery, setDealSearchQuery] = useState('');
+  const [dealSearchQuery, _setDealSearchQuery] = useState(''); // Prefix setter with _ - unused
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -247,23 +242,23 @@ export function ChatbotPanel({
     }
   }, [dealSearchQuery]);
 
-  const handleSelectDeal = useCallback((selectedDealId: number) => {
-    setInternalDealId(selectedDealId);
-    setShowDealSelector(false);
-    if (onDealIdChange) {
-      onDealIdChange(selectedDealId);
-    }
-  }, [onDealIdChange]);
+  // const _handleSelectDeal = useCallback((selectedDealId: number) => {
+  //   setInternalDealId(selectedDealId);
+  //   setShowDealSelector(false);
+  //   if (onDealIdChange) {
+  //     onDealIdChange(selectedDealId);
+  //   }
+  // }, [onDealIdChange]); // Unused - kept for future use
 
-  const handleClearDeal = useCallback(() => {
-    setInternalDealId(null);
-    setDeal(null);
-    setDealDocuments([]);
-    setTemplateRecommendations(null);
-    if (onDealIdChange) {
-      onDealIdChange(null);
-    }
-  }, [onDealIdChange]);
+  // const _handleClearDeal = useCallback(() => {
+  //   setInternalDealId(null);
+  //   setDeal(null);
+  //   setDealDocuments([]);
+  //   setTemplateRecommendations(null);
+  //   if (onDealIdChange) {
+  //     onDealIdChange(null);
+  //   }
+  // }, [onDealIdChange]); // Unused - kept for future use
 
   const addMessage = useCallback((role: 'user' | 'assistant', content: string, extras?: {
     suggestions?: TemplateSuggestion[];
@@ -319,7 +314,7 @@ export function ChatbotPanel({
         let suggestions: TemplateSuggestion[] | undefined;
         if (data.template_suggestions && data.template_suggestions.length > 0) {
           suggestions = data.template_suggestions;
-          setTemplateSuggestions(suggestions);
+          setTemplateSuggestions(suggestions || []);
           setShowSuggestions(true);
         }
 
@@ -400,68 +395,68 @@ export function ChatbotPanel({
     }
   }, [cdmData, addMessage]);
 
-  const handleFillFields = useCallback(async (requiredFields: string[]) => {
-    if (requiredFields.length === 0) {
-      setError('No required fields specified');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetchWithAuth('/api/chatbot/fill-fields', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          cdm_data: cdmData,
-          required_fields: requiredFields,
-          conversation_context: 'User is filling missing fields in CDM data for template generation',
-          deal_id: dealId || undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to get field guidance' }));
-        throw new Error(errorData.detail?.message || errorData.message || 'Field filling failed');
-      }
-
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        const fieldGuidance: FieldGuidance = {
-          missing_fields: data.missing_fields || [],
-          suggestions: data.suggestions || {},
-          questions: data.questions || [],
-          guidance: data.guidance || '',
-        };
-
-        if (data.all_fields_present && data.filled_data) {
-          // All fields are present, update CDM data
-          if (onCdmDataUpdate) {
-            onCdmDataUpdate(data.filled_data);
-          }
-          addMessage('assistant', 'Great! All required fields are now filled. Your CDM data has been updated.', {
-            fieldGuidance,
-          });
-        } else {
-          addMessage('assistant', data.guidance || 'Here\'s guidance on filling the missing fields:', {
-            fieldGuidance,
-          });
-        }
-      } else {
-        throw new Error(data.message || 'Field filling failed');
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to get field guidance';
-      setError(errorMessage);
-      addMessage('assistant', `I couldn't provide field guidance: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [cdmData, onCdmDataUpdate, addMessage]);
+  // const _handleFillFields = useCallback(async (requiredFields: string[]) => {
+  //   if (requiredFields.length === 0) {
+  //     setError('No required fields specified');
+  //     return;
+  //   }
+  //
+  //   setIsLoading(true);
+  //   setError(null);
+  //
+  //   try {
+  //     const response = await fetchWithAuth('/api/chatbot/fill-fields', {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         cdm_data: cdmData,
+  //         required_fields: requiredFields,
+  //         conversation_context: 'User is filling missing fields in CDM data for template generation',
+  //         deal_id: dealId || undefined,
+  //       }),
+  //     });
+  //
+  //     if (!response.ok) {
+  //       const errorData = await response.json().catch(() => ({ message: 'Failed to get field guidance' }));
+  //       throw new Error(errorData.detail?.message || errorData.message || 'Field filling failed');
+  //     }
+  //
+  //     const data = await response.json();
+  //
+  //     if (data.status === 'success') {
+  //       const fieldGuidance: FieldGuidance = {
+  //         missing_fields: data.missing_fields || [],
+  //         suggestions: data.suggestions || {},
+  //         questions: data.questions || [],
+  //         guidance: data.guidance || '',
+  //       };
+  //
+  //       if (data.all_fields_present && data.filled_data) {
+  //         // All fields are present, update CDM data
+  //         if (onCdmDataUpdate) {
+  //           onCdmDataUpdate(data.filled_data);
+  //         }
+  //         addMessage('assistant', 'Great! All required fields are now filled. Your CDM data has been updated.', {
+  //           fieldGuidance,
+  //         });
+  //       } else {
+  //         addMessage('assistant', data.guidance || 'Here\'s guidance on filling the missing fields:', {
+  //           fieldGuidance,
+  //         });
+  //       }
+  //     } else {
+  //       throw new Error(data.message || 'Field filling failed');
+  //     }
+  //   } catch (err) {
+  //     const errorMessage = err instanceof Error ? err.message : 'Failed to get field guidance';
+  //     setError(errorMessage);
+  //     addMessage('assistant', `I couldn't provide field guidance: ${errorMessage}`);
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // }, [cdmData, onCdmDataUpdate, addMessage]); // Unused - kept for future use
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

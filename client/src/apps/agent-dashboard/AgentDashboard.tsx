@@ -13,19 +13,13 @@
  * - Download reports
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   BarChart3,
   User,
-  Filter,
   RefreshCw,
-  Loader2,
   AlertCircle,
-  Eye,
-  Download,
-  Calendar,
-  TrendingUp,
   CheckCircle2,
   Clock,
   XCircle,
@@ -33,11 +27,9 @@ import {
   Sparkles
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AgentResultCard } from '@/components/agent-results/AgentResultCard';
 import type { AgentType } from '@/components/agent-results/AgentResultCard';
 import { DeepResearchResultView } from '@/components/agent-results/DeepResearchResultView';
@@ -93,9 +85,9 @@ export function AgentDashboard() {
       const allResults: AgentResult[] = [];
 
       // Process DeepResearch results
-      if (deepResearchRes.status === 'fulfilled' && deepResearchRes.value.ok) {
+      if (deepResearchRes.status === 'fulfilled' && deepResearchRes.value.ok && 'json' in deepResearchRes.value) {
         try {
-          const data = await deepResearchRes.value.json();
+          const data = await (deepResearchRes.value as Response).json();
           const items = Array.isArray(data) ? data : (data.results || data.items || []);
           items.forEach((item: any) => {
             allResults.push({
@@ -118,9 +110,9 @@ export function AgentDashboard() {
       }
 
       // Process LangAlpha results
-      if (langAlphaRes.status === 'fulfilled' && langAlphaRes.value.ok) {
+      if (langAlphaRes.status === 'fulfilled' && langAlphaRes.value.ok && 'json' in langAlphaRes.value) {
         try {
-          const data = await langAlphaRes.value.json();
+          const data = await (langAlphaRes.value as Response).json();
           const items = Array.isArray(data) ? data : (data.results || data.items || []);
           items.forEach((item: any) => {
             const report = item.report || {};
@@ -145,9 +137,9 @@ export function AgentDashboard() {
       }
 
       // Process PeopleHub results
-      if (peopleHubRes.status === 'fulfilled' && peopleHubRes.value.ok) {
+      if (peopleHubRes.status === 'fulfilled' && peopleHubRes.value.ok && 'json' in peopleHubRes.value) {
         try {
-          const data = await peopleHubRes.value.json();
+          const data = await (peopleHubRes.value as Response).json();
           const items = Array.isArray(data) ? data : (data.results || data.items || []);
           items.forEach((item: any) => {
             const profileData = item.profile_data || {};

@@ -8,7 +8,7 @@
  * - Version comparison
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { 
@@ -18,7 +18,6 @@ import {
   ChevronRight, 
   Loader2, 
   AlertCircle,
-  CheckCircle2,
   Clock,
   User
 } from 'lucide-react';
@@ -258,7 +257,7 @@ export function PolicyVersionHistory({
             </CardContent>
           </Card>
         ) : (
-          versions.map((version, index) => {
+          versions.map((version) => { // index removed - unused
             const isCurrent = policy && version.version === policy.version;
             const isSelected = selectedVersion?.version === version.version;
             

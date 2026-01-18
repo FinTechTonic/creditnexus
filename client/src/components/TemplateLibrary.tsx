@@ -8,7 +8,7 @@
  * - Quick actions
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchWithAuth } from '../context/AuthContext';
 import { Search, Filter, FileText, Sparkles, Info, Loader2, AlertCircle } from 'lucide-react';
 

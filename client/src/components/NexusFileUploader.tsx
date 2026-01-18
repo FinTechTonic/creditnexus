@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+// Button removed - unused
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Upload, FileText, Check, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, Check, Loader2, AlertCircle } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
 
 export function NexusFileUploader({

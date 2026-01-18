@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchWithAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,11 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft, Download, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
-interface ReportTemplate {
-  id: string;
-  name: string;
-  description: string;
-}
+// ReportTemplate interface removed - unused
 
 interface ReportGenerationRequest {
   report_type: 'overview' | 'deal' | 'loan' | 'filing' | 'custom';

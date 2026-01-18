@@ -9,19 +9,18 @@
  * - Policy evaluation results
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   BarChart3,
   TrendingUp,
-  TrendingDown,
-  CheckCircle2,
+  // TrendingDown, CheckCircle2 removed - unused
   AlertCircle,
   Loader2,
   Copy,
   Download,
   X,
   FileText,
-  Shield,
+  // Shield removed - unused
   Target,
   DollarSign,
   Activity
@@ -68,7 +67,7 @@ interface LangAlphaResultViewProps {
 export function LangAlphaResultView({
   analysisId,
   onClose,
-  dealId
+  dealId: _dealId // Prefix with _ - unused
 }: LangAlphaResultViewProps) {
   const [result, setResult] = useState<LangAlphaResult | null>(null);
   const [loading, setLoading] = useState(true);

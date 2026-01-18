@@ -11,12 +11,12 @@
 import { useState } from 'react';
 import { 
   FileText, 
-  X,
+  // X removed - unused
   Code,
   Tag,
-  Building2,
+  // Building2 removed - unused
   Calendar,
-  User,
+  // User removed - unused
   Copy,
   CheckCircle2
 } from 'lucide-react';

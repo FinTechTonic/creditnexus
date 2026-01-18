@@ -1,4 +1,4 @@
-import { useState } from 'react';
+// useState removed - unused
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Building2, Briefcase, Award, MapPin } from 'lucide-react';

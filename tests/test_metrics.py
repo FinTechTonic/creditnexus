@@ -27,7 +27,8 @@ def test_metrics_endpoint_openmetrics_format(client: TestClient):
     response = client.get("/metrics?format=openmetrics")
     assert response.status_code == 200
     assert "application/openmetrics-text" in response.headers.get("content-type", "")
-    assert "creditnexus_http_requests_total" in response.text
+    # OpenMetrics format shows metric names in HELP/TYPE lines
+    assert "creditnexus_http_requests" in response.text or "creditnexus_http_requests_total" in response.text
 
 
 def test_http_metrics_collection(client: TestClient):

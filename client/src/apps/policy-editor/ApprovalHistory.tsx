@@ -16,8 +16,7 @@ import {
   Clock,
   User,
   FileText,
-  Loader2,
-  Filter
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
@@ -149,7 +148,7 @@ export function ApprovalHistory({ policyId, className = '' }: ApprovalHistoryPro
         
         {!loading && history.length > 0 && (
           <div className="space-y-4">
-            {history.map((record, index) => (
+            {history.map((record) => ( // index removed - unused
               <div
                 key={record.id}
                 className="relative pl-8 pb-4 border-l-2 border-muted last:border-l-0 last:pb-0"

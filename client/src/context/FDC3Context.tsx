@@ -14,6 +14,8 @@ export interface Party {
   name: string;
   role: string;
   lei?: string;
+  legal_name?: string; // Alternative name field
+  address?: string; // Address field for CdmDataPreview
 }
 
 export interface Facility {
@@ -24,6 +26,9 @@ export interface Facility {
     payment_frequency: { period: string; period_multiplier: number };
   };
   maturity_date: string;
+  spread_bps?: number; // Direct access for convenience
+  facility_identification?: { facility_name: string }; // For CdmDataPreview
+  facility_type?: string; // For CdmDataPreview
 }
 
 export interface CreditAgreementData {
@@ -37,6 +42,7 @@ export interface CreditAgreementData {
   loan_identification_number?: string;
   extraction_status?: string;
   document_text?: string;
+  is_accounting_document?: boolean;
 }
 
 export interface CreditNexusLoanContext extends Context {
@@ -254,7 +260,7 @@ export function FDC3Provider({ children }: { children: ReactNode }) {
 
     if (available && window.fdc3) {
       const fdc3 = window.fdc3 as DesktopAgent;
-      let subscriptions: Listener[] = [];
+      const subscriptions: Listener[] = [];
 
       const initializeChannels = async () => {
         try {

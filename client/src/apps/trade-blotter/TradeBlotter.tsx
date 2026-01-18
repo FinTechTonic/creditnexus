@@ -6,7 +6,7 @@ import { fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData, Facility, CreditNexusLoanContext } from '@/context/FDC3Context';
 import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTriangle, Shield, XCircle, Wallet, Loader2, Search, ChevronDown } from 'lucide-react';
 import { PermissionGate } from '@/components/PermissionGate';
-import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
+import { PERMISSION_TRADE_EXECUTE } from '@/utils/permissions'; // PERMISSION_TRADE_VIEW removed - unused
 import { DashboardChatbotPanel } from '@/components/DashboardChatbotPanel';
 
 function addBusinessDays(date: Date, days: number): Date {
@@ -260,7 +260,7 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
         throw new Error(errorData.detail?.message || 'Settlement failed');
       }
       
-      const result = await response.json();
+      await response.json(); // result removed - unused
       
       // Trade settled successfully
       setState(prev => ({
@@ -314,7 +314,7 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
         throw new Error(errorData.detail?.message || 'Payment failed');
       }
       
-      const result = await response.json();
+      await response.json(); // result removed - unused
       
       // Payment successful - trade settled
       setState(prev => ({

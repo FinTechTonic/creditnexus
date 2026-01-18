@@ -39,6 +39,14 @@ interface GreenFinanceMetrics {
     data_source?: string;
   };
   location_confidence?: number;
+  sdg_alignment?: {
+    sdg_11?: number;
+    sdg_13?: number;
+    sdg_15?: number;
+    overall_alignment: number;
+    aligned_goals: string[];
+    needs_improvement: string[];
+  };
 }
 
 interface LoanAsset {
@@ -51,6 +59,7 @@ interface LoanAsset {
   last_verified_score?: number;
   spt_threshold?: number;
   current_interest_rate?: number;
+  last_verified_at?: string | Date; // Timestamp of last verification
   // Green Finance Metrics (Enhanced Satellite Verification)
   location_type?: string;
   air_quality_index?: number;

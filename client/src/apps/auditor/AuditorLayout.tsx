@@ -1,4 +1,4 @@
-import { useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { LayoutDashboard, FileText, Shield, FileSearch, BarChart } from 'lucide-react';
 

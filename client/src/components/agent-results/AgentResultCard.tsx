@@ -5,7 +5,6 @@
  * Shows agent type, timestamp, status, and quick preview.
  */
 
-import React from 'react';
 import {
   Search,
   BarChart3,
@@ -42,7 +41,7 @@ interface AgentResultCardProps {
 
 export function AgentResultCard({
   agentType,
-  id,
+  id: _id, // Prefix with _ - unused
   title,
   query,
   status,

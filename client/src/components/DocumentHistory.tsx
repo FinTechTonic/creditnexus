@@ -27,14 +27,13 @@ import {
   GitCompare,
   X,
   Edit2,
-  Share2,
-  Shield
+  Share2
 } from 'lucide-react';
-import { useAuth, fetchWithAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext';
 import { WorkflowActions } from './WorkflowActions';
 import { SkeletonDocumentList, EmptyState } from '@/components/ui/skeleton';
 import { PermissionGate } from '@/components/PermissionGate';
-import { PERMISSION_DOCUMENT_DELETE, PERMISSION_DOCUMENT_EDIT, PERMISSION_DOCUMENT_EXPORT } from '@/utils/permissions';
+import { PERMISSION_DOCUMENT_DELETE } from '@/utils/permissions';
 import { NotarizationButton } from './NotarizationButton';
 import { SignatureButton } from './SignatureButton';
 import { NotarizationStatus } from './NotarizationStatus';
@@ -110,7 +109,7 @@ interface DocumentHistoryProps {
 }
 
 export function DocumentHistory({ onViewData, onGenerateFromTemplate }: DocumentHistoryProps) {
-  const { isAuthenticated } = useAuth();
+  // const { isAuthenticated } = useAuth(); // isAuthenticated unused
   const navigate = useNavigate();
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<DocumentDetail | null>(null);

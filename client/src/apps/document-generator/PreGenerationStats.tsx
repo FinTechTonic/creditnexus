@@ -172,11 +172,11 @@ export function PreGenerationStats({
     return 'text-red-400';
   };
 
-  const getCompletenessBgColor = (score: number) => {
-    if (score >= 80) return 'bg-emerald-900/30';
-    if (score >= 50) return 'bg-yellow-900/30';
-    return 'bg-red-900/30';
-  };
+  // const getCompletenessBgColor = (score: number) => { // unused
+  //   if (score >= 80) return 'bg-emerald-900/30';
+  //   if (score >= 50) return 'bg-yellow-900/30';
+  //   return 'bg-red-900/30';
+  // };
 
   return (
     <div className={`space-y-4 ${className}`}>

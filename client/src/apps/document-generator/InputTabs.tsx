@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/ta
 import { AudioRecorder } from './AudioRecorder';
 import { ImageUploader } from './ImageUploader';
 import { DocumentSearch } from './DocumentSearch';
+import type { ExtractionResult, DocumentResult } from '../../apps/docu-digitizer/MultimodalInputTabs';
 
 interface InputTabsProps {
   onAudioComplete?: (result: {
@@ -18,12 +19,8 @@ interface InputTabsProps {
     agreement?: Record<string, unknown>;
     extraction_status?: string;
   }) => void;
-  onImageComplete?: (result: {
-    ocrText: string;
-    agreement?: Record<string, unknown>;
-    extraction_status?: string;
-  }) => void;
-  onDocumentSelect?: (document: {
+  onImageComplete?: (result: ExtractionResult) => void;
+  onDocumentSelect?: (document: DocumentResult | {
     id: number;
     title: string;
     cdm_data?: Record<string, unknown>;
@@ -81,7 +78,15 @@ export function InputTabs({
 
         <TabsContent value="audio" className="mt-4">
           <AudioRecorder
-            onTranscriptionComplete={onAudioComplete}
+            onTranscriptionComplete={(result) => {
+              if (onAudioComplete) {
+                onAudioComplete({
+                  transcription: result.transcription || '',
+                  agreement: result.agreement,
+                  extraction_status: result.extraction_status,
+                });
+              }
+            }}
             onError={onError}
             extractCdm={true}
           />
@@ -89,7 +94,11 @@ export function InputTabs({
 
         <TabsContent value="image" className="mt-4">
           <ImageUploader
-            onExtractionComplete={onImageComplete}
+            onExtractionComplete={(result) => {
+              if (onImageComplete) {
+                onImageComplete(result);
+              }
+            }}
             onError={onError}
             extractCdm={true}
           />
@@ -99,11 +108,8 @@ export function InputTabs({
           <DocumentSearch
             onDocumentSelect={(doc) => {
               if (onDocumentSelect) {
-                onDocumentSelect({
-                  id: doc.id,
-                  title: doc.title || '',
-                  cdm_data: doc.cdm_data,
-                });
+                // Pass the full DocumentResult directly
+                onDocumentSelect(doc);
               }
             }}
             onCdmDataSelect={(cdmData) => {

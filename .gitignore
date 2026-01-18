@@ -3,6 +3,8 @@ folder/
 .cursorrules
 *.mdc
 .cursor/
+dist/
+*.log
 
 # SSL/TLS Certificates and Keys (auto-generated and manual)
 ssl_certs/
@@ -74,6 +76,10 @@ yarn-debug.log*
 yarn-error.log*
 .npm
 .eslintcache
+
+# Electron / desktop build output (root)
+dist/
+*.log
 
 # Smart Contract Development
 contracts/.env

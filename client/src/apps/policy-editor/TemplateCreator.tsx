@@ -16,13 +16,13 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
-  X
+  // X removed - unused
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card'; // unused
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 

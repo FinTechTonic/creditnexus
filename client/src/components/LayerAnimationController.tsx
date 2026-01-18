@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Play, Pause, SkipBack, SkipForward, RotateCcw, Settings } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Settings } from 'lucide-react';
 import { useLayerStore } from '@/stores/layerStore';
 
 interface LayerAnimationControllerProps {
@@ -41,7 +41,7 @@ export function LayerAnimationController({
   } = useLayerStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const layers = getLayersForAsset(assetId);
   const currentLayer = layers[animation.currentIndex];

@@ -8,11 +8,11 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
-  Clock,
+  // Clock removed - unused
   ExternalLink,
   Filter,
   RefreshCw,
-  Download,
+  // Download removed - unused
   Loader2,
   Building2,
   Globe
@@ -65,7 +65,7 @@ export function FilingRequirementsPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterJurisdiction, setFilterJurisdiction] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [_filterStatus, _setFilterStatus] = useState<string>('all'); // Prefix with _ - unused
   const [preparingFiling, setPreparingFiling] = useState<number | null>(null);
   const [submittingFiling, setSubmittingFiling] = useState<number | null>(null);
 

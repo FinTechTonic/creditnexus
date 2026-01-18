@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectItem } from '@/components/ui/select'
-import { Copy, Check, Share2, FileText, Loader2, Settings, User, Mail } from 'lucide-react'
+import { Share2, FileText, Loader2, Settings } from 'lucide-react' // Copy, Check, User, Mail removed - unused
 import { WorkflowLinkSharer } from '@/components/WorkflowLinkSharer'
 import { fetchWithAuth } from '@/context/AuthContext'
 
@@ -57,7 +57,7 @@ interface Deal {
 export function WorkflowLinkCreator({
   dealId: propDealId,
   documentId: propDocumentId,
-  verificationId,
+  verificationId: _verificationId, // Prefix with _ - unused
   onLinkGenerated
 }: WorkflowLinkCreatorProps) {
   // Workflow configuration
@@ -81,7 +81,7 @@ export function WorkflowLinkCreator({
   const [workflowTitle, setWorkflowTitle] = useState('')
   const [workflowDescription, setWorkflowDescription] = useState('')
   const [receiverEmail, setReceiverEmail] = useState('')
-  const [receiverUserId, setReceiverUserId] = useState<number | null>(null)
+  const [receiverUserId, _setReceiverUserId] = useState<number | null>(null) // Prefix setter with _ - unused
   const [expiresInHours, setExpiresInHours] = useState(72)
   const [callbackUrl, setCallbackUrl] = useState('')
   
@@ -747,8 +747,9 @@ export function WorkflowLinkCreator({
           metadata={{
             title: workflowTitle,
             description: workflowDescription,
-            dealId: dealId,
-            documentId: documentId,
+            dealId: selectedDealId || propDealId,
+            documentId: selectedDocumentId || propDocumentId,
+            ...(workflowType && { workflowType: workflowType === 'custom' ? customWorkflowType : workflowType }),
             expiresAt: generatedLink.expires_at,
             filesIncluded: generatedLink.files_included,
           }}

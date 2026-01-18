@@ -46,7 +46,7 @@ export function useVerificationWebSocket({
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<Error | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
   
@@ -100,30 +100,34 @@ export function useVerificationWebSocket({
           const store = storeRef.current;
           
           switch (data.type) {
-            case 'layer_update':
+            case 'layer_update': {
               const layerUpdate = data as LayerUpdate;
               store.handleLayerUpdate(layerUpdate);
               callbacks.onLayerUpdate?.(layerUpdate);
               break;
+            }
               
-            case 'progress':
+            case 'progress': {
               const progress = data as VerificationProgress;
               store.handleProgress(progress);
               callbacks.onProgress?.(progress);
               break;
+            }
               
-            case 'verification_complete':
+            case 'verification_complete': {
               const complete = data as VerificationComplete;
               store.handleVerificationComplete(complete);
               callbacks.onComplete?.(complete);
               break;
+            }
               
-            case 'error':
+            case 'error': {
               const error = new Error(data.message || 'WebSocket error');
               setConnectionError(error);
               store.setConnectionState(false, error.message);
               callbacks.onError?.(error);
               break;
+            }
               
             case 'connected':
               console.log('WebSocket connection confirmed');
@@ -140,8 +144,12 @@ export function useVerificationWebSocket({
               // Keepalive response
               break;
               
-            default:
-              console.warn('Unknown WebSocket message type:', data.type);
+            default: {
+              // Type guard for unknown message types
+              const unknownMessage = data as { type?: string };
+              console.warn('Unknown WebSocket message type:', unknownMessage.type);
+              break;
+            }
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);

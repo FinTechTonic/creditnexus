@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -10,7 +10,7 @@ import {
   AlertCircle,
   Loader2,
   ExternalLink,
-  Building2,
+  // Building2 removed - unused
   TrendingUp
 } from 'lucide-react';
 import { useWallet } from '@/context/WalletContext';
@@ -196,7 +196,7 @@ export function TranchePurchase({
         return;
       }
 
-      if (purchaseResponse.status === 'paid' || purchaseResponse.status === 'completed') {
+      if (purchaseResponse.status === 'paid' || (purchaseResponse.status as string) === 'completed') {
         setPaymentStatus('paid');
         onPurchaseComplete?.(purchaseResponse.transaction_hash || '', '');
         

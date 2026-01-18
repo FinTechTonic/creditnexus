@@ -5,7 +5,7 @@
  * Supports editing parties, facilities, dates, amounts, and other CDM fields.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react'; // useCallback removed - unused
 import { fetchWithAuth } from '@/context/AuthContext';
 import {
   Edit2,
@@ -23,7 +23,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+// import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'; // unused
 import type { CreditAgreementData } from '@/context/FDC3Context';
 
 interface CdmFieldEditorProps {
@@ -33,13 +33,13 @@ interface CdmFieldEditorProps {
   className?: string;
 }
 
-interface EditableField {
-  path: string;
-  label: string;
-  value: any;
-  type: 'string' | 'number' | 'date' | 'boolean' | 'object' | 'array';
-  editable: boolean;
-}
+// interface EditableField { // Commented out - unused
+//   path: string;
+//   label: string;
+//   value: any;
+//   type: 'string' | 'number' | 'date' | 'boolean' | 'object' | 'array';
+//   editable: boolean;
+// }
 
 export function CdmFieldEditor({
   documentId,

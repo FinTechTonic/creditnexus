@@ -8,7 +8,7 @@
 import { FileText, Building2, Calendar, DollarSign, Scale, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import type { CreditAgreementData } from '@/context/FDC3Context';
+// CreditAgreementData type not used directly in this component
 
 interface CdmPreviewCardProps {
   documentId: number;
@@ -29,7 +29,7 @@ export function CdmPreviewCard({
   documentId,
   title,
   borrowerName,
-  borrowerLei,
+  // borrowerLei, // Unused - kept in props for API compatibility
   governingLaw,
   totalCommitment,
   currency,
@@ -39,7 +39,7 @@ export function CdmPreviewCard({
   onSelect,
   onPreview,
 }: CdmPreviewCardProps) {
-  const formatCurrency = (amount: number | null, curr: string | null) => {
+  const formatCurrency = (amount: number | null, curr: string | null | undefined) => {
     if (!amount) return 'N/A';
     const formatted = new Intl.NumberFormat('en-US', {
       style: 'currency',

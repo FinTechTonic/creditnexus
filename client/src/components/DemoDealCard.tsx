@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader } from './ui/card';
 import { Button } from './ui/button';
 import {
   Eye,
-  Edit,
+  // Edit removed - unused
   FileText,
   Calendar,
   DollarSign,
@@ -35,7 +35,7 @@ interface DemoDealCardProps {
 export function DemoDealCard({
   deal,
   onView,
-  onEdit,
+  onEdit: _onEdit, // Prefix with _ - unused
   onViewDocuments,
   className = ''
 }: DemoDealCardProps) {

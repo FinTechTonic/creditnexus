@@ -8,10 +8,10 @@
  * - Save draft functionality
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchWithAuth, useAuth } from '../../context/AuthContext';
-import { RuleBuilder } from './RuleBuilder';
+// RuleBuilder removed - unused
 import { PolicyTemplateSelector } from './PolicyTemplateSelector';
 import { 
   Save, 
@@ -20,14 +20,12 @@ import {
   CheckCircle2, 
   Loader2,
   ArrowLeft,
-  Play,
-  Eye,
   Code,
   Settings,
-  History,
+  // History removed - unused
   CheckSquare,
   XSquare,
-  List,
+  // List removed - unused
   Plus,
   Edit
 } from 'lucide-react';
@@ -35,7 +33,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
+// import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs'; // unused
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Alert, AlertDescription } from '../../components/ui/alert';
@@ -76,10 +74,10 @@ interface Rule {
 export function PolicyEditor() {
   const { policyId } = useParams<{ policyId?: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth(); // user unused
   
   // State
-  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [_policy, setPolicy] = useState<Policy | null>(null); // _policy unused
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [yamlPreview, setYamlPreview] = useState<string>('');
@@ -88,7 +86,7 @@ export function PolicyEditor() {
   const [loadingPolicies, setLoadingPolicies] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'builder' | 'yaml'>('builder');
+  const [_activeTab, _setActiveTab] = useState<'builder' | 'yaml'>('builder'); // unused
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showPolicyList, setShowPolicyList] = useState(!policyId);
   const [policyName, setPolicyName] = useState('');
@@ -226,7 +224,7 @@ export function PolicyEditor() {
     return yaml;
   };
   
-  const parseYamlToRules = (yaml: string): Rule[] => {
+  const parseYamlToRules = (_yaml: string): Rule[] => { // Prefix with _ - unused parameter
     // Simple YAML parsing (in production, use a proper YAML library)
     try {
       // For now, return empty array - will be enhanced with proper YAML parsing

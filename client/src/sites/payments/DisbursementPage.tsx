@@ -8,7 +8,6 @@ import {
   CheckCircle, 
   AlertCircle,
   Loader2,
-  ExternalLink,
   Copy
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
@@ -33,7 +32,7 @@ interface LoanDetails {
 export function DisbursementPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user: _user } = useAuth(); // user unused - prefix with _
   const loanId = searchParams.get('loan_id');
   
   const [loanDetails, setLoanDetails] = useState<LoanDetails | null>(null);
@@ -73,8 +72,8 @@ export function DisbursementPage() {
       if (typeof window.ethereum !== 'undefined') {
         const accounts = await window.ethereum.request({ 
           method: 'eth_requestAccounts' 
-        });
-        if (accounts.length > 0) {
+        }) as string[];
+        if (Array.isArray(accounts) && accounts.length > 0) {
           setWalletAddress(accounts[0]);
           setWalletConnected(true);
         }
@@ -332,10 +331,5 @@ export function DisbursementPage() {
 }
 
 // Extend Window interface for MetaMask
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<unknown[]>;
-    };
-  }
-}
+// Note: Window.ethereum type is declared in WalletContext.tsx
+// Using the same type to avoid conflicts

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertCircle, CheckCircle2, Loader2, X, AlertTriangle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData } from '@/context/FDC3Context';
 
@@ -39,7 +39,7 @@ export function FieldEditorModal({
   onSave,
   templateId,
   cdmData,
-  missingFields = [],
+  missingFields: _missingFields = [], // Prefix with _ - unused
   showAllFields = false,
 }: FieldEditorModalProps) {
   const [fields, setFields] = useState<FieldDefinition[]>([]);

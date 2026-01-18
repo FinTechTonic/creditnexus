@@ -54,11 +54,11 @@ export function LayerBrowser({
   const layers: LayerListItem[] = useMemo(() => storeLayers.map(l => ({
     id: l.id,
     layer_type: l.type,
-    metadata: l.metadata,
+    band_number: l.metadata?.band_number || null,
+    metadata: l.metadata || {},
+    thumbnail_url: l.thumbnail_url || null,
     bounds: l.bounds,
-    thumbnail_url: l.thumbnail_url,
-    created_at: l.created_at,
-    band_number: l.metadata?.band_number || undefined
+    created_at: l.created_at || new Date().toISOString()
   })), [storeLayers]);
 
   useEffect(() => {
