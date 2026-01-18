@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,6 +74,7 @@ interface User {
 }
 
 export function SecuritizationWorkflow() {
+  const navigate = useNavigate();
   // const { processPayment, isProcessing: paymentProcessing } = useX402Payment();
   const { addToast } = useToast();
   
@@ -905,7 +907,7 @@ export function SecuritizationWorkflow() {
                   </p>
                   
                   <Button
-                    onClick={() => window.location.href = `/dashboard/securitization/${createdPoolId}`}
+                    onClick={() => navigate(`/dashboard/securitization/${createdPoolId}`)}
                     className="w-full bg-blue-600 hover:bg-blue-500 text-white"
                   >
                     <Shield className="h-4 w-4 mr-2" />

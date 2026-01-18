@@ -18,6 +18,7 @@ import { Slider } from '@/components/ui/slider';
 import { Layers, Eye, EyeOff, Info, RotateCcw, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useLayerStore } from '@/stores/layerStore';
 import type { LayerOverlayConfig } from '@/types/layers';
+import { resolveApiUrl } from '@/utils/apiBase';
 
 interface LayerControlsProps {
   assetId: number;
@@ -58,7 +59,7 @@ export function LayerControls({
       const fetchLayers = async () => {
         try {
           const token = localStorage.getItem('token');
-          const response = await fetch(`/api/layers/${assetId}`, {
+          const response = await fetch(resolveApiUrl(`/api/layers/${assetId}`), {
             headers: {
               'Authorization': `Bearer ${token}`
             }

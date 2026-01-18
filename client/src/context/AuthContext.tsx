@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { resolveApiUrl } from '@/utils/apiBase';
 
 interface User {
   id: number;
@@ -72,8 +73,8 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     headers.set('Authorization', `Bearer ${token}`);
   }
   
-  const response = await fetch(url, { ...options, headers });
-  
+  const response = await fetch(resolveApiUrl(url), { ...options, headers });
+
   return response;
 }
 
@@ -125,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshTokens = async (refreshToken: string): Promise<boolean> => {
     try {
-      const response = await fetch('/api/auth/refresh', {
+      const response = await fetch(resolveApiUrl('/api/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
@@ -149,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (credentials: LoginCredentials): Promise<boolean> => {
     setAuthError(null);
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(resolveApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials),
@@ -191,7 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (data: RegisterData): Promise<boolean> => {
     setAuthError(null);
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(resolveApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

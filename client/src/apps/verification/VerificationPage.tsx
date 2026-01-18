@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { resolveApiUrl } from '@/utils/apiBase'
 
 import {
   CheckCircleIcon,
@@ -55,7 +56,7 @@ export function VerificationPage() {
     setError(null)
 
     try {
-      const response = await fetch(`/api/remote/verify/${payload}`)
+      const response = await fetch(resolveApiUrl(`/api/remote/verify/${payload}`))
       
       if (!response.ok) {
         const errorData = await response.json()

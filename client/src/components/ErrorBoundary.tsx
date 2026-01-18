@@ -56,7 +56,11 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   handleGoHome = () => {
-    window.location.href = '/dashboard';
+    if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+      window.location.hash = '#/dashboard';
+    } else {
+      window.location.href = '/dashboard';
+    }
   };
 
   render() {

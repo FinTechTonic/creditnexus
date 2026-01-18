@@ -14,6 +14,7 @@ import {
   Shield
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
 
 export function MetaMaskLogin() {
   const navigate = useNavigate();
@@ -63,7 +64,7 @@ export function MetaMaskLogin() {
       const signature = await signMessage(message);
 
       // Step 3: Authenticate with server
-      const authResponse = await fetch('/api/auth/wallet', {
+      const authResponse = await fetch(resolveApiUrl('/api/auth/wallet'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

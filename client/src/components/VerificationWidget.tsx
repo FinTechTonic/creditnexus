@@ -10,6 +10,7 @@ import { Collapsible } from './ui/collapsible';
 import { ShieldCheck, ChevronDown, ChevronUp, ExternalLink, Globe } from 'lucide-react';
 import { LocationTypeBadge } from './green-finance/LocationTypeBadge';
 import { AirQualityIndicator } from './green-finance/AirQualityIndicator';
+import { resolveApiUrl } from '@/utils/apiBase';
 import { GreenFinanceMetricsCard } from './green-finance/GreenFinanceMetricsCard';
 
 // Mock asset for demo visualization - unused
@@ -200,7 +201,7 @@ export function VerificationWidget({
             
             // Fetch CDM events if available
             try {
-                const cdmRes = await fetch(`/api/cdm/events/${loan_asset.loan_id}`);
+                const cdmRes = await fetch(resolveApiUrl(`/api/cdm/events/${loan_asset.loan_id}`));
                 if (cdmRes.ok) {
                     await cdmRes.json(); // cdmData unused
                     if (loan_asset.risk_status === 'BREACH') {

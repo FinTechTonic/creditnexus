@@ -5,6 +5,8 @@ folder/
 .cursor/
 dist/
 *.log
+cache/
+chroma_db/
 
 # SSL/TLS Certificates and Keys (auto-generated and manual)
 ssl_certs/
