@@ -13,14 +13,6 @@ from app.core.metrics import (
     get_metrics
 )
 
-from server import app
-
-
-@pytest.fixture
-def client():
-    """Create test client."""
-    return TestClient(app)
-
 
 def test_metrics_endpoint_returns_prometheus_format(client: TestClient):
     """Test /metrics endpoint returns Prometheus format."""
