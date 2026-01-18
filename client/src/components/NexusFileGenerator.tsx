@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Download, Upload, FileText, Loader2 } from 'lucide-react';
+import { Download, FileText, Loader2 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
 
 export function NexusFileGenerator({

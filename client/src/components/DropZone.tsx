@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface DropZoneProps {
     onFileSelect: (file: File) => void;

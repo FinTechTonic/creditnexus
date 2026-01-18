@@ -5,7 +5,7 @@
  * and export options.
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Download, FileText, File, Loader2 } from 'lucide-react';
 
 interface ExportDialogProps {

@@ -5,22 +5,21 @@ import {
   FileText, 
   Search, 
   Clock, 
-  ChevronRight, 
-  Loader2, 
-  Plus,
+  // ChevronRight, Loader2 removed - unused 
+  // Plus removed - unused
   Filter,
-  Edit,
+  // Edit removed - unused
   Eye,
   Building2,
   Calendar,
-  DollarSign,
+  // DollarSign removed - unused
   AlertCircle,
   CheckCircle,
   XCircle,
   RefreshCw,
   Share2
 } from 'lucide-react';
-import { useAuth, fetchWithAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext'; // useAuth removed - unused
 import { useNavigate } from 'react-router-dom';
 import { SkeletonDocumentList, EmptyState } from '@/components/ui/skeleton';
 
@@ -40,7 +39,7 @@ interface Deal {
 type DealStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'active' | 'closed' | 'restructuring' | 'withdrawn';
 
 export function DealDashboard() {
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user removed - unused
   const navigate = useNavigate();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);

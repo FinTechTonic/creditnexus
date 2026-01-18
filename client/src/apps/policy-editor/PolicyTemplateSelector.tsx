@@ -8,7 +8,7 @@
  * - Clone template to new policy
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { Search, Filter, Copy, Eye, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/button';

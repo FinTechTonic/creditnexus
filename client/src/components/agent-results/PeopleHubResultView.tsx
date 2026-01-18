@@ -9,23 +9,22 @@
  * - Credit check data
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   User,
-  Building2,
+  // Building2 removed - unused
   Linkedin,
   Globe,
   Brain,
   Shield,
-  CheckCircle2,
+  // CheckCircle2 removed - unused
   AlertCircle,
   Loader2,
   Copy,
   Download,
   X,
   FileText,
-  TrendingUp,
-  TrendingDown,
+  // TrendingUp, TrendingDown removed - unused
   Award,
   Briefcase
 } from 'lucide-react';
@@ -73,7 +72,7 @@ interface PeopleHubResultViewProps {
 export function PeopleHubResultView({
   profileId,
   onClose,
-  dealId
+  dealId: _dealId // Prefix with _ - unused
 }: PeopleHubResultViewProps) {
   const [result, setResult] = useState<PeopleHubResult | null>(null);
   const [loading, setLoading] = useState(true);

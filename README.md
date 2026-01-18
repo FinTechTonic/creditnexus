@@ -1148,7 +1148,6 @@ Our team brings over **20 years of combined experience** in the financial indust
 
 - **Joseph Pollack** - Chief Information Officer (Strategic technology leadership)
 - **Biniyam Ajew** - Senior Developer (Full-stack development and system architecture)
-- **Boris Li** - Junior Developer (10 years at Citibank and Mastercard in payment systems, banking operations, and financial technology)
 
 > 📖 **Learn More**: See [Company Site - Team](https://josephrp.github.io/creditnexus) for detailed team information.
 

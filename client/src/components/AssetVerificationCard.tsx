@@ -15,7 +15,7 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
-  TrendingDown,
+  // TrendingDown removed - unused
   Leaf,
   RefreshCw,
   MapPin,

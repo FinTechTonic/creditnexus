@@ -14,31 +14,29 @@ interface UseMetaMaskReturn {
   isInstalled: boolean
 }
 
+// Window.ethereum type is declared in WalletContext.tsx
+// Using the same type to avoid conflicts
 declare global {
   interface Window {
-    ethereum?: any
-  web3?: any
-  injectedWeb3?: any
-  web3_currentProvider?: any
-  ethereum_autoRefreshOnNetworkChange?: boolean
-  ethereum_isMetaMask?: boolean
-  ethereum_selectedAddress?: string
-  ethereum_chainId?: string
-  ethereum_requestAccounts?: () => Promise<any>
-  ethereum_sendAsync?: (payload: any) => Promise<any>
-  ethereum_signMessage?: (params: { from: string; data: string }) => Promise<any>
-  ethereum_on?: { (event: string, handler: (args: any) => void) => void }
-  ethereum_removeListener?: (event: string, handler: (args: any) => void) => void
-  ethereum_autoRefreshOnNetworkChange?: boolean
-  ethereum_isMetaMask?: boolean
-  ethereum_networkVersion?: string
-  ethereum_selectedAddress?: string
-  ethereum_chainId?: string
-  ethereum_requestAccounts?: () => Promise<any>
-  ethereum_sendAsync?: (payload: any) => Promise<any>
-  ethereum_signMessage?: (params: { from: string; data: string }) => Promise<any>
-  ethereum_on?: { (event: string, handler: (args: any) => void) => void }
-  ethereum_removeListener?: (event: string, handler: (args: any) => void) => void }
+    ethereum?: {
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+      on: (event: string, handler: (...args: unknown[]) => void) => void;
+      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
+    }
+    web3?: any
+    injectedWeb3?: any
+    web3_currentProvider?: any
+    ethereum_autoRefreshOnNetworkChange?: boolean
+    ethereum_isMetaMask?: boolean
+    ethereum_selectedAddress?: string
+    ethereum_chainId?: string
+    ethereum_networkVersion?: string
+    ethereum_requestAccounts?: () => Promise<any>
+    ethereum_sendAsync?: (payload: any) => Promise<any>
+    ethereum_signMessage?: (params: { from: string; data: string }) => Promise<any>
+    ethereum_on?: (event: string, handler: (args: any) => void) => void
+    ethereum_removeListener?: (event: string, handler: (args: any) => void) => void
+  }
 }
 
 export function useMetaMask(): UseMetaMaskReturn {

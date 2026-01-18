@@ -4,8 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
-  Building2, 
-  DollarSign, 
   FileText, 
   ArrowRight, 
   ArrowLeft, 

@@ -12,20 +12,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { fetchWithAuth, useAuth } from '../../context/AuthContext';
 import { useFDC3 } from '../../context/FDC3Context';
 import type { GeneratedDocumentContext, CreditAgreementData as FDC3CreditAgreementData } from '../../context/FDC3Context';
-import { Loader2, FileText, Sparkles, AlertCircle, CheckCircle2, Merge, Info } from 'lucide-react';
+import { Loader2, FileText, Sparkles, AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { ChatbotPanel } from './ChatbotPanel';
-import { ProcessingStatus } from './ProcessingStatus';
-import { DocumentCdmSelector } from './DocumentCdmSelector';
+// DocumentCdmSelector removed - unused
 import { FloatingChatbotButton } from './FloatingChatbotButton';
 import { CdmDataPreview } from './CdmDataPreview';
-import { CdmFieldEditor } from '../../components/CdmFieldEditor';
 import { FieldEditorModal } from './FieldEditorModal';
-import { TemplateGrid } from './TemplateGrid';
+// CdmFieldEditor removed - unused
+// TemplateGrid removed - unused
 import { UnifiedSelectionGrid } from './UnifiedSelectionGrid';
 import { PreGenerationStats } from './PreGenerationStats';
 import { FieldFillingPanel } from './FieldFillingPanel';
 import { Dialog, DialogContent } from '../../components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
+// Tabs components removed - unused
 import { Button } from '../../components/ui/button';
 import { SignatureStatus } from '../../components/SignatureStatus';
 
@@ -78,12 +77,12 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
   const [error, setError] = useState<string | null>(null);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
-  const [inputMode, setInputMode] = useState<'library' | 'manual'>('library');
+  const [inputMode, _setInputMode] = useState<'library' | 'manual'>('library'); // Prefix setter with _ - getter is used
   const [sourceDocumentId, setSourceDocumentId] = useState<number | null>(null);
   const [selectedDocumentTitle, setSelectedDocumentTitle] = useState<string | null>(null);
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
-  const [previewCdmData, setPreviewCdmData] = useState<CreditAgreementData | null>(null);
-  const [previewDocumentTitle, setPreviewDocumentTitle] = useState<string | null>(null);
+  const [previewCdmData, _setPreviewCdmData] = useState<CreditAgreementData | null>(null); // Prefix setter with _ - getter is used
+  const [previewDocumentTitle, _setPreviewDocumentTitle] = useState<string | null>(null); // Prefix setter with _ - getter is used
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [fieldOverrides, setFieldOverrides] = useState<Record<string, any>>({});
@@ -116,7 +115,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
               if (cdmResponse.ok) {
                 const responseData = await cdmResponse.json();
                 // Include document even if CDM data is missing (show with 0 completeness)
-                let cdmData = responseData.cdm_data;
+                const cdmData = responseData.cdm_data;
                 let completenessScore = 0;
                 
                 if (cdmData) {
@@ -259,7 +258,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
         // Load template requirements
         const reqResponse = await fetchWithAuth(`/api/templates/${templateId}/requirements`);
         if (reqResponse.ok) {
-          const requirements = await reqResponse.json();
+          await reqResponse.json(); // requirements unused - endpoint called for side effects
           // Could use this to validate or highlight required fields
         }
       } else {
@@ -309,6 +308,11 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
       
       // When sourceDocumentId is provided, use document_id to load CDM from library
       // Otherwise, send cdm_data directly
+      if (!selectedTemplate) {
+        setError('Please select a template first');
+        return;
+      }
+      
       const requestBody: {
         template_id: number;
         cdm_data?: CreditAgreementData;
@@ -348,7 +352,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
 
       if (response.status === 401) {
         // Handle authentication error
-        const errorData = await response.json().catch(() => ({}));
+        await response.json().catch(() => ({})); // errorData unused
         setError('Authentication required. Please log in and try again.');
         return;
       }
@@ -392,7 +396,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
         }
       } else if (response.status === 401) {
         // Handle authentication error specifically
-        const errorData = await response.json().catch(() => ({}));
+        await response.json().catch(() => ({})); // errorData unused
         setError('Authentication required. Please log in to generate documents.');
       } else {
         // Handle other error responses

@@ -7,7 +7,7 @@
  * - Edit/regenerate
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Download, Edit, FileText, Loader2, AlertCircle } from 'lucide-react';
 import { fetchWithAuth } from '../../context/AuthContext';
 
@@ -30,15 +30,15 @@ interface DocumentPreviewProps {
   onExport?: (format: 'word' | 'pdf') => void;
 }
 
-export function DocumentPreview({ document, onEdit, onExport }: DocumentPreviewProps) {
+export function DocumentPreview({ document: generatedDocument, onEdit, onExport }: DocumentPreviewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewUrl, _setPreviewUrl] = useState<string | null>(null); // Prefix setter with _ - getter is used
 
   // For Word documents, we'll need to convert to PDF or use Office Online viewer
   // For now, we'll show a placeholder with download option
-  const isWordDocument = document.generated_file_path?.endsWith('.docx');
-  const isPdfDocument = document.generated_file_path?.endsWith('.pdf');
+  const isWordDocument = generatedDocument.generated_file_path?.endsWith('.docx');
+  const isPdfDocument = generatedDocument.generated_file_path?.endsWith('.pdf');
 
   const handleDownload = async (format: 'word' | 'pdf') => {
     if (onExport) {
@@ -49,7 +49,7 @@ export function DocumentPreview({ document, onEdit, onExport }: DocumentPreviewP
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchWithAuth(`/api/generated-documents/${document.id}/export`, {
+      const response = await fetchWithAuth(`/api/generated-documents/${generatedDocument.id}/export`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -60,13 +60,13 @@ export function DocumentPreview({ document, onEdit, onExport }: DocumentPreviewP
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const a = window.document.createElement('a');
         a.href = url;
         a.download = `generated_document.${format === 'pdf' ? 'pdf' : 'docx'}`;
-        document.body.appendChild(a);
+        window.document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        window.document.body.removeChild(a);
       } else {
         throw new Error('Export failed');
       }
@@ -185,19 +185,19 @@ export function DocumentPreview({ document, onEdit, onExport }: DocumentPreviewP
             </h4>
             <p className="text-sm text-gray-600 mb-4">
               File saved at: <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                {document.generated_file_path}
+                {generatedDocument.generated_file_path}
               </code>
             </p>
-            {document.generation_summary && (
+            {generatedDocument.generation_summary && (
               <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left max-w-md">
                 <h5 className="text-sm font-semibold text-gray-900 mb-2">Generation Summary</h5>
                 <div className="text-xs text-gray-600 space-y-1">
-                  <div>Total fields: {document.generation_summary.total_fields}</div>
-                  <div>Mapped fields: {document.generation_summary.mapped_fields_count}</div>
-                  <div>AI-generated sections: {document.generation_summary.ai_fields_count}</div>
-                  {document.generation_summary.missing_required_fields.length > 0 && (
+                  <div>Total fields: {generatedDocument.generation_summary.total_fields}</div>
+                  <div>Mapped fields: {generatedDocument.generation_summary.mapped_fields_count}</div>
+                  <div>AI-generated sections: {generatedDocument.generation_summary.ai_fields_count}</div>
+                  {generatedDocument.generation_summary.missing_required_fields.length > 0 && (
                     <div className="text-red-600 mt-2">
-                      Missing required fields: {document.generation_summary.missing_required_fields.join(', ')}
+                      Missing required fields: {generatedDocument.generation_summary.missing_required_fields.join(', ')}
                     </div>
                   )}
                 </div>
@@ -236,8 +236,8 @@ export function DocumentPreview({ document, onEdit, onExport }: DocumentPreviewP
       {/* Footer Info */}
       <div className="p-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-600">
         <div className="flex items-center justify-between">
-          <span>Status: <span className="font-medium">{document.status}</span></span>
-          <span>Document ID: <span className="font-mono">{document.document_id}</span></span>
+          <span>Status: <span className="font-medium">{generatedDocument.status}</span></span>
+          <span>Document ID: <span className="font-mono">{generatedDocument.document_id}</span></span>
         </div>
       </div>
     </div>

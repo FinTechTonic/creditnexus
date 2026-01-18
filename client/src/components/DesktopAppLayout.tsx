@@ -6,7 +6,7 @@ import { GreenLens } from '@/apps/green-lens/GreenLens';
 import { DocumentGenerator } from '@/apps/document-generator/DocumentGenerator';
 import { PolicyEditor } from '@/apps/policy-editor/PolicyEditor';
 import { DocumentHistory } from '@/components/DocumentHistory';
-import { Dashboard } from '@/components/Dashboard';
+// Dashboard removed - unused
 import { UnifiedDashboard } from '@/components/UnifiedDashboard';
 import { GroundTruthDashboard } from '@/components/GroundTruthDashboard';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
@@ -31,7 +31,7 @@ import { SecuritizationPoolDetail } from '@/components/SecuritizationPoolDetail'
 import { TranchePurchase } from '@/components/TranchePurchase';
 import { VerificationFileConfigEditor } from '@/apps/verification-config/VerificationFileConfigEditor';
 import { WorkflowShareInterface } from '@/components/WorkflowShareInterface';
-import { WorkflowDelegationDashboard } from '@/components/WorkflowDelegationDashboard';
+// WorkflowDelegationDashboard removed - unused
 import { WorkflowProcessingPage } from '@/components/WorkflowProcessingPage';
 import { LoanRecoverySidebar } from '@/components/LoanRecoverySidebar';
 import { AgentDashboard } from '@/apps/agent-dashboard/AgentDashboard';
@@ -46,14 +46,14 @@ import {
   PERMISSION_TEMPLATE_GENERATE,
   PERMISSION_TRADE_VIEW,
   PERMISSION_SATELLITE_VIEW,
-  PERMISSION_APPLICATION_VIEW,
+  // PERMISSION_APPLICATION_VIEW removed - unused
   PERMISSION_USER_VIEW,
   PERMISSION_DEAL_VIEW,
   PERMISSION_DEAL_VIEW_OWN,
   PERMISSION_AUDIT_VIEW,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings';
 
 interface AppConfig {
   id: AppView;
@@ -243,8 +243,8 @@ export function DesktopAppLayout() {
   const classes = useThemeClasses();
   
   // Track component instance to detect re-mounts
-  const componentInstanceRef = useRef<string>(Math.random().toString(36).substring(7));
-  const mountCountRef = useRef(0);
+  // const _componentInstanceRef = useRef<string>(Math.random().toString(36).substring(7)); // Commented out - unused
+  // const _mountCountRef = useRef(0); // Commented out - unused
   const previousPathnameRef = useRef<string>(location.pathname);
   
   // Track unexpected route changes
@@ -569,7 +569,7 @@ export function DesktopAppLayout() {
         return;
       }
       // CRITICAL: Use functional update to ensure we're using the latest state
-      setActiveApp((prevApp) => {
+      setActiveApp((_prevApp) => { // Prefix with _ - unused
         return app;
       });
     }

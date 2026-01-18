@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
-import { Upload, FileText, Send, Check, X, Loader2, Edit2, Save, BookOpen, Sparkles, Mic, Image as ImageIcon, Search, Type, Calculator, Receipt } from 'lucide-react';
+import { Upload, FileText, Send, Check, X, Loader2, Edit2, Save, BookOpen, Sparkles, Mic, Image as ImageIcon, Search, Type, Calculator } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFDC3 } from '@/context/FDC3Context';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
@@ -51,11 +51,11 @@ export function DocumentParser({
   
   // Tab state management
   const [activeTab, setActiveTab] = useState<string>('summary');
-  const [tabHistory, setTabHistory] = useState<string[]>(['summary']);
+  const [_tabHistory, setTabHistory] = useState<string[]>(['summary']); // Prefix with _ - setter is used
   
   // Clause editor state
-  const [showClauseEditor, setShowClauseEditor] = useState(false);
-  const [selectedClauses, setSelectedClauses] = useState<any[]>([]);
+  const [_showClauseEditor, setShowClauseEditor] = useState(false); // Prefix with _ - setter is used
+  // const [selectedClauses, setSelectedClauses] = useState<any[]>([]); // Unused - kept for future use
   const [clauseEditorDocumentId, setClauseEditorDocumentId] = useState<number | null>(null);
   
   // Multimodal sources state
@@ -243,7 +243,6 @@ export function DocumentParser({
           }
           
           // Clear multimodal sources after successful extraction
-          const hadMultimodalSources = Object.keys(multimodalSources).length > 0;
           setMultimodalSources({});
           
           if (result.extraction_status === 'partial_data_missing' && result.message) {
@@ -481,7 +480,7 @@ export function DocumentParser({
   // Track which document ID was last loaded to prevent reloading the same document
   // Use ref to persist across component re-mounts
   const loadedDocumentIdRef = useRef<string | null>(null);
-  const [loadedDocumentId, setLoadedDocumentId] = useState<string | null>(null);
+  // const [loadedDocumentId, setLoadedDocumentId] = useState<string | null>(null); // Unused - using ref instead
   const isLoadingDocumentRef = useRef(false);
 
   // Sync tab state from URL
@@ -530,7 +529,7 @@ export function DocumentParser({
             if (doc.versions && doc.versions[0] && doc.versions[0].source_filename) {
               setSourceFilename(doc.versions[0].source_filename);
             }
-            setLoadedDocumentId(documentId);
+            // setLoadedDocumentId(documentId); // Unused - using ref instead
             addToast('Document loaded from library', 'success');
             
             // Restore tab state if specified in URL
@@ -892,7 +891,7 @@ export function DocumentParser({
               newParams.set('tab', value);
               return newParams;
             });
-            setTabHistory(prev => [...prev, value]);
+            setTabHistory((prev: string[]) => [...prev, value]);
           }} className="w-full">
             <TabsList className="bg-slate-800 border border-slate-700">
               <TabsTrigger value="summary">Summary</TabsTrigger>

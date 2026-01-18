@@ -41,7 +41,7 @@ export function RealTimeMapView({
     addLayer, 
     setLayers, 
     selectAsset,
-    getLayersForAsset 
+    getLayersForAsset: _getLayersForAsset // Prefix with _ - unused
   } = useLayerStore();
 
   // WebSocket connection for real-time updates

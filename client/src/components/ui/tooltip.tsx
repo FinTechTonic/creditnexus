@@ -19,23 +19,33 @@ export function Tooltip({
   delayClose = 200
 }: TooltipProps) {
   const [isVisible, setIsVisible] = React.useState(false);
-  let showTimeout: ReturnType<typeof setTimeout>;
-  let hideTimeout: ReturnType<typeof setTimeout>;
+  const showTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
-    clearTimeout(hideTimeout);
-    showTimeout = setTimeout(() => setIsVisible(true), delay);
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+    showTimeoutRef.current = setTimeout(() => setIsVisible(true), delay);
   };
 
   const handleMouseLeave = () => {
-    clearTimeout(showTimeout);
-    hideTimeout = setTimeout(() => setIsVisible(false), delayClose);
+    if (showTimeoutRef.current) {
+      clearTimeout(showTimeoutRef.current);
+      showTimeoutRef.current = null;
+    }
+    hideTimeoutRef.current = setTimeout(() => setIsVisible(false), delayClose);
   };
 
   React.useEffect(() => {
     return () => {
-      clearTimeout(showTimeout);
-      clearTimeout(hideTimeout);
+      if (showTimeoutRef.current) {
+        clearTimeout(showTimeoutRef.current);
+      }
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+      }
     };
   }, []);
 

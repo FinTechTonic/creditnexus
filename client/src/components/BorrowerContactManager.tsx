@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { fetchWithAuth } from '@/context/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card'; // CardHeader, CardTitle removed - unused
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,9 +26,7 @@ import {
   Edit,
   Trash2,
   Loader2,
-  CheckCircle,
-  XCircle,
-  AlertCircle
+  // CheckCircle, XCircle, AlertCircle removed - unused
 } from 'lucide-react';
 import type {
   BorrowerContact,
@@ -359,7 +357,7 @@ export function BorrowerContactManager({ dealId, onContactUpdate }: BorrowerCont
               </Label>
               <Input
                 id="contact_name"
-                value={formData.contact_name}
+                value={formData.contact_name || ''}
                 onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
                 className="bg-slate-900 border-slate-700 text-slate-100"
                 placeholder="John Doe"
@@ -372,7 +370,7 @@ export function BorrowerContactManager({ dealId, onContactUpdate }: BorrowerCont
               </Label>
               <Input
                 id="phone_number"
-                value={formData.phone_number}
+                value={formData.phone_number || ''}
                 onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
                 className="bg-slate-900 border-slate-700 text-slate-100"
                 placeholder="+1234567890"
@@ -389,7 +387,7 @@ export function BorrowerContactManager({ dealId, onContactUpdate }: BorrowerCont
               <Input
                 id="email"
                 type="email"
-                value={formData.email}
+                value={formData.email || ''}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="bg-slate-900 border-slate-700 text-slate-100"
                 placeholder="john.doe@example.com"
@@ -402,7 +400,7 @@ export function BorrowerContactManager({ dealId, onContactUpdate }: BorrowerCont
               </Label>
               <select
                 id="preferred_contact_method"
-                value={formData.preferred_contact_method}
+                value={formData.preferred_contact_method || 'sms'}
                 onChange={(e) => setFormData({ ...formData, preferred_contact_method: e.target.value as PreferredContactMethod })}
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100"
               >

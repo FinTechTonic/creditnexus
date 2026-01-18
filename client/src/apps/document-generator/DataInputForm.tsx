@@ -8,8 +8,8 @@
  * - ESG sections (if sustainability-linked)
  */
 
-import React, { useState } from 'react';
-import { Plus, Trash2, Building2, DollarSign, Calendar, Scale, Leaf } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, Building2, DollarSign, Calendar, Leaf } from 'lucide-react';
 
 interface Party {
   name: string;
@@ -34,6 +34,7 @@ interface Facility {
       period_multiplier: number;
     };
   };
+  spread_bps?: number; // Direct access for convenience
 }
 
 interface CreditAgreementData {
@@ -354,15 +355,18 @@ export function DataInputForm({ data, onDataChange }: DataInputFormProps) {
                     </label>
                     <select
                       value={facility.interest_terms.rate_option?.benchmark || 'SOFR'}
-                      onChange={(e) => updateFacility(index, {
-                        interest_terms: {
-                          ...facility.interest_terms,
-                          rate_option: {
-                            ...facility.interest_terms.rate_option,
-                            benchmark: e.target.value,
+                      onChange={(e) => {
+                        if (!facility.interest_terms) return;
+                        updateFacility(index, {
+                          interest_terms: {
+                            ...facility.interest_terms,
+                            rate_option: {
+                              benchmark: e.target.value,
+                              spread_bps: facility.interest_terms.rate_option?.spread_bps || 0,
+                            },
                           },
-                        },
-                      })}
+                        });
+                      }}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     >
                       <option value="SOFR">SOFR</option>
@@ -378,15 +382,18 @@ export function DataInputForm({ data, onDataChange }: DataInputFormProps) {
                     <input
                       type="number"
                       value={facility.interest_terms.rate_option?.spread_bps || 0}
-                      onChange={(e) => updateFacility(index, {
-                        interest_terms: {
-                          ...facility.interest_terms,
-                          rate_option: {
-                            ...facility.interest_terms.rate_option,
-                            spread_bps: parseInt(e.target.value) || 0,
+                      onChange={(e) => {
+                        if (!facility.interest_terms) return;
+                        updateFacility(index, {
+                          interest_terms: {
+                            ...facility.interest_terms,
+                            rate_option: {
+                              benchmark: facility.interest_terms.rate_option?.benchmark || 'SOFR',
+                              spread_bps: parseInt(e.target.value) || 0,
+                            },
                           },
-                        },
-                      })}
+                        });
+                      }}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     />
                   </div>
@@ -400,7 +407,10 @@ export function DataInputForm({ data, onDataChange }: DataInputFormProps) {
                         const [period, multiplier] = e.target.value.split('_');
                         updateFacility(index, {
                           interest_terms: {
-                            ...facility.interest_terms,
+                            rate_option: facility.interest_terms?.rate_option || {
+                              benchmark: 'SOFR',
+                              spread_bps: facility.spread_bps || 200
+                            },
                             payment_frequency: {
                               period,
                               period_multiplier: parseInt(multiplier),

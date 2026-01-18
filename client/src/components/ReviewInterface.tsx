@@ -62,13 +62,27 @@ export function ReviewInterface({
       broadcast({
         type: 'finos.creditnexus.loan',
         loan: {
-          agreementDate: extractedData.agreement_date,
-          parties: extractedData.parties,
-          facilities: extractedData.facilities?.map(f => ({
-            name: f.facility_name,
-            amount: f.commitment_amount.amount,
-            currency: f.commitment_amount.currency,
+          agreement_date: extractedData.agreement_date,
+          parties: (extractedData.parties || []).map((p, idx) => ({
+            id: (p as any).id || `party-${idx}`,
+            name: p.name,
+            role: p.role,
+            lei: (p as any).lei,
+            legal_name: (p as any).legal_name,
           })),
+          facilities: (extractedData.facilities || []).map(f => {
+            const interestTerms = (f as any).interest_terms || {
+              rate_option: { benchmark: 'SOFR', spread_bps: (f as any).spread_bps || 200 },
+              payment_frequency: { period: 'monthly', period_multiplier: 1 }
+            };
+            return {
+              facility_name: f.facility_name,
+              commitment_amount: f.commitment_amount,
+              interest_terms: interestTerms,
+              maturity_date: f.maturity_date || '',
+              spread_bps: (f as any).spread_bps || interestTerms.rate_option?.spread_bps || 200,
+            };
+          }),
         },
       });
       onApprove(extractedData);

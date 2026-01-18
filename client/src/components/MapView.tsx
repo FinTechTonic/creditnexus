@@ -7,14 +7,14 @@
  * - NDVI status visualization on marker
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ImageOverlay } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin, Leaf } from 'lucide-react';
 import { useLayerStore } from '@/stores/layerStore';
 import { LayerControls } from './LayerControls';
-import type { LayerData, Bounds } from '@/types/layers';
+// import type { LayerData, Bounds } from '@/types/layers'; // unused
 
 // Fix for default marker icons in React-Leaflet
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -184,7 +184,7 @@ export function MapView({
 }: MapViewProps) {
     const [mapReady, setMapReady] = useState(false);
     const mapState = useLayerStore((state) => state.mapState);
-    const getLayersForAsset = useLayerStore((state) => state.getLayersForAsset);
+    // const _getLayersForAsset = useLayerStore((state) => state.getLayersForAsset); // unused
     
     // Use assetId from props or selectedAssetId
     const activeAssetId = assetId || selectedAssetId;

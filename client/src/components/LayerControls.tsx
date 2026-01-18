@@ -15,7 +15,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Layers, Eye, EyeOff, Info, RotateCcw, Settings, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Layers, Eye, EyeOff, Info, RotateCcw, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useLayerStore } from '@/stores/layerStore';
 import type { LayerOverlayConfig } from '@/types/layers';
 

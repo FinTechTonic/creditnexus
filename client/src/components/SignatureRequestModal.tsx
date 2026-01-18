@@ -18,12 +18,12 @@ import {
   X,
   Loader2,
   AlertCircle,
-  CheckCircle,
+  // CheckCircle removed - unused
   Info,
   User,
-  Edit,
+  // Edit removed - unused
 } from 'lucide-react';
-import { fetchWithAuth, useAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/toast';
 
 interface Signer {
@@ -47,7 +47,7 @@ export function SignatureRequestModal({
   onSignatureRequested,
   onError,
 }: SignatureRequestModalProps) {
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user unused
   const { addToast } = useToast();
   const [signers, setSigners] = useState<Signer[]>([]);
   const [newSigner, setNewSigner] = useState({ name: '', email: '', role: '' });
@@ -236,7 +236,7 @@ export function SignatureRequestModal({
             <div className="space-y-3">
               {signers.map((signer, index) => {
                 const isEditing = editingIndex === index;
-                const currentEditedSigner = isEditing ? (editedSigner || signer) : signer;
+                // const _currentEditedSigner = isEditing ? (editedSigner || signer) : signer; // unused
                 
                 const handleStartEdit = () => {
                   setEditingIndex(index);

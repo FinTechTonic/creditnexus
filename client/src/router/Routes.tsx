@@ -4,7 +4,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { SignupFlow } from '@/components/SignupFlow';
 import { useAuth } from '@/context/AuthContext';
 
-import { BusinessApplicationForm } from '@/apps/application/BusinessApplicationForm';
+// BusinessApplicationForm removed - unused
 import { BusinessApplicationFlow } from '@/sites/businesses/BusinessApplicationFlow';
 
 import { IndividualLanding } from '@/sites/individuals/IndividualLanding';

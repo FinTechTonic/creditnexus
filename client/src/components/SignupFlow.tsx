@@ -10,8 +10,7 @@ import {
   ArrowLeft, 
   ArrowRight, 
   CheckCircle2, 
-  User, 
-  FileText, 
+  // User, FileText removed - unused
   Eye,
   Loader2,
   AlertCircle
@@ -488,7 +487,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
           <div className="space-y-4">
             <Progress value={progress} className="h-2" />
             <div className="flex items-center justify-between text-sm">
-              {STEPS.map((step, index) => (
+              {STEPS.map((step, _index) => ( // Prefix with _ - unused
                 <div
                   key={step.id}
                   onClick={() => handleStepClick(step.id)}

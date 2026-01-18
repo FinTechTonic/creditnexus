@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard,
   FileText,
@@ -11,7 +11,7 @@ import {
   X,
   ChevronDown
 } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+// useAuth removed - unused
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   PERMISSION_DOCUMENT_VIEW,
@@ -112,7 +112,7 @@ export function MainNavigation({
 }: MainNavigationProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user unused
   const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 

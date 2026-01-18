@@ -28,12 +28,12 @@ export function SustainabilityScoreCard({ compositeScore, components, compact = 
     return 'text-red-500';
   };
 
-  const getScoreBgColor = (score: number) => {
-    if (score >= 0.8) return 'bg-green-500';
-    if (score >= 0.6) return 'bg-yellow-500';
-    if (score >= 0.4) return 'bg-orange-500';
-    return 'bg-red-500';
-  };
+  // const _getScoreBgColor = (score: number) => { // Commented out - unused
+  //   if (score >= 0.8) return 'bg-green-500';
+  //   if (score >= 0.6) return 'bg-yellow-500';
+  //   if (score >= 0.4) return 'bg-orange-500';
+  //   return 'bg-red-500';
+  // };
 
   if (compact) {
     return (

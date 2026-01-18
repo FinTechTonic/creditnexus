@@ -193,10 +193,10 @@ export function CdmDataPreview({
                             <p className="text-slate-200">{party.lei}</p>
                           </div>
                         )}
-                        {party.address && (
+                        {(party as any).address && (
                           <div>
                             <p className="text-xs text-slate-500">Address</p>
-                            <p className="text-slate-200">{party.address}</p>
+                            <p className="text-slate-200">{(party as any).address}</p>
                           </div>
                         )}
                       </div>
@@ -218,17 +218,17 @@ export function CdmDataPreview({
             <div className="space-y-2">
               {cdmData.facilities.map((facility, idx) => (
                 <div
-                  key={facility.facility_identification?.facility_name || idx}
+                  key={facility.facility_name || idx}
                   className="p-4 bg-slate-900/50 rounded-lg border border-slate-700"
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
                       <p className="font-medium text-slate-100">
-                        {facility.facility_identification?.facility_name || `Facility ${idx + 1}`}
+                        {facility.facility_name || `Facility ${idx + 1}`}
                       </p>
-                      {facility.facility_type && (
+                      {(facility as any).facility_type && (
                         <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded">
-                          {facility.facility_type}
+                          {(facility as any).facility_type}
                         </span>
                       )}
                     </div>
@@ -245,13 +245,11 @@ export function CdmDataPreview({
                         </p>
                       </div>
                     )}
-                    {facility.interest_rate && (
+                    {facility.interest_terms?.rate_option && (
                       <div>
                         <p className="text-xs text-slate-500">Interest Rate</p>
                         <p className="text-slate-200 font-medium">
-                          {typeof facility.interest_rate === 'number'
-                            ? `${facility.interest_rate}%`
-                            : facility.interest_rate}
+                          {facility.interest_terms.rate_option.benchmark} + {facility.interest_terms.rate_option.spread_bps / 100}%
                         </p>
                       </div>
                     )}

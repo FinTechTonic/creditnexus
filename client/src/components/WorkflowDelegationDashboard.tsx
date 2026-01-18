@@ -22,8 +22,6 @@ import {
   RefreshCw,
   Loader2,
   Search,
-  Filter,
-  Download,
   Send
 } from 'lucide-react'
 import { fetchWithAuth } from '@/context/AuthContext'
@@ -76,7 +74,7 @@ export function WorkflowDelegationDashboard() {
   const [filterDealId, setFilterDealId] = useState<string>('')
   
   // UI State
-  const [selectedDelegation, setSelectedDelegation] = useState<WorkflowDelegation | null>(null)
+  const [_selectedDelegation, setSelectedDelegation] = useState<WorkflowDelegation | null>(null) // Prefix with _ - setter is used
   const [showCreator, setShowCreator] = useState(false)
   const [showSharer, setShowSharer] = useState(false)
   const [sharerData, setSharerData] = useState<any>(null)
@@ -489,7 +487,7 @@ export function WorkflowDelegationDashboard() {
             </CardHeader>
             <CardContent>
               <WorkflowLinkCreator
-                onLinkGenerated={(link, workflowId) => {
+                onLinkGenerated={(_link, _workflowId) => { // Prefix with _ - unused
                   setShowCreator(false)
                   loadDelegations()
                 }}

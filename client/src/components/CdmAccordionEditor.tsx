@@ -13,7 +13,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent } from '@/components/ui/card';
+// import { Card, CardContent } from '@/components/ui/card'; // unused
 import type { CreditAgreementData } from '@/context/FDC3Context';
 import { Edit2, Save, X, AlertCircle } from 'lucide-react';
 import { AiCdmOperations } from '@/components/AiCdmOperations';

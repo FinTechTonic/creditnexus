@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth, fetchWithAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,17 +8,14 @@ import {
   ArrowLeft,
   Building2,
   DollarSign,
-  Calendar,
-  Shield,
-  FileText,
+  // Calendar, Shield, FileText removed - unused
   TrendingUp,
   Users,
   Wallet,
-  CheckCircle,
-  XCircle,
+  // CheckCircle, XCircle removed - unused
   AlertCircle,
   Loader2,
-  Eye,
+  // Eye removed - unused
   CreditCard,
   BarChart3
 } from 'lucide-react';
@@ -73,7 +70,7 @@ interface PoolDetails {
 export function SecuritizationPoolDetail() {
   const { poolId } = useParams<{ poolId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user unused
   const [poolDetails, setPoolDetails] = useState<PoolDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -3,6 +3,7 @@ folder/
 .cursorrules
 *.mdc
 .cursor/
+dist/
 
 # SSL/TLS Certificates and Keys (auto-generated and manual)
 ssl_certs/

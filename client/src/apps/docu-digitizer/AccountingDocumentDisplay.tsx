@@ -5,10 +5,8 @@
  * for Balance Sheets, Income Statements, Cash Flow Statements, and Tax Returns.
  */
 
-import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { CheckCircle2, AlertCircle, XCircle, Calculator, TrendingUp, TrendingDown } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
 
 interface AccountingDocumentDisplayProps {
   data: any; // Accounting document data (BalanceSheet, IncomeStatement, etc.)

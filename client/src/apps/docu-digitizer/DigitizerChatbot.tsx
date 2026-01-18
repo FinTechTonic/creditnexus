@@ -10,7 +10,6 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  MessageSquare,
   Send,
   Loader2,
   X,
@@ -273,7 +272,7 @@ export function DigitizerChatbot({
         const workflowResult = data.workflow_result;
 
         // Add assistant message
-        const assistantMessage = addMessage('assistant', reply, {
+        addMessage('assistant', reply, {
           workflowLaunched,
           workflowResult,
         });

@@ -132,20 +132,20 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
 
             {mode === 'register' && (
               <>
-                <div>
-                  <label htmlFor="displayName" className="block text-sm font-medium text-slate-300 mb-2">
-                    Display Name
-                  </label>
-                  <input
-                    id="displayName"
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    required
-                    className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                    placeholder="John Smith"
-                  />
-                </div>
+              <div>
+                <label htmlFor="displayName" className="block text-sm font-medium text-slate-300 mb-2">
+                  Display Name
+                </label>
+                <input
+                  id="displayName"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                  placeholder="John Smith"
+                />
+              </div>
                 <div>
                   <label htmlFor="organizationIdentifier" className="block text-sm font-medium text-slate-300 mb-2">
                     Organization Identifier <span className="text-slate-500 text-xs">(Optional)</span>

@@ -115,7 +115,7 @@ export function ProfileEnrichment({ role, formData, onChange, errors = {} }: Pro
     try {
       // Create FormData for file upload
       const formDataToSend = new FormData();
-      uploadedFiles.forEach((file, index) => {
+      uploadedFiles.forEach((file, _index) => { // Prefix with _ - unused
         formDataToSend.append('files', file);
       });
       formDataToSend.append('role', role);

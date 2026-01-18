@@ -10,7 +10,7 @@
  * - Support for nested any/all conditions
  */
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Plus, X, GripVertical, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -199,7 +199,7 @@ export function RuleBuilder({ rule, onRuleChange, onDelete }: RuleBuilderProps) 
         }
         return {
           ...cond,
-          any: cond.any.map((c, i) => {
+          any: cond.any.map((c) => { // i removed - unused
             const updated = deleteConditionAtPath(c, rest.slice(1));
             return updated !== null ? updated : c;
           }).filter(c => c !== null) as Condition[]
@@ -217,7 +217,7 @@ export function RuleBuilder({ rule, onRuleChange, onDelete }: RuleBuilderProps) 
         }
         return {
           ...cond,
-          all: cond.all.map((c, i) => {
+          all: cond.all.map((c) => { // i removed - unused
             const updated = deleteConditionAtPath(c, rest.slice(1));
             return updated !== null ? updated : c;
           }).filter(c => c !== null) as Condition[]
@@ -239,7 +239,7 @@ export function RuleBuilder({ rule, onRuleChange, onDelete }: RuleBuilderProps) 
   
   const renderCondition = (condition: Condition, path: string, depth: number = 0): React.ReactElement => {
     const isExpanded = expandedConditions.has(path);
-    const hasChildren = (condition.any && condition.any.length > 0) || (condition.all && condition.all.length > 0);
+    // const _hasChildren = (condition.any && condition.any.length > 0) || (condition.all && condition.all.length > 0); // Commented out - unused
     
     if (condition.any && condition.any.length >= 0) {
       return (

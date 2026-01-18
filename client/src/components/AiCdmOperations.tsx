@@ -112,7 +112,7 @@ export function AiCdmOperations({
         throw new Error(errorData.detail?.message || 'Failed to fuse multimodal inputs');
       }
 
-      const fusionResult = await fusionResponse.json();
+      await fusionResponse.json(); // fusionResult removed - unused
 
       // Now call the add endpoint to merge with existing CDM
       const addResponse = await fetchWithAuth('/api/cdm/add', {

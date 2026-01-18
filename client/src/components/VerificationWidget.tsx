@@ -6,24 +6,24 @@ import { AgentTerminal } from './AgentTerminal';
 import { MapView } from './MapView';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './ui/collapsible';
+import { Collapsible } from './ui/collapsible';
 import { ShieldCheck, ChevronDown, ChevronUp, ExternalLink, Globe } from 'lucide-react';
 import { LocationTypeBadge } from './green-finance/LocationTypeBadge';
 import { AirQualityIndicator } from './green-finance/AirQualityIndicator';
 import { GreenFinanceMetricsCard } from './green-finance/GreenFinanceMetricsCard';
 
-// Mock asset for demo visualization
-const DEMO_ASSET = {
-    id: 9999,
-    loan_id: 'DEMO-KILLSHOT-001',
-    collateral_address: '1 Main St, Napa, CA',
-    geo_lat: 38.2975,
-    geo_lon: -122.2869,
-    risk_status: 'BREACH',
-    last_verified_score: 0.65,
-    spt_threshold: 0.75,
-    current_interest_rate: 5.25
-};
+// Mock asset for demo visualization - unused
+// const DEMO_ASSET = {
+//     id: 9999,
+//     loan_id: 'DEMO-KILLSHOT-001',
+//     collateral_address: '1 Main St, Napa, CA',
+//     geo_lat: 38.2975,
+//     geo_lon: -122.2869,
+//     risk_status: 'BREACH',
+//     last_verified_score: 0.65,
+//     spt_threshold: 0.75,
+//     current_interest_rate: 5.25
+// };
 
 interface LogEntry {
     timestamp: string;
@@ -202,7 +202,7 @@ export function VerificationWidget({
             try {
                 const cdmRes = await fetch(`/api/cdm/events/${loan_asset.loan_id}`);
                 if (cdmRes.ok) {
-                    const cdmData = await cdmRes.json();
+                    await cdmRes.json(); // cdmData unused
                     if (loan_asset.risk_status === 'BREACH') {
                         addLog("CDM Ledger Updated: Spread +25bps Triggered", 'ERROR');
                     }
@@ -220,7 +220,7 @@ export function VerificationWidget({
                 type: 'finos.cdm.landUse',
                 id: { internalID: loan_asset.loan_id },
                 classification: loan_asset.risk_status === 'BREACH' ? 'AnnualCrop' : 'Forest',
-                complianceStatus: loan_asset.risk_status,
+                complianceStatus: (loan_asset.risk_status === 'BREACH' ? 'BREACH' : loan_asset.risk_status === 'WARNING' ? 'WARNING' : 'COMPLIANT') as 'COMPLIANT' | 'WARNING' | 'BREACH',
                 lastInferenceConfidence: 0.9423,
                 cloudCover: 0.05
             });
@@ -250,7 +250,11 @@ export function VerificationWidget({
                             sdg_15: loan_asset.green_finance_metrics.sdg_alignment.sdg_15,
                             overall_alignment: loan_asset.green_finance_metrics.sdg_alignment.overall_alignment
                         } : undefined,
-                        assessedAt: loan_asset.last_verified_at?.toISOString() || new Date().toISOString()
+                        assessedAt: loan_asset.last_verified_at instanceof Date 
+                          ? loan_asset.last_verified_at.toISOString() 
+                          : (typeof loan_asset.last_verified_at === 'string' 
+                            ? loan_asset.last_verified_at 
+                            : new Date().toISOString())
                     });
                     addLog(`FDC3 Context Broadcast: 'finos.cdm.greenFinanceAssessment' -> [network]`, 'INFO');
                 } catch (err) {

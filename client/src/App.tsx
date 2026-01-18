@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { DocumentParser } from '@/apps/docu-digitizer/DocumentParser';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import { GreenLens } from '@/apps/green-lens/GreenLens';
@@ -12,6 +13,7 @@ import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
+import { useThemeClasses } from '@/utils/themeUtils';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext } from '@/context/FDC3Context';
 
 

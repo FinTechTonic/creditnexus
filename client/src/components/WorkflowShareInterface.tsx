@@ -9,15 +9,12 @@ import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   Share2, 
-  FileText, 
   Send, 
   Eye, 
   Settings,
-  Loader2,
-  ArrowRight,
   Link as LinkIcon,
   Copy,
   Check,
@@ -47,19 +44,19 @@ export function WorkflowShareInterface({
   initialView = 'create',
   dealId: propDealId,
   documentId: propDocumentId,
-  workflowPayload,
+  workflowPayload: _workflowPayload,
   onWorkflowCreated,
-  onWorkflowProcessed
+  onWorkflowProcessed: _onWorkflowProcessed
 }: WorkflowShareInterfaceProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const { context, listenForWorkflowLinks } = useFDC3()
+  const { context: _context, listenForWorkflowLinks } = useFDC3()
   const classes = useThemeClasses()
   
   const [activeView, setActiveView] = useState<ShareView>(initialView)
   const [generatedLink, setGeneratedLink] = useState<string | null>(null)
-  const [generatedWorkflowId, setGeneratedWorkflowId] = useState<string | null>(null)
+  const [_generatedWorkflowId, setGeneratedWorkflowId] = useState<string | null>(null) // Prefix with _ - setter is used
   const [sharerData, setSharerData] = useState<any>(null)
   const [copied, setCopied] = useState(false)
 

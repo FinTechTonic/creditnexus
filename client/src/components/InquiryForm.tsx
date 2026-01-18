@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { fetchWithAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,7 +23,7 @@ interface InquiryFormProps {
 }
 
 export function InquiryForm({ applicationId, onSuccess, onCancel, className = '' }: InquiryFormProps) {
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user unused
   const [formData, setFormData] = useState({
     inquiry_type: 'general',
     subject: '',
@@ -59,7 +58,7 @@ export function InquiryForm({ applicationId, onSuccess, onCancel, className = ''
         throw new Error(errorData.detail || 'Failed to create inquiry');
       }
 
-      const data = await response.json();
+      await response.json(); // _data removed - unused
       setSuccess(true);
       
       // Reset form

@@ -9,7 +9,7 @@
  * - Token usage statistics
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Search,
   ExternalLink,
@@ -66,7 +66,7 @@ interface DeepResearchResultViewProps {
 export function DeepResearchResultView({
   researchId,
   onClose,
-  dealId
+  dealId: _dealId // Prefix with _ - unused
 }: DeepResearchResultViewProps) {
   const [result, setResult] = useState<DeepResearchResult | null>(null);
   const [loading, setLoading] = useState(true);

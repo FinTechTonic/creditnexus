@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { 
   ArrowLeft,
-  Building2,
+  // Building2 removed - unused
   Calendar,
   Clock,
   FileText,
@@ -17,7 +17,7 @@ import {
   AlertCircle,
   Loader2,
   Eye,
-  Edit,
+  // Edit removed - unused
   Trash2,
   RefreshCw,
   ChevronRight,
@@ -216,9 +216,9 @@ export function DealDetail() {
     return dealType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  const formatEventType = (eventType: string) => {
-    return eventType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
+  // const formatEventType = (eventType: string) => { // Commented out - unused
+  //   return eventType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  // };
 
   if (loading) {
     return (
@@ -297,7 +297,7 @@ export function DealDetail() {
             variant="ghost"
             size="default"
             className="text-slate-400 hover:text-slate-100"
-            onNotarizationComplete={(notarizationId) => {
+            onNotarizationComplete={(_notarizationId) => { // Prefix with _ - unused
               // Refresh deal data to show updated notarization status
               fetchDealDetail();
             }}

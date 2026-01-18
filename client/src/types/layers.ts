@@ -6,16 +6,19 @@
 
 /**
  * Layer type enumeration.
+ * Using const object instead of enum for erasableSyntaxOnly compatibility.
  */
-export enum LayerType {
-  SENTINEL_BAND = 'sentinel_band',
-  NDVI = 'ndvi',
-  FALSE_COLOR = 'false_color',
-  CLASSIFICATION = 'classification',
-  RISK_STATUS = 'risk_status',
-  AIR_QUALITY = 'air_quality',
-  OSM_OVERLAY = 'osm_overlay'
-}
+export const LayerType = {
+  SENTINEL_BAND: 'sentinel_band',
+  NDVI: 'ndvi',
+  FALSE_COLOR: 'false_color',
+  CLASSIFICATION: 'classification',
+  RISK_STATUS: 'risk_status',
+  AIR_QUALITY: 'air_quality',
+  OSM_OVERLAY: 'osm_overlay'
+} as const;
+
+export type LayerType = typeof LayerType[keyof typeof LayerType];
 
 /**
  * Sentinel-2 band identifiers.
@@ -129,13 +132,37 @@ export interface WebSocketError {
 }
 
 /**
+ * WebSocket connection message.
+ */
+export interface WebSocketConnected {
+  type: 'connected';
+}
+
+/**
+ * WebSocket ping message.
+ */
+export interface WebSocketPing {
+  type: 'ping';
+}
+
+/**
+ * WebSocket pong message.
+ */
+export interface WebSocketPong {
+  type: 'pong';
+}
+
+/**
  * Union type for all WebSocket messages.
  */
 export type WebSocketMessage = 
   | LayerUpdate 
   | VerificationProgress 
   | VerificationComplete 
-  | WebSocketError;
+  | WebSocketError
+  | WebSocketConnected
+  | WebSocketPing
+  | WebSocketPong;
 
 /**
  * Layer list item (from API).

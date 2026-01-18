@@ -9,7 +9,7 @@
  * - Clone templates to create new policies
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { 
   Search, 
@@ -19,12 +19,12 @@ import {
   Eye,
   Loader2,
   Tag,
-  Building2,
+  // Building2 removed - unused
   AlertCircle
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 

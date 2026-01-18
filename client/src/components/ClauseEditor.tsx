@@ -16,11 +16,9 @@ import {
   ChevronUp,
   Loader2,
   AlertCircle,
-  CheckCircle2,
-  X,
   Save,
   Copy,
-  ExternalLink
+  // ExternalLink removed - unused
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,7 +59,7 @@ export function ClauseEditor({ className = '' }: ClauseEditorProps) {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
-  const [selectedFieldName, setSelectedFieldName] = useState<string | null>(null);
+  const [selectedFieldName, _setSelectedFieldName] = useState<string | null>(null); // Prefix setter with _ - unused
   const [isExpanded, setIsExpanded] = useState(false);
   const [editingClause, setEditingClause] = useState<Clause | null>(null);
   const [editContent, setEditContent] = useState('');

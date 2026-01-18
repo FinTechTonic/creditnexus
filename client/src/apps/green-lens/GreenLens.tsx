@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
 import { fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData, ESGKPITarget } from '@/context/FDC3Context';
-import { Leaf, TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, Target, Droplets, Zap, Recycle, Search, Loader2, ChevronDown, MapPin, Building2, Wind } from 'lucide-react';
+import { Leaf, TrendingDown, TrendingUp, AlertTriangle, CheckCircle2, Target, Droplets, Zap, Recycle, Search, Loader2, ChevronDown, MapPin, Wind } from 'lucide-react';
 import { LocationTypeBadge } from '@/components/green-finance/LocationTypeBadge';
 import { AirQualityIndicator } from '@/components/green-finance/AirQualityIndicator';
 import { SustainabilityScoreCard } from '@/components/green-finance/SustainabilityScoreCard';
@@ -174,6 +174,7 @@ export function GreenLens() {
 
       // Base spread from loan data or default
       const baseSpreadBps = loanData?.facilities?.[0]?.spread_bps || 
+                            loanData?.facilities?.[0]?.interest_terms?.rate_option?.spread_bps ||
                             loanAsset.base_spread_bps || 
                             200; // Default 2.00%
 
@@ -219,7 +220,9 @@ export function GreenLens() {
             : f.commitment_amount || f.amount || 0;
           return sum + (typeof amount === 'number' ? amount : parseFloat(String(amount)) || 0);
         }, 0) || 1000000;
-        const baseSpreadBps = loanData?.facilities?.[0]?.spread_bps || 200;
+        const baseSpreadBps = loanData?.facilities?.[0]?.spread_bps || 
+                              loanData?.facilities?.[0]?.interest_terms?.rate_option?.spread_bps || 
+                              200;
         const impact = calculateMarginRatchetClientSide(
           loanAsset.ndvi_score,
           loanAsset.spt_threshold,

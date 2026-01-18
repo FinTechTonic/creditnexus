@@ -52,7 +52,7 @@ function markdownToHtml(markdown: string): string {
     .join('\n');
 
   // Wrap list items in ul tags
-  html = html.replace(/(<li[^>]*>.*<\/li>)/gim, (match, p1) => {
+  html = html.replace(/(<li[^>]*>.*<\/li>)/gim, (match, _p1) => { // Prefix with _ - unused
     if (!match.includes('<ul')) {
       return `<ul class="list-disc ml-6 mb-4">${match}</ul>`;
     }

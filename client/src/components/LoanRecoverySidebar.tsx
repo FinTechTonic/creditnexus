@@ -7,23 +7,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchWithAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+// Input removed - unused
 import {
   AlertCircle,
   Phone,
   MessageSquare,
   Mail,
   Clock,
-  CheckCircle,
+  // CheckCircle removed - unused
   XCircle,
   Loader2,
   RefreshCw,
   Filter,
   ChevronRight,
-  Calendar,
+  // Calendar removed - unused
   DollarSign
 } from 'lucide-react';
 import type {

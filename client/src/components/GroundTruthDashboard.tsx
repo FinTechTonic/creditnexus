@@ -25,7 +25,7 @@ import {
 import { fetchWithAuth } from '@/context/AuthContext';
 import { AssetVerificationCard } from './AssetVerificationCard';
 import { MapView } from './MapView';
-import { LayerControls } from './LayerControls';
+// LayerControls removed - unused
 import { useFDC3 } from '@/context/FDC3Context';
 import { useLayerStore } from '@/stores/layerStore';
 import { DashboardChatbotPanel } from './DashboardChatbotPanel';

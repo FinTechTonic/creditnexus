@@ -48,6 +48,16 @@ if DATABASE_URL:
         )
         logger.info("Database initialized: PostgreSQL")
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    
+    # Initialize database metrics if enabled
+    try:
+        from app.core.config import settings
+        if settings.METRICS_ENABLED:
+            from app.db.metrics import setup_db_metrics, setup_query_metrics
+            setup_db_metrics(engine)
+            setup_query_metrics(engine)
+    except Exception as e:
+        logger.warning(f"Failed to initialize database metrics: {e}")
 else:
     engine = None
     SessionLocal = None
