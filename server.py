@@ -196,14 +196,6 @@ async def lifespan(app: FastAPI):
     else:
         app.state.metrics_task = None
     
-    # Initialize x402 Payment service
-    if settings.X402_ENABLED:
-        # x402 payment service initialization would go here
-        pass
-    else:
-        logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
-        app.state.x402_payment_service = None
-    
     # Initialize database
     if settings.DATABASE_ENABLED:
         try:
