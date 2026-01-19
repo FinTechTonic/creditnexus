@@ -33,6 +33,7 @@ from app.api.websocket_routes import router as websocket_router
 from app.api.securitization_routes import router as securitization_router
 from app.api.config_routes import router as config_router
 from app.api.workflow_delegation_routes import router as workflow_delegation_router
+from app.api.nexus_routes import router as nexus_router
 from app.api.recovery_routes import router as recovery_router
 from app.api.twilio_routes import router as twilio_router
 from app.api.remote_routes import remote_router
@@ -623,38 +624,9 @@ if settings.METRICS_ENABLED:
     from app.middleware.metrics_middleware import MetricsMiddleware
     app.add_middleware(MetricsMiddleware)
 
-
-# #region agent log – outermost ASGI; runs first to confirm request reaches our app
-class _DebugOuterASGI:
-    def __init__(self, app):
-        self.app = app
-    async def __call__(self, scope, receive, send):
-        if scope.get("type") == "http":
-            try:
-                import json as _json, time as _time
-                with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as _f:
-                    _f.write(_json.dumps({"sessionId":"debug-session","runId":"outer","hypothesisId":"H8","location":"server:outer_asgi","message":"request_entered_outer","data":{"path":scope.get("path"),"method":scope.get("method")},"timestamp":int(_time.time()*1000)}) + "\n")
-            except Exception:
-                pass
-        await self.app(scope, receive, send)
-app.add_middleware(_DebugOuterASGI)
-# #endregion
-
 # Make limiter available globally for route decorators
 # Routes can access it via: from server import limiter (if enabled)
 # Or use: request.app.state.limiter in route functions
-
-# #region agent log
-@app.middleware("http")
-async def _debug_request_log(request: Request, call_next):
-    try:
-        import json, time
-        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
-            f.write(json.dumps({"sessionId":"debug-session","runId":"mw","hypothesisId":"H7","location":"server:middleware","message":"request_entered","data":{"path":request.url.path,"method":request.method},"timestamp":int(time.time()*1000)}) + "\n")
-    except Exception:
-        pass
-    return await call_next(request)
-# #endregion
 
 app.include_router(router)
 app.include_router(credit_risk_router)
@@ -667,6 +639,7 @@ app.include_router(websocket_router)
 app.include_router(securitization_router)
 app.include_router(config_router)
 app.include_router(workflow_delegation_router)
+app.include_router(nexus_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
 app.include_router(remote_router, prefix="/api")

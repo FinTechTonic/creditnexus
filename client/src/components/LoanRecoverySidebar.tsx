@@ -40,29 +40,6 @@ interface LoanRecoverySidebarProps {
 }
 
 export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySidebarProps) {
-  // #region agent log
-  useEffect(() => {
-    const logData = {
-      sessionId: 'debug-session',
-      runId: 'loan-recovery-tab-debug',
-      hypothesisId: 'A',
-      location: 'LoanRecoverySidebar.tsx:41',
-      message: 'LoanRecoverySidebar component mounted',
-      data: {
-        dealId: dealId || null,
-        hasOnDefaultSelect: !!onDefaultSelect,
-        timestamp: new Date().toISOString()
-      },
-      timestamp: Date.now()
-    };
-    fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(logData)
-    }).catch(() => {});
-  }, [dealId, onDefaultSelect]);
-  // #endregion
-
   const { addToast } = useToast();
   const [defaults, setDefaults] = useState<LoanDefault[]>([]);
   const [selectedDefault, setSelectedDefault] = useState<LoanDefault | null>(null);
@@ -76,27 +53,6 @@ export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySid
 
   // Fetch defaults
   const fetchDefaults = useCallback(async () => {
-    // #region agent log
-    const logData = {
-      sessionId: 'debug-session',
-      runId: 'loan-recovery-tab-debug',
-      hypothesisId: 'A',
-      location: 'LoanRecoverySidebar.tsx:53',
-      message: 'fetchDefaults called',
-      data: {
-        dealId: dealId || null,
-        filters: filters,
-        timestamp: new Date().toISOString()
-      },
-      timestamp: Date.now()
-    };
-    fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(logData)
-    }).catch(() => {});
-    // #endregion
-
     setLoading(true);
     setError(null);
     try {
@@ -108,29 +64,6 @@ export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySid
       params.append('limit', '50');
 
       const response = await fetchWithAuth(`/api/recovery/defaults?${params.toString()}`);
-      
-      // #region agent log
-      const responseLog = {
-        sessionId: 'debug-session',
-        runId: 'loan-recovery-tab-debug',
-        hypothesisId: 'A',
-        location: 'LoanRecoverySidebar.tsx:75',
-        message: 'fetchDefaults response received',
-        data: {
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          url: response.url,
-          timestamp: new Date().toISOString()
-        },
-        timestamp: Date.now()
-      };
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(responseLog)
-      }).catch(() => {});
-      // #endregion
 
       if (!response.ok) throw new Error('Failed to fetch defaults');
       
@@ -159,57 +92,31 @@ export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySid
 
   // Trigger recovery actions
   const handleTriggerActions = useCallback(async (defaultId: number, actionTypes?: string[]) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:159',message:'handleTriggerActions called',data:{defaultId,actionTypes},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:162',message:'Making API call',data:{url:`/api/recovery/defaults/${defaultId}/actions`,body:{action_types:actionTypes||null}},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       const response = await fetchWithAuth(`/api/recovery/defaults/${defaultId}/actions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_types: actionTypes || null })
       });
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:169',message:'API response received',data:{ok:response.ok,status:response.status,statusText:response.statusText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-      
+
       if (!response.ok) {
-        // #region agent log
-        const errorText = await response.text();
-        fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:173',message:'API call failed',data:{status:response.status,errorText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
         throw new Error('Failed to trigger actions');
       }
-      
+
       const actions = await response.json();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:178',message:'Actions received',data:{actionsCount:Array.isArray(actions)?actions.length:'not array',actionsType:typeof actions,actions},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
-      
+
       // Handle both array and object responses
       const actionsArray = Array.isArray(actions) ? actions : (actions.actions || []);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:182',message:'Updating state',data:{actionsArrayCount:actionsArray.length,prevActionsCount:recoveryActions.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
       setRecoveryActions(prev => [...prev, ...actionsArray]);
       await fetchDefaults(); // Refresh defaults
-      
+
       // Show success message
       if (actionsArray.length > 0) {
         addToast(`Successfully triggered ${actionsArray.length} recovery action(s)`, 'success');
       } else {
         addToast('No recovery actions were created. Check borrower contact information.', 'warning');
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:189',message:'Actions triggered successfully',data:{actionsCount:actionsArray.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:187',message:'Error in handleTriggerActions',data:{error:err instanceof Error?err.message:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       const errorMessage = err instanceof Error ? err.message : 'Failed to trigger actions';
       setError(errorMessage);
       addToast(errorMessage, 'error');
@@ -514,9 +421,6 @@ export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySid
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LoanRecoverySidebar.tsx:474',message:'Trigger Actions button clicked',data:{selectedDefaultId:selectedDefault?.id,hasSelectedDefault:!!selectedDefault},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-                  // #endregion
                   if (selectedDefault) {
                     handleTriggerActions(selectedDefault.id);
                   }
