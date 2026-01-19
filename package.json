@@ -9,7 +9,7 @@
     "backend": "python scripts/run_dev.py",
     "frontend": "cd client && npm run dev",
     "dev:pm2": "node -e \"require('fs').mkdirSync('logs/pm2',{recursive:true})\" && npx pm2 start ecosystem.config.cjs",
-    "dev:pm2:stop": "npx pm2 delete backend-dev frontend-dev || true",
+    "dev:pm2:stop": "npx pm2 delete backend-dev frontend-dev api-dev || true",
     "dev:pm2:restart": "npx pm2 restart ecosystem.config.cjs",
     "dev:pm2:logs": "npx pm2 logs",
     "dev:pm2:status": "npx pm2 status",
@@ -36,11 +36,11 @@
     "recharts": "^3.5.1"
   },
   "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
     "@electron/notarize": "^2.2.0",
     "concurrently": "^8.2.2",
-    "wait-on": "^7.2.0",
-    "pm2": "^5.4.3"
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "pm2": "^5.4.3",
+    "wait-on": "^7.2.0"
   }
 }

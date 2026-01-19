@@ -9296,7 +9296,10 @@ async def export_generated_document(
 # ============================================================================
 
 from app.db.models import Application, Inquiry, Meeting, ApplicationType, ApplicationStatus, InquiryType, InquiryStatus
-from app.services.ics_generator import generate_ics_file, save_ics_file, get_ics_file_path
+try:
+    from app.services.ics_generator import generate_ics_file, save_ics_file, get_ics_file_path
+except ImportError:
+    generate_ics_file = save_ics_file = get_ics_file_path = None  # icalendar not installed
 from fastapi.responses import FileResponse
 from pathlib import Path
 
@@ -10071,6 +10074,8 @@ async def download_meeting_ics(
     current_user: User = Depends(get_current_user)
 ):
     """Download .ics file for a meeting."""
+    if get_ics_file_path is None or save_ics_file is None:
+        raise HTTPException(status_code=503, detail="ICS support unavailable. Install icalendar: pip install icalendar")
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")

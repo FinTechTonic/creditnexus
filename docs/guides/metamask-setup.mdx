@@ -129,16 +129,16 @@ USDC_TOKEN_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 After deploying contracts, add addresses to `.env`:
 
 ```env
-# Securitization Contracts (Base network)
+# Securitization Contracts (Base network, Base Sepolia, or local Hardhat)
 SECURITIZATION_NOTARIZATION_CONTRACT=0x...
 SECURITIZATION_TOKEN_CONTRACT=0x...
 SECURITIZATION_PAYMENT_ROUTER_CONTRACT=0x...
 
-# USDC Token (Base Mainnet)
+# USDC Token (Base Mainnet; for Base Sepolia or local use the matching address)
 USDC_TOKEN_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 ```
 
-**Contract Deployment**: See [Smart Contract Deployment](../../README.md#06-smart-contract-deployment-optional---for-securitization-features)
+**Contract Deployment**: See [Smart Contract Deployment](../../README.md#06-smart-contract-deployment-optional---for-securitization-features). For **local development without a private key**, use `npm run deploy:local` or `npm run node` + `npm run deploy:localhost` in `contracts/`; see [`contracts/README.md`](../../contracts/README.md#deployment).
 
 ---
 
@@ -168,6 +168,15 @@ USDC_TOKEN_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 | **USDC Token** | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (test token) |
 | **Use Case** | Development, testing, contract deployment |
 
+### Local Hardhat (development, no private key)
+
+| Setting | Value |
+|---------|-------|
+| **Network Name** | Localhost 8545 |
+| **RPC URL** | `http://127.0.0.1:8545` |
+| **Chain ID** | `1337` |
+| **Use Case** | Local development; deploy with `npm run deploy:local` or `npm run node` + `npm run deploy:localhost` (see `contracts/README.md`) |
+
 ---
 
 ## Quick Setup Checklist
@@ -180,10 +189,10 @@ USDC_TOKEN_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 - [ ] Set `X402_NETWORK_RPC_URL=https://mainnet.base.org` in `.env`
 
 ### For Development/Testing:
-- [ ] Add Base Sepolia to MetaMask (Chain ID: 84532)
-- [ ] Get test ETH from Base Sepolia faucet
-- [ ] Get test USDC if needed
-- [ ] Set `X402_NETWORK_RPC_URL=https://sepolia.base.org` in `.env`
+- [ ] Add Base Sepolia to MetaMask (Chain ID: 84532), or use **local Hardhat** (Chain ID: 1337, RPC: `http://127.0.0.1:8545`) with `npm run node` and `npm run deploy:localhost` in `contracts/` (no private key)
+- [ ] Get test ETH from Base Sepolia faucet (or use pre-funded Hardhat accounts locally)
+- [ ] Get test USDC if needed (not required for local)
+- [ ] Set `X402_NETWORK_RPC_URL=https://sepolia.base.org` or `http://127.0.0.1:8545` for local in `.env`
 - [ ] Test contract deployment and interactions
 
 ---

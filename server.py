@@ -515,13 +515,43 @@ is_production = os.environ.get("REPLIT_DEPLOYMENT") == "1" or os.environ.get("EN
 if not session_secret:
     if is_production:
         raise RuntimeError("SESSION_SECRET must be set in production")
-    logger.warning("SESSION_SECRET not set, generating temporary secret (not suitable for production)")
-    import secrets
-    session_secret = secrets.token_hex(32)
+    logger.warning("SESSION_SECRET not set, using stable dev secret (not suitable for production)")
+    session_secret = "dev-session-secret-creditnexus-fixed-for-local"
+
+# JWT auth (path, method) pairs that do not need session; skipping SessionMiddleware avoids
+# 500s when a stale or mismatched session cookie fails to decode (e.g. after secret or restart).
+_JWT_SKIP_SESSION = {
+    ("/api/auth/login", "POST"),
+    ("/api/auth/register", "POST"),
+    ("/api/auth/refresh", "POST"),
+    ("/api/auth/logout", "POST"),
+    ("/api/auth/signup/step1", "POST"),
+    ("/api/auth/signup/step2", "POST"),
+    ("/api/auth/signup/save-progress", "POST"),
+    ("/api/auth/change-password", "POST"),
+}
+
+
+class _ConditionalSessionMiddleware(SessionMiddleware):
+    """Runs SessionMiddleware except for JWT auth routes that do not need session, to avoid
+    500 when decoding a stale/mismatched session cookie."""
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        method = (scope.get("method") or "GET").upper()
+        if (path, method) in _JWT_SKIP_SESSION:
+            scope["session"] = {}
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
 
 # Session middleware with secure settings
 app.add_middleware(
-    SessionMiddleware,
+    _ConditionalSessionMiddleware,
     secret_key=session_secret,
     session_cookie="creditnexus_session",
     max_age=settings.SESSION_MAX_AGE,
@@ -593,9 +623,38 @@ if settings.METRICS_ENABLED:
     from app.middleware.metrics_middleware import MetricsMiddleware
     app.add_middleware(MetricsMiddleware)
 
+
+# #region agent log – outermost ASGI; runs first to confirm request reaches our app
+class _DebugOuterASGI:
+    def __init__(self, app):
+        self.app = app
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            try:
+                import json as _json, time as _time
+                with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as _f:
+                    _f.write(_json.dumps({"sessionId":"debug-session","runId":"outer","hypothesisId":"H8","location":"server:outer_asgi","message":"request_entered_outer","data":{"path":scope.get("path"),"method":scope.get("method")},"timestamp":int(_time.time()*1000)}) + "\n")
+            except Exception:
+                pass
+        await self.app(scope, receive, send)
+app.add_middleware(_DebugOuterASGI)
+# #endregion
+
 # Make limiter available globally for route decorators
 # Routes can access it via: from server import limiter (if enabled)
 # Or use: request.app.state.limiter in route functions
+
+# #region agent log
+@app.middleware("http")
+async def _debug_request_log(request: Request, call_next):
+    try:
+        import json, time
+        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"mw","hypothesisId":"H7","location":"server:middleware","message":"request_entered","data":{"path":request.url.path,"method":request.method},"timestamp":int(time.time()*1000)}) + "\n")
+    except Exception:
+        pass
+    return await call_next(request)
+# #endregion
 
 app.include_router(router)
 app.include_router(credit_risk_router)
