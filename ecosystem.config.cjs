@@ -9,20 +9,29 @@
  *
  * @see docs/guides/pm2-dev-setup.md
  */
+const fs = require('fs');
 const path = require('path');
 
 const projectRoot = __dirname;
 const logsDir = path.join(projectRoot, 'logs', 'pm2');
+const isWindows = process.platform === 'win32';
+
+const venvPython = isWindows
+  ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+  : path.join(projectRoot, '.venv', 'bin', 'python');
+const useVenv = fs.existsSync(venvPython);
 
 module.exports = {
   apps: [
     {
       name: 'backend-dev',
-      script: 'python',
-      args: 'scripts/run_dev.py',
+      // Prefer project .venv so icalendar and other deps are available. If no .venv,
+      // on Windows use cmd /c to avoid "SyntaxError in ...\PYTHON.EXE".
+      script: useVenv ? venvPython : (isWindows ? 'cmd' : 'python'),
+      args: useVenv ? ['scripts/run_dev.py'] : (isWindows ? ['/c', 'python', 'scripts/run_dev.py'] : ['scripts/run_dev.py']),
       cwd: projectRoot,
       interpreter: 'none',
-      env: { NODE_ENV: 'development' },
+      env: { NODE_ENV: 'development', PYTHONUNBUFFERED: '1', PM2: '1' },
       out_file: path.join(logsDir, 'backend-dev-out.log'),
       error_file: path.join(logsDir, 'backend-dev-error.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS',
@@ -34,8 +43,8 @@ module.exports = {
     },
     {
       name: 'frontend-dev',
-      script: 'npm',
-      args: 'run dev',
+      script: isWindows ? 'cmd' : 'sh',
+      args: isWindows ? ['/c', 'npm', 'run', 'dev'] : ['-c', 'npm run dev'],
       cwd: path.join(projectRoot, 'client'),
       interpreter: 'none',
       env: { NODE_ENV: 'development' },

@@ -72,6 +72,14 @@ def get_db():
     Raises:
         HTTPException: 503 Service Unavailable if database is not configured.
     """
+    # #region agent log
+    try:
+        import json, time
+        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"get_db","hypothesisId":"H6","location":"db/__init__.py:get_db:entry","message":"get_db invoked","data":{"SessionLocal_is_None": SessionLocal is None},"timestamp":int(time.time()*1000)}) + "\n")
+    except Exception:
+        pass
+    # #endregion
     if SessionLocal is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -82,7 +90,26 @@ def get_db():
                 "hint": "For development, DATABASE_URL can be omitted to use SQLite automatically."
             }
         )
-    db = SessionLocal()
+    try:
+        db = SessionLocal()
+    except Exception as e:
+        # #region agent log
+        try:
+            import json, time
+            with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                f.write(json.dumps({"sessionId":"debug-session","runId":"get_db","hypothesisId":"H6","location":"db/__init__.py:get_db:SessionLocal_failed","message":"SessionLocal() raised","data":{"error":str(e),"type":type(e).__name__},"timestamp":int(time.time()*1000)}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        raise
+    # #region agent log
+    try:
+        import json, time
+        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"get_db","hypothesisId":"H6","location":"db/__init__.py:get_db:after_SessionLocal","message":"SessionLocal() ok, before yield","data":{},"timestamp":int(time.time()*1000)}) + "\n")
+    except Exception:
+        pass
+    # #endregion
     try:
         yield db
     finally:
