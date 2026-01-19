@@ -17,6 +17,9 @@ ssl_certs/
 *.cer
 *.der
 
+# PM2 log output (development)
+logs/
+
 # Test artifacts and temporary files
 dev/*.txt
 dev/*.log
