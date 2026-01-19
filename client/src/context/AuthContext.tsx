@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { resolveApiUrl } from '@/utils/apiBase';
 
 interface User {
   id: number;
