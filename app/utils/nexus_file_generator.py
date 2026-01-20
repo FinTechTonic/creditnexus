@@ -3,9 +3,9 @@
 import zipfile
 import json
 import hashlib
-import tempfile
 import base64
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
@@ -67,88 +67,82 @@ class NexusFileGenerator:
         Returns:
             .nexus file as bytes
         """
-        # Create temporary ZIP file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.nexus') as tmp_file:
-            with zipfile.ZipFile(tmp_file.name, 'w', zipfile.ZIP_DEFLATED) as nexus_zip:
-                # 1. Generate encrypted metadata
-                metadata = self._build_metadata(
-                    workflow_type, workflow_id, deal_id, deal_data,
-                    cdm_payload, workflow_metadata, sender_info,
-                    receiver_info, expires_in_hours, download_ttl_hours
-                )
-                encrypted_metadata = self._encrypt_metadata(metadata)
-                nexus_zip.writestr('META-INF/metadata.json', encrypted_metadata)
+        # Use BytesIO to avoid Windows file-lock issues with tempfile.NamedTemporaryFile
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as nexus_zip:
+            # 1. Generate encrypted metadata
+            metadata = self._build_metadata(
+                workflow_type, workflow_id, deal_id, deal_data,
+                cdm_payload, workflow_metadata, sender_info,
+                receiver_info, expires_in_hours, download_ttl_hours
+            )
+            encrypted_metadata = self._encrypt_metadata(metadata)
+            nexus_zip.writestr('META-INF/metadata.json', encrypted_metadata)
 
-                # 2. Process files (embed small, reference large)
-                files_manifest = []
-                large_file_references = []
+            # 2. Process files (embed small, reference large)
+            files_manifest = []
+            large_file_references = []
 
-                if include_files and file_references:
-                    for file_ref in file_references:
-                        file_size = file_ref.get('size', 0)
-                        filename = file_ref.get('filename', 'unknown')
+            if include_files and file_references:
+                for file_ref in file_references:
+                    file_size = file_ref.get('size', 0)
+                    filename = file_ref.get('filename', 'unknown')
 
-                        if file_size <= max_embedded_size:
-                            # Embed file
-                            file_content = self._get_file_content(file_ref)
-                            if file_content:
-                                file_path = f"files/{filename}"
-                                nexus_zip.writestr(file_path, file_content)
+                    if file_size <= max_embedded_size:
+                        # Embed file
+                        file_content = self._get_file_content(file_ref)
+                        if file_content:
+                            file_path = f"files/{filename}"
+                            nexus_zip.writestr(file_path, file_content)
 
-                                files_manifest.append({
-                                    "path": file_path,
-                                    "filename": filename,
-                                    "size": file_size,
-                                    "category": file_ref.get('category', 'legal'),
-                                    "checksum": self._compute_checksum(file_content),
-                                    "embedded": True
-                                })
-                        else:
-                            # Reference large file
-                            large_file_references.append({
+                            files_manifest.append({
+                                "path": file_path,
                                 "filename": filename,
                                 "size": file_size,
-                                "download_url": file_ref.get('download_url'),
-                                "download_ttl": self._calculate_download_ttl(download_ttl_hours),
-                                "checksum": file_ref.get('checksum'),
-                                "embedded": False
+                                "category": file_ref.get('category', 'legal'),
+                                "checksum": self._compute_checksum(file_content),
+                                "embedded": True
                             })
+                    else:
+                        # Reference large file
+                        large_file_references.append({
+                            "filename": filename,
+                            "size": file_size,
+                            "download_url": file_ref.get('download_url'),
+                            "download_ttl": self._calculate_download_ttl(download_ttl_hours),
+                            "checksum": file_ref.get('checksum'),
+                            "embedded": False
+                        })
 
-                # 3. Write manifest
-                manifest = self._build_manifest(
-                    workflow_type, workflow_id, sender_info,
-                    files_manifest, large_file_references
+            # 3. Write manifest
+            manifest = self._build_manifest(
+                workflow_type, workflow_id, sender_info,
+                files_manifest, large_file_references
+            )
+            nexus_zip.writestr('META-INF/manifest.json', json.dumps(manifest, indent=2))
+
+            # 4. Write large file references
+            if large_file_references:
+                nexus_zip.writestr(
+                    'references/large_files.json',
+                    json.dumps(large_file_references, indent=2)
                 )
-                nexus_zip.writestr('META-INF/manifest.json', json.dumps(manifest, indent=2))
 
-                # 4. Write large file references
-                if large_file_references:
-                    nexus_zip.writestr(
-                        'references/large_files.json',
-                        json.dumps(large_file_references, indent=2)
-                    )
+            # 5. Write permissions (encrypted)
+            if permission_keys:
+                encrypted_permissions = self._encrypt_permissions(permission_keys)
+                nexus_zip.writestr('META-INF/permissions.json', encrypted_permissions)
 
-                # 5. Write permissions (encrypted)
-                if permission_keys:
-                    encrypted_permissions = self._encrypt_permissions(permission_keys)
-                    nexus_zip.writestr('META-INF/permissions.json', encrypted_permissions)
+            # 6. Write whitelist config (if provided)
+            if whitelist_config:
+                nexus_zip.writestr(
+                    'META-INF/whitelist.json',
+                    json.dumps(whitelist_config, indent=2)
+                )
 
-                # 6. Write whitelist config (if provided)
-                if whitelist_config:
-                    nexus_zip.writestr(
-                        'META-INF/whitelist.json',
-                        json.dumps(whitelist_config, indent=2)
-                    )
-
-            # Read ZIP file as bytes
-            with open(tmp_file.name, 'rb') as f:
-                nexus_bytes = f.read()
-
-            # Clean up
-            Path(tmp_file.name).unlink()
-
-            logger.info(f"Generated .nexus file for workflow {workflow_id} ({len(nexus_bytes)} bytes)")
-            return nexus_bytes
+        nexus_bytes = buffer.getvalue()
+        logger.info(f"Generated .nexus file for workflow {workflow_id} ({len(nexus_bytes)} bytes)")
+        return nexus_bytes
 
     def _build_metadata(
         self,
