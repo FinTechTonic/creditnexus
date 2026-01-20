@@ -136,6 +136,7 @@
           "guides/document-generation",
           "guides/trade-execution",
           "guides/verification",
+          "guides/pm2-dev-setup",
           "guides/twilio-setup",
           "guides/digisigner-setup",
           "guides/metamask-setup",

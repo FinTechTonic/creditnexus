@@ -2,7 +2,12 @@ const hre = require("hardhat");
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
-  
+  if (!deployer) {
+    throw new Error(
+      "No deployer account. Set PRIVATE_KEY or BLOCKCHAIN_DEPLOYER_PRIVATE_KEY in the project root .env (see contracts/README or hardhat.config.js)."
+    );
+  }
+
   console.log("Deploying contracts with account:", deployer.address);
   console.log("Account balance:", (await hre.ethers.provider.getBalance(deployer.address)).toString());
 

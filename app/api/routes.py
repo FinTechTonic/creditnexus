@@ -7392,42 +7392,8 @@ async def settle_trade_with_payment(
     
     try:
         # Step 1: Get trade execution event
-        # #region agent log
-        import json
-        log_data = {
-            "sessionId": "debug-session",
-            "runId": "trade-settlement",
-            "hypothesisId": "A",
-            "location": "routes.py:7182",
-            "message": "Attempting to get trade execution",
-            "data": {"trade_id": trade_id},
-            "timestamp": int(datetime.now().timestamp() * 1000)
-        }
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         trade_event = get_trade_execution(trade_id, db)
-        
-        # #region agent log
-        log_data = {
-            "sessionId": "debug-session",
-            "runId": "trade-settlement",
-            "hypothesisId": "A",
-            "location": "routes.py:7184",
-            "message": "Trade lookup result",
-            "data": {"trade_id": trade_id, "found": trade_event is not None},
-            "timestamp": int(datetime.now().timestamp() * 1000)
-        }
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        
+
         if not trade_event:
             raise HTTPException(
                 status_code=404,
@@ -9296,7 +9262,10 @@ async def export_generated_document(
 # ============================================================================
 
 from app.db.models import Application, Inquiry, Meeting, ApplicationType, ApplicationStatus, InquiryType, InquiryStatus
-from app.services.ics_generator import generate_ics_file, save_ics_file, get_ics_file_path
+try:
+    from app.services.ics_generator import generate_ics_file, save_ics_file, get_ics_file_path
+except ImportError:
+    generate_ics_file = save_ics_file = get_ics_file_path = None  # icalendar not installed
 from fastapi.responses import FileResponse
 from pathlib import Path
 
@@ -10071,6 +10040,8 @@ async def download_meeting_ics(
     current_user: User = Depends(get_current_user)
 ):
     """Download .ics file for a meeting."""
+    if get_ics_file_path is None or save_ics_file is None:
+        raise HTTPException(status_code=503, detail="ICS support unavailable. Install icalendar: pip install icalendar")
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -13091,11 +13062,6 @@ async def get_compliance_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    # #region agent log
-    with open(r'c:\Users\MeMyself\creditnexus\.cursor\debug.log', 'a') as f:
-        import json, time
-        f.write(json.dumps({'location': 'routes.py:12961', 'message': 'Entering get_compliance_report API', 'data': {'deal_id': deal_id, 'jurisdiction': jurisdiction}, 'timestamp': int(time.time()*1000), 'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B'}) + '\n')
-    # #endregion
     """Generate compliance report for filings.
     
     Returns comprehensive compliance statistics including:

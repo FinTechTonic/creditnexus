@@ -509,6 +509,8 @@ CreditNexus uses Base network (Coinbase Layer 2) for blockchain operations.
 <ParamField body="BLOCKCHAIN_DEPLOYER_PRIVATE_KEY" type="string">
   Private key for contract deployment (optional, auto-generated in dev if not provided).
   
+  **Not required for local Hardhat:** use `npm run deploy:local` or `npm run node` + `npm run deploy:localhost` in `contracts/` (see `contracts/README.md`).
+  
   **Security**: Never commit private keys to version control!
   
   Format: `0x...` (64 hex characters, no 0x prefix in .env)
@@ -942,7 +944,8 @@ EMBEDDINGS_DEVICE=cuda
 - For testnet, use `https://sepolia.base.org`
 
 **Issue**: Contract deployment fails
-- Verify `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` is set
+- **Local Hardhat:** use `npm run deploy:local` or `npm run node` + `npm run deploy:localhost` in `contracts/` (no private key needed). Set `X402_NETWORK_RPC_URL=http://127.0.0.1:8545` and the printed contract addresses.
+- **Base / Base Sepolia:** verify `PRIVATE_KEY` or `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` is set in project root `.env`
 - Check account has sufficient ETH for gas
 - Verify RPC URL is accessible
 

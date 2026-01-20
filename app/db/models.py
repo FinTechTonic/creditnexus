@@ -1892,6 +1892,66 @@ class WorkflowDelegationState(Base):
         }
 
 
+class PermissionKeyType(str, enum.Enum):
+    """Type of permission key for .nexus file access."""
+
+    WALLET = "wallet"
+    APPLICATION = "application"
+
+
+class PermissionKey(Base):
+    """Permission key for .nexus file access (wallet, application, whitelist)."""
+
+    __tablename__ = "permission_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key_id = Column(String(255), unique=True, nullable=False, index=True)
+    key_type = Column(String(50), nullable=False, index=True)
+    encrypted_key = Column(JSONB, nullable=False)
+    key_hash = Column(String(255), nullable=False, index=True)
+    permissions = Column(JSONB, nullable=False)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
+    organization_id = Column(Integer, nullable=True, index=True)
+    workflow_id = Column(String(255), nullable=True, index=True)
+    wallet_address = Column(String(255), nullable=True, index=True)
+    application_key_id = Column(String(255), nullable=True, index=True)
+    whitelist_id = Column(String(255), nullable=True, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    download_ttl = Column(DateTime, nullable=True, index=True)
+    usage_count = Column(Integer, default=0, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SharingEvent(Base):
+    """Sharing event for blockchain-notarized send/receive of .nexus files."""
+
+    __tablename__ = "sharing_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String(255), unique=True, nullable=False, index=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    sharing_method = Column(String(50), nullable=False)
+    workflow_id = Column(String(255), nullable=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
+    sender_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    receiver_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    receiver_email = Column(String(255), nullable=True, index=True)
+    receiver_wallet_address = Column(String(255), nullable=True, index=True)
+    file_hash = Column(String(255), nullable=False, index=True)
+    file_size = Column(Integer, nullable=True)
+    files_included = Column(Integer, default=0, nullable=False)
+    blockchain_tx_hash = Column(String(255), nullable=True, index=True)
+    blockchain_block_number = Column(Integer, nullable=True)
+    notarized_at = Column(DateTime, nullable=True)
+    cdm_event = Column(JSONB, nullable=True)
+    event_metadata = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class GreenFinanceAssessment(Base):
     """Green Finance Assessment model for storing comprehensive green finance assessments."""
     
@@ -3203,12 +3263,108 @@ class Order(Base):
     
     # Additional metadata
     order_metadata = Column(JSONB, nullable=True)  # Additional order metadata
+# Document Review Models
+# ============================================================================
+
+class CommentType(str, enum.Enum):
+    """Types of review comments."""
+    GENERAL = "general"  # General comment
+    ANNOTATION = "annotation"  # Field-specific annotation
+    CHANGE_REQUEST = "change_request"  # Request for specific change
+
+
+class ReviewComment(Base):
+    """Review comment model for document review workflows."""
+    
+    __tablename__ = "review_comments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id = Column(Integer, ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    comment_text = Column(Text, nullable=False)
+    comment_type = Column(String(20), default=CommentType.GENERAL.value, nullable=False, index=True)
+    
+    # For field-specific annotations
+    target_field = Column(String(255), nullable=True, index=True)  # e.g., "parties[0].name", "facilities[1].commitment_amount"
+    target_range = Column(JSONB, nullable=True)  # For text selection ranges: {"start": 0, "end": 100}
+    
+    # Comment resolution
+    resolved = Column(Boolean, default=False, nullable=False, index=True)
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    
+    # Threading support (for replies)
+    parent_comment_id = Column(Integer, ForeignKey("review_comments.id", ondelete="CASCADE"), nullable=True, index=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("Document", backref="review_comments")
+    version = relationship("DocumentVersion", backref="review_comments")
+    user = relationship("User", foreign_keys=[user_id], backref="review_comments")
+    resolver = relationship("User", foreign_keys=[resolved_by])
+    parent_comment = relationship("ReviewComment", remote_side=[id], backref="replies")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "version_id": self.version_id,
+            "user_id": self.user_id,
+            "comment_text": self.comment_text,
+            "comment_type": self.comment_type,
+            "target_field": self.target_field,
+            "target_range": self.target_range,
+            "resolved": self.resolved,
+            "resolved_by": self.resolved_by,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "parent_comment_id": self.parent_comment_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ReviewAssignmentStatus(str, enum.Enum):
+    """Status of a review assignment."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class ReviewAssignment(Base):
+    """Review assignment model for assigning reviewers to documents."""
+    
+    __tablename__ = "review_assignments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=True, index=True)
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    assigned_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    due_date = Column(DateTime, nullable=True, index=True)
+    
+    status = Column(String(20), default=ReviewAssignmentStatus.PENDING.value, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True)
+    review_notes = Column(Text, nullable=True)  # Reviewer's notes/feedback
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", backref="orders")
+    document = relationship("Document", backref="review_assignments")
+    workflow = relationship("Workflow", backref="review_assignments")
+    reviewer = relationship("User", foreign_keys=[reviewer_id], backref="assigned_reviews")
+    assigner = relationship("User", foreign_keys=[assigned_by])
     
     def to_dict(self):
         """Convert model to dictionary."""
@@ -3236,6 +3392,17 @@ class Order(Base):
             "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
             "rejection_reason": self.rejection_reason,
             "metadata": self.order_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "document_id": self.document_id,
+            "workflow_id": self.workflow_id,
+            "reviewer_id": self.reviewer_id,
+            "assigned_by": self.assigned_by,
+            "assigned_at": self.assigned_at.isoformat() if self.assigned_at else None,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "status": self.status,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "review_notes": self.review_notes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
