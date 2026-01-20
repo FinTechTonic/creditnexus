@@ -1892,6 +1892,66 @@ class WorkflowDelegationState(Base):
         }
 
 
+class PermissionKeyType(str, enum.Enum):
+    """Type of permission key for .nexus file access."""
+
+    WALLET = "wallet"
+    APPLICATION = "application"
+
+
+class PermissionKey(Base):
+    """Permission key for .nexus file access (wallet, application, whitelist)."""
+
+    __tablename__ = "permission_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key_id = Column(String(255), unique=True, nullable=False, index=True)
+    key_type = Column(String(50), nullable=False, index=True)
+    encrypted_key = Column(JSONB, nullable=False)
+    key_hash = Column(String(255), nullable=False, index=True)
+    permissions = Column(JSONB, nullable=False)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
+    organization_id = Column(Integer, nullable=True, index=True)
+    workflow_id = Column(String(255), nullable=True, index=True)
+    wallet_address = Column(String(255), nullable=True, index=True)
+    application_key_id = Column(String(255), nullable=True, index=True)
+    whitelist_id = Column(String(255), nullable=True, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    download_ttl = Column(DateTime, nullable=True, index=True)
+    usage_count = Column(Integer, default=0, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SharingEvent(Base):
+    """Sharing event for blockchain-notarized send/receive of .nexus files."""
+
+    __tablename__ = "sharing_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String(255), unique=True, nullable=False, index=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    sharing_method = Column(String(50), nullable=False)
+    workflow_id = Column(String(255), nullable=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
+    sender_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    receiver_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    receiver_email = Column(String(255), nullable=True, index=True)
+    receiver_wallet_address = Column(String(255), nullable=True, index=True)
+    file_hash = Column(String(255), nullable=False, index=True)
+    file_size = Column(Integer, nullable=True)
+    files_included = Column(Integer, default=0, nullable=False)
+    blockchain_tx_hash = Column(String(255), nullable=True, index=True)
+    blockchain_block_number = Column(Integer, nullable=True)
+    notarized_at = Column(DateTime, nullable=True)
+    cdm_event = Column(JSONB, nullable=True)
+    event_metadata = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class GreenFinanceAssessment(Base):
     """Green Finance Assessment model for storing comprehensive green finance assessments."""
     

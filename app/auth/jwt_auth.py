@@ -286,24 +286,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT refresh token and store it in the database."""
-    # #region agent log
-    import json
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "login-attempt",
-        "hypothesisId": "F",
-        "location": "jwt_auth.py:create_refresh_token:entry",
-        "message": "create_refresh_token called",
-        "data": {"user_id": data.get("sub")},
-        "timestamp": int(datetime.utcnow().timestamp() * 1000)
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
     logger.debug("create_refresh_token called", extra={"user_id": data.get("sub")})
     
     to_encode = data.copy()
@@ -315,18 +297,7 @@ def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timede
         "type": "refresh",
         "jti": jti
     })
-    
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:before_db_add"
-    log_data["message"] = "Before RefreshToken creation"
-    log_data["data"] = {"jti": jti, "user_id": data.get("sub"), "user_id_int": int(data.get("sub")) if data.get("sub") else None}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         token_record = RefreshToken(
             jti=jti,
@@ -336,81 +307,20 @@ def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timede
         )
         db.add(token_record)
     except Exception as e:
-        # #region agent log
-        log_data["location"] = "jwt_auth.py:create_refresh_token:db_add_error"
-        log_data["message"] = "RefreshToken creation/add failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:before_commit"
-    log_data["message"] = "Before db.commit()"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         db.commit()
     except Exception as e:
-        # #region agent log
-        log_data["location"] = "jwt_auth.py:create_refresh_token:commit_error"
-        log_data["message"] = "db.commit() failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
+
     logger.debug("Refresh token created", extra={"jti": jti, "user_id": data.get("sub")})
-    
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:before_jwt_encode"
-    log_data["message"] = "Before JWT encoding"
-    log_data["data"] = {"has_refresh_secret": bool(JWT_REFRESH_SECRET_KEY)}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         token = jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, algorithm=JWT_ALGORITHM)
     except Exception as e:
-        # #region agent log
-        log_data["location"] = "jwt_auth.py:create_refresh_token:jwt_encode_error"
-        log_data["message"] = "JWT encoding failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:success"
-    log_data["message"] = "Refresh token created successfully"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     return token
 
 
@@ -500,25 +410,6 @@ async def require_auth(
     db: Session = Depends(get_db)
 ) -> User:
     """Require valid authentication - raises exception if not authenticated."""
-    # #region agent log
-    import json
-    from datetime import datetime
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "auth-check",
-        "hypothesisId": "JWT persistence",
-        "location": "jwt_auth.py:require_auth",
-        "message": "Checking authentication",
-        "data": {"has_credentials": credentials is not None},
-        "timestamp": int(datetime.now().timestamp() * 1000)
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -527,16 +418,6 @@ async def require_auth(
         )
     
     payload = decode_access_token(credentials.credentials)
-    
-    # #region agent log
-    log_data["message"] = "Decoded token"
-    log_data["data"] = {"payload_found": payload is not None, "token_start": credentials.credentials[:10] if credentials.credentials else None}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
     if not payload:
         raise HTTPException(
@@ -554,16 +435,6 @@ async def require_auth(
         )
     
     user = db.query(User).filter(User.id == int(user_id)).first()
-    
-    # #region agent log
-    log_data["message"] = "User lookup"
-    log_data["data"] = {"user_found": user is not None, "user_id": user_id}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
     if not user:
         raise HTTPException(
@@ -930,39 +801,10 @@ async def login(
     Rate limited via slowapi default_limits (60/minute) with additional
     account lockout protection (5 failed attempts = 30 min lockout).
     """
-    # #region agent log
-    import json
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "login-attempt",
-        "hypothesisId": "A",
-        "location": "jwt_auth.py:login:entry",
-        "message": "Login endpoint called",
-        "data": {"email": credentials.email, "has_password": bool(credentials.password)},
-        "timestamp": int(datetime.utcnow().timestamp() * 1000)
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
     # Rate limiting is handled by slowapi's default_limits (60/minute)
     # Additional protection via account lockout mechanism (5 failed attempts)
     logger.debug("Login attempt", extra={"email": credentials.email})
-    
-    # #region agent log
-    log_data["hypothesisId"] = "A"
-    log_data["location"] = "jwt_auth.py:login:before_query"
-    log_data["message"] = "Before database query"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     # Fix for encrypted email query: The EncryptedString type encrypts to bytes via process_bind_param,
     # but the database column is VARCHAR, causing a type mismatch error (character varying = bytea).
     # Workaround: Query all users and filter in Python by decrypting emails.
@@ -975,17 +817,6 @@ async def login(
         if not settings.ENCRYPTION_ENABLED:
             user = db.query(User).filter(User.email == credentials.email).first()
         else:
-            # #region agent log
-            log_data["hypothesisId"] = "A"
-            log_data["location"] = "jwt_auth.py:login:encrypted_email_workaround"
-            log_data["message"] = "Using workaround for encrypted email query"
-            try:
-                with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                    f.write(json.dumps(log_data) + "\n")
-            except Exception:
-                pass
-            # #endregion
-            
             # Workaround: Query all users and filter by comparing decrypted emails
             # This is not ideal for performance but works around the type mismatch
             all_users = db.query(User).all()
@@ -998,136 +829,33 @@ async def login(
                         break
                 except Exception as email_error:
                     # If decryption fails for this user, skip it
-                    # #region agent log
-                    log_data["hypothesisId"] = "A"
-                    log_data["location"] = "jwt_auth.py:login:decrypt_error"
-                    log_data["message"] = "Failed to decrypt email for user"
-                    log_data["data"] = {"user_id": u.id, "error": str(email_error)}
-                    try:
-                        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                            f.write(json.dumps(log_data) + "\n")
-                    except Exception:
-                        pass
-                    # #endregion
                     continue
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "A"
-        log_data["location"] = "jwt_auth.py:login:query_error"
-        log_data["message"] = "Database query failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["hypothesisId"] = "A"
-    log_data["location"] = "jwt_auth.py:login:after_query"
-    log_data["message"] = "After database query"
-    log_data["data"] = {"user_found": user is not None, "user_id": user.id if user else None}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     if not user:
         logger.warning("Login failed: user not found", extra={"email": credentials.email})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
-    
-    # #region agent log
-    log_data["hypothesisId"] = "B"
-    log_data["location"] = "jwt_auth.py:login:before_lockout_check"
-    log_data["message"] = "Before account lockout check"
-    log_data["data"] = {"locked_until": str(user.locked_until) if user.locked_until else None}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         check_account_lockout(user)
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "B"
-        log_data["location"] = "jwt_auth.py:login:lockout_error"
-        log_data["message"] = "Account lockout check failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["hypothesisId"] = "B"
-    log_data["location"] = "jwt_auth.py:login:after_lockout_check"
-    log_data["message"] = "After account lockout check"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     if not user.password_hash:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Password login not configured for this account. Use OAuth instead."
         )
-    
-    # #region agent log
-    log_data["hypothesisId"] = "C"
-    log_data["location"] = "jwt_auth.py:login:before_password_verify"
-    log_data["message"] = "Before password verification"
-    log_data["data"] = {"has_password_hash": bool(user.password_hash), "hash_length": len(user.password_hash) if user.password_hash else 0}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         password_valid = verify_password(credentials.password, user.password_hash)
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "C"
-        log_data["location"] = "jwt_auth.py:login:password_verify_error"
-        log_data["message"] = "Password verification failed with exception"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["hypothesisId"] = "C"
-    log_data["location"] = "jwt_auth.py:login:after_password_verify"
-    log_data["message"] = "After password verification"
-    log_data["data"] = {"password_valid": password_valid}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     if not password_valid:
         handle_failed_login(user, db)
         remaining_attempts = MAX_LOGIN_ATTEMPTS - user.failed_login_attempts
@@ -1146,57 +874,7 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated. Contact support."
         )
-    
-    # #region agent log
-    log_data["hypothesisId"] = "D"
-    log_data["location"] = "jwt_auth.py:login:before_reset_attempts"
-    log_data["message"] = "Before reset login attempts"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
-    try:
-        reset_login_attempts(user, db)
-    except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "D"
-        log_data["location"] = "jwt_auth.py:login:reset_attempts_error"
-        log_data["message"] = "Reset login attempts failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        raise
-    
-    # #region agent log
-    log_data["hypothesisId"] = "D"
-    log_data["location"] = "jwt_auth.py:login:after_reset_attempts"
-    log_data["message"] = "After reset login attempts"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
-    # #region agent log
-    log_data["hypothesisId"] = "E"
-    log_data["location"] = "jwt_auth.py:login:before_audit_log"
-    log_data["message"] = "Before audit log creation"
-    log_data["data"] = {"user_id": user.id}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         audit_log = AuditLog(
             user_id=user.id,
@@ -1210,99 +888,20 @@ async def login(
         db.add(audit_log)
         db.commit()
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "E"
-        log_data["location"] = "jwt_auth.py:login:audit_log_error"
-        log_data["message"] = "Audit log creation/commit failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["hypothesisId"] = "E"
-    log_data["location"] = "jwt_auth.py:login:after_audit_log"
-    log_data["message"] = "After audit log commit"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
-    # #region agent log
-    log_data["hypothesisId"] = "F"
-    log_data["location"] = "jwt_auth.py:login:before_token_creation"
-    log_data["message"] = "Before token creation"
-    log_data["data"] = {"has_jwt_secret": bool(JWT_SECRET_KEY), "has_refresh_secret": bool(JWT_REFRESH_SECRET_KEY), "user_id": user.id}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         access_token = create_access_token({"sub": str(user.id), "email": user.email})
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "F"
-        log_data["location"] = "jwt_auth.py:login:access_token_error"
-        log_data["message"] = "Access token creation failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
+
     try:
         refresh_token = create_refresh_token({"sub": str(user.id)}, db)
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "F"
-        log_data["location"] = "jwt_auth.py:login:refresh_token_error"
-        log_data["message"] = "Refresh token creation failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["hypothesisId"] = "F"
-    log_data["location"] = "jwt_auth.py:login:after_token_creation"
-    log_data["message"] = "After token creation"
-    log_data["data"] = {"has_access_token": bool(access_token), "has_refresh_token": bool(refresh_token)}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     logger.info("Login successful", extra={"user_id": user.id, "email": user.email})
-    
-    # #region agent log
-    log_data["hypothesisId"] = "G"
-    log_data["location"] = "jwt_auth.py:login:before_response"
-    log_data["message"] = "Before TokenResponse creation"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     try:
         response = TokenResponse(
             access_token=access_token,
@@ -1310,30 +909,8 @@ async def login(
             expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
         )
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "G"
-        log_data["location"] = "jwt_auth.py:login:response_error"
-        log_data["message"] = "TokenResponse creation failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-    
-    # #region agent log
-    log_data["hypothesisId"] = "G"
-    log_data["location"] = "jwt_auth.py:login:success"
-    log_data["message"] = "Login successful, returning response"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
+
     return response
 
 

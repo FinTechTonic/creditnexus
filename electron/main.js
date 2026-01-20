@@ -18,19 +18,6 @@ let serverProcess = null;
 const SERVER_PORT = 8000;
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 
-// #region agent log
-function _debugLog(location, message, data, hypothesisId) {
-  try {
-    const logPath = app.isPackaged
-      ? path.join(app.getPath('userData'), 'debug.log')
-      : path.join(__dirname, '..', '.cursor', 'debug.log');
-    const dir = path.dirname(logPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(logPath, JSON.stringify({ location, message, data, hypothesisId, timestamp: Date.now(), sessionId: 'debug-session' }) + '\n');
-  } catch (_) {}
-}
-// #endregion
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -54,35 +41,12 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   } else {
     const loadPath = path.join(__dirname, '../client/dist/index.html');
-    const assetsDir = path.join(__dirname, '../client/dist/assets');
-    // #region agent log
-    _debugLog('electron/main.js:createWindow', 'loadFile path check', {
-      loadPath,
-      indexExists: fs.existsSync(loadPath),
-      assetsDirExists: fs.existsSync(assetsDir),
-      __dirname,
-      appPath: app.getAppPath(),
-      isPackaged: app.isPackaged
-    }, 'H1');
-    // #endregion
     mainWindow.loadFile(loadPath);
   }
 
   const openDevTools = () => { try { mainWindow.webContents.openDevTools(); } catch (_) {} };
-  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
-    // #region agent log
-    _debugLog('electron/main.js:did-fail-load', 'page load failed', { errorCode: code, errorDescription: desc, url }, 'H1');
-    // #endregion
-    openDevTools();
-  });
+  mainWindow.webContents.on('did-fail-load', () => { openDevTools(); });
   mainWindow.webContents.on('did-finish-load', () => {
-    // #region agent log
-    mainWindow.webContents.executeJavaScript(
-      `(function(){ var r=document.getElementById('root'); return { rootEmpty: !r || !r.innerHTML, scriptSrc: (document.querySelector('script[src]')||{}).src, href: (document.querySelector('link[href]')||{}).href }; })()`
-    ).then((o) => {
-      _debugLog('electron/main.js:did-finish-load', 'page loaded', o || {}, 'H2');
-    }).catch(() => { _debugLog('electron/main.js:did-finish-load', 'page loaded', { executeError: true }, 'H2'); });
-    // #endregion
     if (process.env.NODE_ENV !== 'development' && process.env.ELECTRON_OPEN_DEVTOOLS === '1') openDevTools();
   });
 

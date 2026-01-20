@@ -105,23 +105,6 @@ def create_peoplehub_research_graph():
 
 def start_node(state: ResearchState) -> Dict[str, Any]:
     """Initialize research state."""
-    # #region agent log
-    import json
-    from datetime import datetime
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "peoplehub-concurrency",
-                "hypothesisId": "CONCURRENCY",
-                "location": "peoplehub_research_graph.py:start_node",
-                "message": "start_node called",
-                "data": {"keys": list(state.keys())},
-                "timestamp": int(datetime.now().timestamp() * 1000)
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     # Only return fields that are being updated to avoid concurrent update errors
     return {
         "status": "Initializing research...",
@@ -134,23 +117,6 @@ def start_node(state: ResearchState) -> Dict[str, Any]:
 
 def fetch_linkedin_node(state: ResearchState) -> Dict[str, Any]:
     """Fetch LinkedIn profile data."""
-    # #region agent log
-    import json
-    from datetime import datetime
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "peoplehub-concurrency",
-                "hypothesisId": "CONCURRENCY",
-                "location": "peoplehub_research_graph.py:fetch_linkedin_node",
-                "message": "fetch_linkedin_node called",
-                "data": {"person_name": state.get("person_name"), "has_linkedin_url": bool(state.get("linkedin_url"))},
-                "timestamp": int(datetime.now().timestamp() * 1000)
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     # Implementation: Use Bright Data LinkedIn API or similar
     # This would integrate with existing LinkedIn scraping infrastructure
     logger.info(f"Fetching LinkedIn profile: {state.get('linkedin_url', 'N/A')}")
@@ -165,23 +131,6 @@ def fetch_linkedin_node(state: ResearchState) -> Dict[str, Any]:
 
 def generate_search_query_node(state: ResearchState) -> Dict[str, Any]:
     """Generate search query from person name and LinkedIn data."""
-    # #region agent log
-    import json
-    from datetime import datetime
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "peoplehub-concurrency",
-                "hypothesisId": "CONCURRENCY",
-                "location": "peoplehub_research_graph.py:generate_search_query_node",
-                "message": "generate_search_query_node called",
-                "data": {"person_name": state.get("person_name"), "linkedin_data_type": type(state.get("linkedin_data")).__name__},
-                "timestamp": int(datetime.now().timestamp() * 1000)
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     llm = get_chat_model(temperature=0.7)
     
     prompt = f"""Generate a Google search query to find information about {state['person_name']}.
