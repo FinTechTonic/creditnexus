@@ -42,6 +42,7 @@ from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
 from app.api.metrics_routes import router as metrics_router
 from app.api.review_routes import router as review_router
+from app.api.trading_routes import router as trading_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -654,6 +655,7 @@ app.include_router(jwt_router, prefix="/api")
 app.include_router(fdc3_router, prefix="/api/fdc3")
 app.include_router(implementation_router)
 app.include_router(review_router)
+app.include_router(trading_router)
 
 # Metrics routes
 if settings.METRICS_ENABLED:
