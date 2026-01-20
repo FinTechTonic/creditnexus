@@ -81,12 +81,12 @@ async def generate_nexus_file(
             file_document_ids=request.file_document_ids,
         )
 
-    # Get sender info
+    # Get sender info (User has organization_identifier, not organization_id)
     sender_info = {
         "user_id": current_user.id,
         "email": current_user.email,
         "name": current_user.display_name or current_user.email,
-        "organization": current_user.organization_id,
+        "organization": getattr(current_user, "organization_identifier", None),
     }
 
     # Get receiver info

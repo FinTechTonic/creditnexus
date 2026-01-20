@@ -325,7 +325,7 @@ CreditNexus includes smart contracts for securitization workflows. To enable blo
 
 1. **Node.js & npm** - For compiling and deploying contracts
 2. **Hardhat** - Build system (installed automatically)
-3. **Base Network RPC Access** - For contract deployment
+3. **Base Network RPC Access** (or local Hardhat) - For contract deployment
 
 #### Quick Setup
 
@@ -336,24 +336,7 @@ cd contracts
 npm install
 ```
 
-**2. Configure Network (Optional):**
-
-Create `contracts/.env` file (optional, uses environment variables). You can copy from `contracts/.env.example` if it exists:
-
-```env
-# For Base Mainnet
-BASE_RPC_URL=https://mainnet.base.org
-PRIVATE_KEY=your_deployer_private_key_here
-
-# For Base Sepolia Testnet
-BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
-PRIVATE_KEY=your_deployer_private_key_here
-
-# Optional: For contract verification on BaseScan
-BASESCAN_API_KEY=your_basescan_api_key
-```
-
-**3. Compile Contracts:**
+**2. Compile Contracts:**
 
 ```bash
 cd contracts
@@ -362,29 +345,38 @@ npm run compile
 
 This generates contract ABIs and bytecode in `contracts/artifacts/`.
 
-**4. Deploy Contracts:**
+**3. Deploy Contracts**
 
-**Base Sepolia (Testnet):**
+**Local development (no private key):**
+
+- **One-off in-memory:** `npm run deploy:local` — uses built-in Hardhat accounts; no `.env` keys. Chain is ephemeral.
+- **Persistent node:** run `npm run node` in one terminal, then `npm run deploy:localhost` in another. Point the app at `http://127.0.0.1:8545` and add the printed contract addresses to `.env`.
+
+See [`contracts/README.md`](contracts/README.md) for full local deployment steps.
+
+**Base Sepolia (Testnet) or Base Mainnet (requires `PRIVATE_KEY`):**
+
+Set `PRIVATE_KEY` or `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` in the **project root** `.env` (or `contracts/.env`). Optional: `BASE_SEPOLIA_RPC_URL`, `BASE_RPC_URL`, `BASESCAN_API_KEY`.
+
 ```bash
 cd contracts
+
+# Testnet
 npm run deploy:base-sepolia
-```
 
-**Base Mainnet:**
-```bash
-cd contracts
+# Mainnet
 npm run deploy:base
 ```
 
-**5. Update Environment Variables:**
+**4. Update Environment Variables:**
 
-After deployment, add the contract addresses to your `.env` file (copy from `.env.example` first if needed):
+After deployment, add the contract addresses to your **project root** `.env` (copy from `.env.example` first if needed):
 
 ```env
 SECURITIZATION_NOTARIZATION_CONTRACT=0x...
 SECURITIZATION_TOKEN_CONTRACT=0x...
 SECURITIZATION_PAYMENT_ROUTER_CONTRACT=0x...
-X402_NETWORK_RPC_URL=https://mainnet.base.org  # or https://sepolia.base.org for testnet
+X402_NETWORK_RPC_URL=https://mainnet.base.org   # or https://sepolia.base.org for testnet, or http://127.0.0.1:8545 for local
 ```
 
 #### Auto-Deployment (Development)
@@ -396,8 +388,8 @@ If you don't manually deploy contracts, CreditNexus can auto-deploy them on firs
 3. Contracts will be automatically deployed when first accessed
 
 **Note:** Auto-deployment requires:
-- Valid RPC connection to Base network
-- Deployer account with sufficient ETH for gas fees
+- Valid RPC connection (Base, Base Sepolia, or local Hardhat at `http://127.0.0.1:8545`; for local, run `npm run node` in `contracts/` first)
+- Deployer account with sufficient ETH for gas (for local without a key, use manual `npm run deploy:localhost` instead; see `contracts/README.md`)
 - Compiled contracts (run `npm run compile` first)
 
 #### Manual Deployment (Production)

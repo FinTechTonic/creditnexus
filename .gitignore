@@ -1,4 +1,5 @@
-dev/
+# Root dev/ folder only (not scripts/dev)
+/dev/
 folder/
 .cursorrules
 *.mdc
@@ -20,9 +21,9 @@ ssl_certs/
 # PM2 log output (development)
 logs/
 
-# Test artifacts and temporary files
-dev/*.txt
-dev/*.log
+# Test artifacts and temporary files (root dev/ only)
+/dev/*.txt
+/dev/*.log
 *.test.log
 test_artifacts/
 .pytest_cache/

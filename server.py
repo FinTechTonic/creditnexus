@@ -33,6 +33,7 @@ from app.api.websocket_routes import router as websocket_router
 from app.api.securitization_routes import router as securitization_router
 from app.api.config_routes import router as config_router
 from app.api.workflow_delegation_routes import router as workflow_delegation_router
+from app.api.nexus_routes import router as nexus_router
 from app.api.recovery_routes import router as recovery_router
 from app.api.twilio_routes import router as twilio_router
 from app.api.remote_routes import remote_router
@@ -515,13 +516,43 @@ is_production = os.environ.get("REPLIT_DEPLOYMENT") == "1" or os.environ.get("EN
 if not session_secret:
     if is_production:
         raise RuntimeError("SESSION_SECRET must be set in production")
-    logger.warning("SESSION_SECRET not set, generating temporary secret (not suitable for production)")
-    import secrets
-    session_secret = secrets.token_hex(32)
+    logger.warning("SESSION_SECRET not set, using stable dev secret (not suitable for production)")
+    session_secret = "dev-session-secret-creditnexus-fixed-for-local"
+
+# JWT auth (path, method) pairs that do not need session; skipping SessionMiddleware avoids
+# 500s when a stale or mismatched session cookie fails to decode (e.g. after secret or restart).
+_JWT_SKIP_SESSION = {
+    ("/api/auth/login", "POST"),
+    ("/api/auth/register", "POST"),
+    ("/api/auth/refresh", "POST"),
+    ("/api/auth/logout", "POST"),
+    ("/api/auth/signup/step1", "POST"),
+    ("/api/auth/signup/step2", "POST"),
+    ("/api/auth/signup/save-progress", "POST"),
+    ("/api/auth/change-password", "POST"),
+}
+
+
+class _ConditionalSessionMiddleware(SessionMiddleware):
+    """Runs SessionMiddleware except for JWT auth routes that do not need session, to avoid
+    500 when decoding a stale/mismatched session cookie."""
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        method = (scope.get("method") or "GET").upper()
+        if (path, method) in _JWT_SKIP_SESSION:
+            scope["session"] = {}
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
 
 # Session middleware with secure settings
 app.add_middleware(
-    SessionMiddleware,
+    _ConditionalSessionMiddleware,
     secret_key=session_secret,
     session_cookie="creditnexus_session",
     max_age=settings.SESSION_MAX_AGE,
@@ -608,6 +639,7 @@ app.include_router(websocket_router)
 app.include_router(securitization_router)
 app.include_router(config_router)
 app.include_router(workflow_delegation_router)
+app.include_router(nexus_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
 app.include_router(remote_router, prefix="/api")

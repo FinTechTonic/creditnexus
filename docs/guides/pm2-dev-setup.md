@@ -28,7 +28,7 @@ This guide describes how to run CreditNexus development processes with **PM2** a
 - **PM2**: either
   - `npm install` in project root (uses `pm2` from `devDependencies` and `npx pm2` in scripts), or
   - `npm install -g pm2` and use `pm2` directly instead of `npx pm2`.
-- **Python** 3.10+ and project deps (e.g. `uv sync` or `pip install -e .`).
+- **Python** 3.10+ and project deps (e.g. `uv sync` or `pip install -e .`). Create a `.venv` and run `uv sync` so PM2 uses it; if `.venv` is present, `backend-dev` runs `.venv/Scripts/python` (Windows) or `.venv/bin/python` (Unix).
 - **.env** at project root (see [Installation](/getting-started/installation)).
 
 ---
@@ -52,7 +52,7 @@ This guide describes how to run CreditNexus development processes with **PM2** a
 
 | App name | Process | Port | Notes |
 |----------|---------|------|-------|
-| `backend-dev` | `python scripts/run_dev.py` (Uvicorn) | 8000 | Hot reload via Uvicorn |
+| `backend-dev` | `.venv/.../python scripts/run_dev.py` or `python scripts/run_dev.py` (Uvicorn) | 8000 | Uses `.venv` when present; `PM2=1` disables Uvicorn reload so logs reach `logs/pm2/` |
 | `frontend-dev` | `npm run dev` (Vite) in `client/` | 5000 | Proxies `/api` → `http://127.0.0.1:8000` |
 
 - **Backend**: <http://127.0.0.1:8000>, docs at <http://127.0.0.1:8000/docs>.
@@ -70,7 +70,7 @@ Run from **project root**:
 |--------|-------------|
 | `npm run dev:pm2` | Ensure `logs/pm2` exists and start both apps from `ecosystem.config.cjs` |
 | `npm run dev:pm2:stop` | Delete `backend-dev` and `frontend-dev` from PM2 |
-| `npm run dev:pm2:restart` | Restart both apps |
+| `npm run dev:pm2:restart` | Restart both apps (does **not** reload `ecosystem.config.cjs`; after editing it, use `dev:pm2:stop` then `dev:pm2`) |
 | `npm run dev:pm2:logs` | Live tail of all PM2 logs |
 | `npm run dev:pm2:status` | Show status of PM2 processes |
 
@@ -163,19 +163,27 @@ If you use `uv` and want PM2 to run the project interpreter:
   - `script: 'uv'`
   - `args: 'run python scripts/run_dev.py'`
 
-### 8.2 Python executable
+### 8.2 Project .venv (default)
 
-If `python` is not on `PATH` or you use `python3` / `py`:
+The ecosystem uses the project **`.venv`** when it exists: `backend-dev` runs `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (Unix) so `icalendar` and other deps from `uv sync` or `pip install -e .` are available. Create `.venv` and run `uv sync` (or `pip install -e .`) so the backend starts correctly. If `.venv` is missing, it falls back to `python` (or `cmd /c python` on Windows).
+
+### 8.3 Python executable (no .venv)
+
+If `python` is not on `PATH` or you use `python3` / `py` and you do **not** use `.venv`:
 
 - Set `script` to the full path or `python3` / `py`, and adjust `args` if needed.
 
-### 8.3 Backend path
+### 8.4 Backend path
 
 - The backend entry is `scripts/run_dev.py`. To use a different script (e.g. `uv run python scripts/run_dev.py`), set `script` and `args` in the `backend-dev` app accordingly.
 
-### 8.4 Log directory
+### 8.5 Log directory
 
 - Edit `logsDir` in `ecosystem.config.cjs` and the `out_file` / `error_file` paths to point to another folder (e.g. `dev/pm2-logs`).
+
+### 8.6 Blockchain / X402
+
+PM2 does **not** configure blockchain or X402. The backend reads `X402_ENABLED`, `X402_NETWORK_RPC_URL`, `BLOCKCHAIN_AUTO_DEPLOY`, `SECURITIZATION_*_CONTRACT`, and related variables from **`.env`** at project root. Set these in `.env` and restart the backend (`npm run dev:pm2:restart` or `npx pm2 restart backend-dev`) after changes. For **local Hardhat** (no private key): run `npm run node` in `contracts/`, then `npm run deploy:localhost`; set `X402_NETWORK_RPC_URL=http://127.0.0.1:8545` and the printed `SECURITIZATION_*_CONTRACT` addresses. See `docs/guides/metamask-setup.mdx` and `contracts/README.md`, and backend logs in `logs/pm2/backend-dev-out.log` and `backend-dev-error.log` for X402 and contract deployment.
 
 ---
 
@@ -220,3 +228,7 @@ On laptops this is usually optional.
 | Backend exits immediately | Check `logs/pm2/backend-dev-error.log` and `.env` (e.g. `DATABASE_URL`). |
 | Frontend exits | Check `logs/pm2/frontend-dev-error.log` and `client/node_modules` (`npm install` in `client/`). |
 | PM2 not in PATH | Use `npx pm2` (after `npm install`) or install globally: `npm install -g pm2`. |
+| **EINVAL on spawn** (Windows) | Frontend runs `npm` via `cmd /c` on Windows (spawning `npm` or `npm.cmd` directly can EINVAL). Backend uses `python` + `scripts/run_dev.py` with `interpreter: 'none'`. If backend still EINVALs, try `script: 'py'`, `args: ['-3', 'scripts/run_dev.py']`. |
+| **SyntaxError in ...\\PYTHON.EXE** (Windows) | PM2 can pass the resolved `python.exe` path as the script to Python. The ecosystem uses `script: 'cmd'`, `args: ['/c', 'python', 'scripts/run_dev.py']` on Windows to avoid that. On Unix, `script: 'python'`, `args: ['scripts/run_dev.py']` is used. |
+| **"The service is no longer running: write EPIPE"** (vite:esbuild) or **500 on .tsx** | Vite’s esbuild child has exited. Set `optimizeDeps.force` to `false` in `client/vite.config.ts`. If it persists, run the frontend without PM2 (`npm run frontend`) to isolate; if that works, the cause is likely PM2 + `cmd /c` + esbuild. See `dev/errors-inventory.md`. |
+| **`api-dev`**, **"can't open file 'main.py'"**, **"Could not import module 'app.main'"**, or **"Script ... PYTHON.EXE had too many unstable restarts"** | A stale `api-dev` app is in PM2 (not in `ecosystem.config.cjs`). It tries to run `main.py` or `app.main`, which do not exist; the real backend is `backend-dev` via `scripts/run_dev.py` → `server:app`. Run `npx pm2 delete api-dev` (or `npm run dev:pm2:stop`, which now removes `api-dev` too), then `npm run dev:pm2` to start only `backend-dev` and `frontend-dev`. |

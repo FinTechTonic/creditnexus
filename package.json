@@ -20,7 +20,8 @@
     "electron:build:win": "npx electron-builder --win",
     "electron:build:mac": "npx electron-builder --mac",
     "electron:build:linux": "npx electron-builder --linux",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:nexus-e2e": "uv run python tests/compatibility/test_nexus_file_transfer_e2e.py"
   },
   "keywords": [],
   "author": "",
@@ -36,11 +37,11 @@
     "recharts": "^3.5.1"
   },
   "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
     "@electron/notarize": "^2.2.0",
     "concurrently": "^8.2.2",
-    "wait-on": "^7.2.0",
-    "pm2": "^5.4.3"
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "pm2": "^5.4.3",
+    "wait-on": "^7.2.0"
   }
 }

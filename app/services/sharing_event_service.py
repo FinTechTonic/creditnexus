@@ -158,6 +158,8 @@ class SharingEventService:
             Created SharingEvent with blockchain notarization
         """
         event_id = str(uuid.uuid4())
+        # DB has sender_user_id NOT NULL; use receiver as placeholder when sender unknown
+        _sender_user_id = receiver_user_id if sender_user_id is None else sender_user_id
 
         sharing_event = SharingEvent(
             event_id=event_id,
@@ -166,7 +168,7 @@ class SharingEventService:
             workflow_id=workflow_id,
             deal_id=deal_id,
             receiver_user_id=receiver_user_id,
-            sender_user_id=sender_user_id,
+            sender_user_id=_sender_user_id,
             receiver_email=None,  # Receiver is current user
             file_hash=file_hash,
             file_size=len(file_data),
@@ -180,7 +182,7 @@ class SharingEventService:
         cdm_event = generate_cdm_sharing_event(
             event_id=event_id,
             event_type="receive",
-            sender_user_id=sender_user_id,
+            sender_user_id=_sender_user_id,
             receiver_user_id=receiver_user_id,
             receiver_email=None,
             receiver_wallet_address=None,
@@ -196,7 +198,7 @@ class SharingEventService:
             tx_hash, block_number = self.notarize_sharing_event(
                 event_id=event_id,
                 file_hash=file_hash,
-                sender_user_id=sender_user_id,
+                sender_user_id=_sender_user_id,
                 receiver_wallet_address=None,  # Would need receiver wallet address
             )
 
