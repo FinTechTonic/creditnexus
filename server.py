@@ -168,6 +168,11 @@ async def lifespan(app: FastAPI):
             if settings.X402_ENABLED:
                 raise  # Fail fast if x402 is required
     
+    # Initialize x402 Payment Service (else clause)
+    if not settings.X402_ENABLED:
+        logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
+        app.state.x402_payment_service = None
+    
     # Initialize metrics
     if settings.METRICS_ENABLED:
         try:
