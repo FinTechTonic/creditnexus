@@ -41,6 +41,7 @@ from app.api.fdc3_routes import router as fdc3_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
 from app.api.metrics_routes import router as metrics_router
+from app.api.review_routes import router as review_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -167,6 +168,11 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize x402 payment service: {e}")
             if settings.X402_ENABLED:
                 raise  # Fail fast if x402 is required
+    
+    # Initialize x402 Payment Service (else clause)
+    if not settings.X402_ENABLED:
+        logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
+        app.state.x402_payment_service = None
     
     # Initialize metrics
     if settings.METRICS_ENABLED:
@@ -647,6 +653,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
 app.include_router(fdc3_router, prefix="/api/fdc3")
 app.include_router(implementation_router)
+app.include_router(review_router)
 
 # Metrics routes
 if settings.METRICS_ENABLED:

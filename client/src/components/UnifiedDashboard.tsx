@@ -5,8 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 import { Dashboard } from '@/components/Dashboard';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
-import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
-import type { CreditAgreementData } from '@/context/FDC3Context';
+import { TradingDashboard } from '@/components/trading/TradingDashboard';
+import { PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -22,48 +22,6 @@ import {
   PERMISSION_DOCUMENT_VIEW,
   PERMISSION_APPLICATION_VIEW,
 } from '@/utils/permissions';
-
-interface TradeBlotterState {
-  loanData: CreditAgreementData | null;
-  tradeStatus: 'pending' | 'confirmed' | 'settled';
-  settlementDate: string;
-  tradePrice: string;
-  tradeAmount: string;
-  tradeId: string | null;
-  policyDecision: any | null;
-  policyLoading: boolean;
-  policyError: string | null;
-  paymentRequest: any | null;
-  paymentLoading: boolean;
-  paymentError: string | null;
-  paymentStatus: 'idle' | 'requested' | 'processing' | 'completed' | 'failed';
-}
-
-// Trading Dashboard wrapper that manages TradeBlotter state
-function TradingDashboard() {
-  const [tradeBlotterState, setTradeBlotterState] = useState<TradeBlotterState>({
-    loanData: null,
-    tradeStatus: 'pending',
-    settlementDate: '',
-    tradePrice: '100.00',
-    tradeAmount: '',
-    tradeId: null,
-    policyDecision: null,
-    policyLoading: false,
-    policyError: null,
-    paymentRequest: null,
-    paymentLoading: false,
-    paymentError: null,
-    paymentStatus: 'idle',
-  });
-
-  return (
-    <TradeBlotter
-      state={tradeBlotterState}
-      setState={setTradeBlotterState}
-    />
-  );
-}
 
 function MarketDashboard() {
   return (
@@ -143,8 +101,8 @@ export function UnifiedDashboard() {
         id: 'trading',
         label: 'Trading',
         icon: <TrendingUp className="h-4 w-4" />,
-        component: TradingDashboard,
-        requiredPermission: 'TRADING_VIEW', // Will be added to permissions.ts
+        component: () => <TradingDashboard />,
+        requiredPermission: PERMISSION_TRADE_VIEW,
         subscriptionTier: 'pro'
       },
       {
