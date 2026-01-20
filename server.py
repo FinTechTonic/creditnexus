@@ -41,6 +41,7 @@ from app.api.fdc3_routes import router as fdc3_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
 from app.api.metrics_routes import router as metrics_router
+from app.api.trading_routes import router as trading_router
 from app.api.review_routes import router as review_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
@@ -202,6 +203,19 @@ async def lifespan(app: FastAPI):
             app.state.metrics_task = None
     else:
         app.state.metrics_task = None
+    
+    # Initialize x402 Payment Service
+    if settings.X402_ENABLED:
+        try:
+            from app.services.x402_payment_service import X402PaymentService
+            app.state.x402_payment_service = X402PaymentService()
+            logger.info("x402 Payment service initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize x402 Payment service: {e}")
+            app.state.x402_payment_service = None
+    else:
+        logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
+        app.state.x402_payment_service = None
     
     # Initialize database
     if settings.DATABASE_ENABLED:
@@ -648,6 +662,7 @@ app.include_router(workflow_delegation_router)
 app.include_router(nexus_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
+app.include_router(trading_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
