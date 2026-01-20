@@ -3191,3 +3191,218 @@ class CommissionCharge(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
+
+# ============================================================================
+# Trading Order Models
+# ============================================================================
+
+class OrderSide(str, enum.Enum):
+    """Order side (buy or sell)."""
+    BUY = "buy"
+    SELL = "sell"
+
+
+class OrderType(str, enum.Enum):
+    """Order type."""
+    MARKET = "market"  # Execute immediately at market price
+    LIMIT = "limit"  # Execute at specified price or better
+    STOP = "stop"  # Stop loss order
+    STOP_LIMIT = "stop_limit"  # Stop loss with limit price
+
+
+class OrderStatus(str, enum.Enum):
+    """Order status."""
+    PENDING = "pending"  # Order created, awaiting validation
+    SUBMITTED = "submitted"  # Order submitted to trading API
+    PARTIALLY_FILLED = "partially_filled"  # Order partially executed
+    FILLED = "filled"  # Order fully executed
+    CANCELLED = "cancelled"  # Order cancelled by user
+    REJECTED = "rejected"  # Order rejected by trading API
+    EXPIRED = "expired"  # Order expired (time-based)
+
+
+class Order(Base):
+    """Order model for trading orders (stocks, securities, etc.)."""
+    
+    __tablename__ = "orders"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(255), unique=True, nullable=False, index=True)  # External order ID from trading API
+    
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Order details
+    symbol = Column(String(50), nullable=False, index=True)  # Stock symbol (e.g., "AAPL")
+    side = Column(String(10), nullable=False, index=True)  # "buy" or "sell"
+    order_type = Column(String(20), nullable=False, index=True)  # "market", "limit", "stop", "stop_limit"
+    quantity = Column(Numeric(20, 8), nullable=False)  # Number of shares/units
+    price = Column(Numeric(20, 8), nullable=True)  # Limit price (required for limit orders)
+    stop_price = Column(Numeric(20, 8), nullable=True)  # Stop price (required for stop orders)
+    
+    # Execution details
+    status = Column(String(20), default=OrderStatus.PENDING.value, nullable=False, index=True)
+    filled_quantity = Column(Numeric(20, 8), default=0, nullable=False)  # Quantity filled so far
+    average_fill_price = Column(Numeric(20, 8), nullable=True)  # Average execution price
+    commission = Column(Numeric(20, 2), nullable=True)  # Commission charged
+    commission_currency = Column(String(3), default="USD", nullable=False)
+    
+    # Trading API integration
+    trading_api = Column(String(50), nullable=True, index=True)  # "alpaca", "polygon", etc.
+    trading_api_order_id = Column(String(255), nullable=True, index=True)  # Order ID from trading API
+    trading_api_response = Column(JSONB, nullable=True)  # Full response from trading API
+    
+    # Time-based fields
+    time_in_force = Column(String(20), default="day", nullable=False)  # "day", "gtc", "ioc", "fok"
+    expires_at = Column(DateTime, nullable=True)  # Expiration time for GTC orders
+    
+    # Audit and metadata
+    submitted_at = Column(DateTime, nullable=True)  # When order was submitted to trading API
+    filled_at = Column(DateTime, nullable=True)  # When order was fully filled
+    cancelled_at = Column(DateTime, nullable=True)  # When order was cancelled
+    rejection_reason = Column(Text, nullable=True)  # Reason for rejection
+    
+    # Additional metadata
+    order_metadata = Column(JSONB, nullable=True)  # Additional order metadata
+# Document Review Models
+# ============================================================================
+
+class CommentType(str, enum.Enum):
+    """Types of review comments."""
+    GENERAL = "general"  # General comment
+    ANNOTATION = "annotation"  # Field-specific annotation
+    CHANGE_REQUEST = "change_request"  # Request for specific change
+
+
+class ReviewComment(Base):
+    """Review comment model for document review workflows."""
+    
+    __tablename__ = "review_comments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id = Column(Integer, ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    comment_text = Column(Text, nullable=False)
+    comment_type = Column(String(20), default=CommentType.GENERAL.value, nullable=False, index=True)
+    
+    # For field-specific annotations
+    target_field = Column(String(255), nullable=True, index=True)  # e.g., "parties[0].name", "facilities[1].commitment_amount"
+    target_range = Column(JSONB, nullable=True)  # For text selection ranges: {"start": 0, "end": 100}
+    
+    # Comment resolution
+    resolved = Column(Boolean, default=False, nullable=False, index=True)
+    resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    
+    # Threading support (for replies)
+    parent_comment_id = Column(Integer, ForeignKey("review_comments.id", ondelete="CASCADE"), nullable=True, index=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("Document", backref="review_comments")
+    version = relationship("DocumentVersion", backref="review_comments")
+    user = relationship("User", foreign_keys=[user_id], backref="review_comments")
+    resolver = relationship("User", foreign_keys=[resolved_by])
+    parent_comment = relationship("ReviewComment", remote_side=[id], backref="replies")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "document_id": self.document_id,
+            "version_id": self.version_id,
+            "user_id": self.user_id,
+            "comment_text": self.comment_text,
+            "comment_type": self.comment_type,
+            "target_field": self.target_field,
+            "target_range": self.target_range,
+            "resolved": self.resolved,
+            "resolved_by": self.resolved_by,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "parent_comment_id": self.parent_comment_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ReviewAssignmentStatus(str, enum.Enum):
+    """Status of a review assignment."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class ReviewAssignment(Base):
+    """Review assignment model for assigning reviewers to documents."""
+    
+    __tablename__ = "review_assignments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=True, index=True)
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    assigned_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    due_date = Column(DateTime, nullable=True, index=True)
+    
+    status = Column(String(20), default=ReviewAssignmentStatus.PENDING.value, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True)
+    review_notes = Column(Text, nullable=True)  # Reviewer's notes/feedback
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", backref="orders")
+    document = relationship("Document", backref="review_assignments")
+    workflow = relationship("Workflow", backref="review_assignments")
+    reviewer = relationship("User", foreign_keys=[reviewer_id], backref="assigned_reviews")
+    assigner = relationship("User", foreign_keys=[assigned_by])
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "order_id": self.order_id,
+            "user_id": self.user_id,
+            "symbol": self.symbol,
+            "side": self.side,
+            "order_type": self.order_type,
+            "quantity": float(self.quantity) if self.quantity else None,
+            "price": float(self.price) if self.price else None,
+            "stop_price": float(self.stop_price) if self.stop_price else None,
+            "status": self.status,
+            "filled_quantity": float(self.filled_quantity) if self.filled_quantity else None,
+            "average_fill_price": float(self.average_fill_price) if self.average_fill_price else None,
+            "commission": float(self.commission) if self.commission else None,
+            "commission_currency": self.commission_currency,
+            "trading_api": self.trading_api,
+            "trading_api_order_id": self.trading_api_order_id,
+            "time_in_force": self.time_in_force,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "filled_at": self.filled_at.isoformat() if self.filled_at else None,
+            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
+            "rejection_reason": self.rejection_reason,
+            "metadata": self.order_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "document_id": self.document_id,
+            "workflow_id": self.workflow_id,
+            "reviewer_id": self.reviewer_id,
+            "assigned_by": self.assigned_by,
+            "assigned_at": self.assigned_at.isoformat() if self.assigned_at else None,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "status": self.status,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "review_notes": self.review_notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
