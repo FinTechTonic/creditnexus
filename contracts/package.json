@@ -5,6 +5,9 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy.js --network hardhat",
+    "deploy:localhost": "hardhat run scripts/deploy.js --network localhost",
     "deploy:base": "hardhat run scripts/deploy.js --network base",
     "deploy:base-sepolia": "hardhat run scripts/deploy.js --network baseSepolia",
     "verify": "hardhat verify"
@@ -12,6 +15,7 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@openzeppelin/contracts": "^5.0.0",
+    "dotenv": "^16.3.1",
     "hardhat": "^2.19.0"
   },
   "dependencies": {
