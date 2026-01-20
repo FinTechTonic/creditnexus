@@ -3131,3 +3131,111 @@ class CommissionCharge(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
+
+# ============================================================================
+# Trading Order Models
+# ============================================================================
+
+class OrderSide(str, enum.Enum):
+    """Order side (buy or sell)."""
+    BUY = "buy"
+    SELL = "sell"
+
+
+class OrderType(str, enum.Enum):
+    """Order type."""
+    MARKET = "market"  # Execute immediately at market price
+    LIMIT = "limit"  # Execute at specified price or better
+    STOP = "stop"  # Stop loss order
+    STOP_LIMIT = "stop_limit"  # Stop loss with limit price
+
+
+class OrderStatus(str, enum.Enum):
+    """Order status."""
+    PENDING = "pending"  # Order created, awaiting validation
+    SUBMITTED = "submitted"  # Order submitted to trading API
+    PARTIALLY_FILLED = "partially_filled"  # Order partially executed
+    FILLED = "filled"  # Order fully executed
+    CANCELLED = "cancelled"  # Order cancelled by user
+    REJECTED = "rejected"  # Order rejected by trading API
+    EXPIRED = "expired"  # Order expired (time-based)
+
+
+class Order(Base):
+    """Order model for trading orders (stocks, securities, etc.)."""
+    
+    __tablename__ = "orders"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(255), unique=True, nullable=False, index=True)  # External order ID from trading API
+    
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Order details
+    symbol = Column(String(50), nullable=False, index=True)  # Stock symbol (e.g., "AAPL")
+    side = Column(String(10), nullable=False, index=True)  # "buy" or "sell"
+    order_type = Column(String(20), nullable=False, index=True)  # "market", "limit", "stop", "stop_limit"
+    quantity = Column(Numeric(20, 8), nullable=False)  # Number of shares/units
+    price = Column(Numeric(20, 8), nullable=True)  # Limit price (required for limit orders)
+    stop_price = Column(Numeric(20, 8), nullable=True)  # Stop price (required for stop orders)
+    
+    # Execution details
+    status = Column(String(20), default=OrderStatus.PENDING.value, nullable=False, index=True)
+    filled_quantity = Column(Numeric(20, 8), default=0, nullable=False)  # Quantity filled so far
+    average_fill_price = Column(Numeric(20, 8), nullable=True)  # Average execution price
+    commission = Column(Numeric(20, 2), nullable=True)  # Commission charged
+    commission_currency = Column(String(3), default="USD", nullable=False)
+    
+    # Trading API integration
+    trading_api = Column(String(50), nullable=True, index=True)  # "alpaca", "polygon", etc.
+    trading_api_order_id = Column(String(255), nullable=True, index=True)  # Order ID from trading API
+    trading_api_response = Column(JSONB, nullable=True)  # Full response from trading API
+    
+    # Time-based fields
+    time_in_force = Column(String(20), default="day", nullable=False)  # "day", "gtc", "ioc", "fok"
+    expires_at = Column(DateTime, nullable=True)  # Expiration time for GTC orders
+    
+    # Audit and metadata
+    submitted_at = Column(DateTime, nullable=True)  # When order was submitted to trading API
+    filled_at = Column(DateTime, nullable=True)  # When order was fully filled
+    cancelled_at = Column(DateTime, nullable=True)  # When order was cancelled
+    rejection_reason = Column(Text, nullable=True)  # Reason for rejection
+    
+    # Additional metadata
+    order_metadata = Column(JSONB, nullable=True)  # Additional order metadata
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", backref="orders")
+    
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "order_id": self.order_id,
+            "user_id": self.user_id,
+            "symbol": self.symbol,
+            "side": self.side,
+            "order_type": self.order_type,
+            "quantity": float(self.quantity) if self.quantity else None,
+            "price": float(self.price) if self.price else None,
+            "stop_price": float(self.stop_price) if self.stop_price else None,
+            "status": self.status,
+            "filled_quantity": float(self.filled_quantity) if self.filled_quantity else None,
+            "average_fill_price": float(self.average_fill_price) if self.average_fill_price else None,
+            "commission": float(self.commission) if self.commission else None,
+            "commission_currency": self.commission_currency,
+            "trading_api": self.trading_api,
+            "trading_api_order_id": self.trading_api_order_id,
+            "time_in_force": self.time_in_force,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "filled_at": self.filled_at.isoformat() if self.filled_at else None,
+            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
+            "rejection_reason": self.rejection_reason,
+            "metadata": self.order_metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
