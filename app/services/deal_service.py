@@ -18,6 +18,7 @@ import uuid
 from app.utils.audit import log_audit_action, AuditAction
 from app.core.config import settings
 
+from app.utils import get_debug_log_path
 logger = logging.getLogger(__name__)
 
 

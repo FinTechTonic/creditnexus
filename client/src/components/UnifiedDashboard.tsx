@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/context/AuthContext';
 import { Dashboard } from '@/components/Dashboard';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
+import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
+import type { CreditAgreementData } from '@/context/FDC3Context';
+import { SignaturePad } from '@/components/ui/SignaturePad';
 import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
 import { BridgeBuilder } from '@/components/BridgeBuilder';
@@ -30,7 +33,34 @@ function SignatureDashboard() {
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold mb-4">Signature Dashboard</h2>
-      <p className="text-muted-foreground">DigiSign signature coordination will be implemented here.</p>
+      <p className="text-muted-foreground mb-6">Capture and manage document signatures.</p>
+      <div className="max-w-2xl">
+        <SignaturePadDemo />
+      </div>
+    </div>
+  );
+}
+
+function SignaturePadDemo() {
+  const [signature, setSignature] = React.useState<string | null>(null);
+  
+  return (
+    <div className="space-y-4">
+      <SignaturePad
+        onSave={(sig: string) => {
+          setSignature(sig);
+          console.log('Signature saved:', sig.substring(0, 50) + '...');
+        }}
+        onClear={() => setSignature(null)}
+        width={600}
+        height={300}
+      />
+      {signature && (
+        <div className="mt-4 p-4 border rounded-lg bg-muted">
+          <h3 className="text-sm font-semibold mb-2">Captured Signature:</h3>
+          <img src={signature} alt="Signature" className="max-w-full h-auto border rounded" />
+        </div>
+      )}
     </div>
   );
 }

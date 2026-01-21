@@ -83,6 +83,8 @@ class VerificationService:
         include_files: bool = True,
         file_categories: Optional[List[str]] = None,
         file_document_ids: Optional[List[int]] = None,
+        auto_hydrate: bool = False,
+        max_document_size_mb: int = 10,
     ) -> str:
         """Generate self-contained verification link with file references.
 
@@ -92,6 +94,8 @@ class VerificationService:
             include_files: Whether to include file references
             file_categories: File categories to include
             file_document_ids: Specific document IDs to include
+            auto_hydrate: Whether to embed documents and data in payload (self-contained)
+            max_document_size_mb: Maximum document size to embed when auto_hydrate=True
 
         Returns:
             Full verification URL
@@ -225,6 +229,19 @@ class VerificationService:
         
         # Generate encrypted link payload
         payload_generator = LinkPayloadGenerator()
+        
+        # Auto-hydrate if requested
+        hydrated_payload = None
+        if auto_hydrate:
+            from app.services.verification_hydration_service import VerificationHydrationService
+            hydration_service = VerificationHydrationService(self.db)
+            hydrated_payload = hydration_service.hydrate_link_payload(
+                verification=verification,
+                include_documents=True,
+                include_extracted_data=True,
+                max_document_size_mb=max_document_size_mb,
+            )
+        
         encrypted_payload = payload_generator.generate_verification_link_payload(
             verification_id=verification.verification_id,
             deal_id=verification.deal_id or 0,
@@ -232,6 +249,7 @@ class VerificationService:
             cdm_payload=cdm_payload,
             file_references=file_references if file_references else None,
             expires_in_hours=expires_in_hours,
+            hydrated_payload=hydrated_payload,
         )
 
         # Construct full URL

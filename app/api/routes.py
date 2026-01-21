@@ -42,6 +42,7 @@ from app.chains.document_retrieval_chain import DocumentRetrievalService, add_us
 from app.utils.audit import log_audit_action
 from fastapi import Request
 
+from app.utils import get_debug_log_path
 logger = logging.getLogger(__name__)
 
 # Deep Tech Components (Loaded on startup)
