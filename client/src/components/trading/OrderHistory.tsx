@@ -52,7 +52,14 @@ export function OrderHistory() {
           throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: Failed to load order history`);
         }
 
-        const data: Order[] = await response.json();
+        const raw: unknown[] = await response.json();
+        // Map trading API (order_id, order_type, average_fill_price) to UI shape (id, type, average_price)
+        const data: Order[] = raw.map((o: any) => ({
+          ...o,
+          id: String(o?.order_id ?? o?.id ?? ''),
+          type: o?.order_type ?? o?.type ?? 'market',
+          average_price: o?.average_fill_price ?? o?.average_price,
+        }));
         setOrders(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load order history');

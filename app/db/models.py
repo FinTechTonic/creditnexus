@@ -3263,6 +3263,41 @@ class Order(Base):
     
     # Additional metadata
     order_metadata = Column(JSONB, nullable=True)  # Additional order metadata
+
+    # Timestamps (match alembic migration 8c92e21f2aa9)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        """Convert model to dictionary for OrderResponse (trading_routes)."""
+        return {
+            "id": self.id,
+            "order_id": self.order_id,
+            "user_id": self.user_id,
+            "symbol": self.symbol,
+            "side": self.side,
+            "order_type": self.order_type,
+            "quantity": float(self.quantity) if self.quantity is not None else 0.0,
+            "price": float(self.price) if self.price is not None else None,
+            "stop_price": float(self.stop_price) if self.stop_price is not None else None,
+            "status": self.status,
+            "filled_quantity": float(self.filled_quantity) if self.filled_quantity is not None else 0.0,
+            "average_fill_price": float(self.average_fill_price) if self.average_fill_price is not None else None,
+            "commission": float(self.commission) if self.commission is not None else None,
+            "commission_currency": self.commission_currency or "USD",
+            "trading_api": self.trading_api,
+            "trading_api_order_id": self.trading_api_order_id,
+            "time_in_force": self.time_in_force or "day",
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "filled_at": self.filled_at.isoformat() if self.filled_at else None,
+            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
+            "rejection_reason": self.rejection_reason,
+            "created_at": self.created_at.isoformat() if self.created_at else "",
+            "updated_at": self.updated_at.isoformat() if self.updated_at else "",
+        }
+
+
 # Document Review Models
 # ============================================================================
 
@@ -3360,7 +3395,9 @@ class ReviewAssignment(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
-    user = relationship("User", backref="orders")
+    # Reserved: uncomment when needed; must set foreign_keys= to disambiguate (e.g. [reviewer_id] or [assigned_by]);
+    # do not use backref="orders" (that belongs to Order). Example: user = relationship("User", foreign_keys=[reviewer_id])
+    # user = relationship("User", backref="orders")
     document = relationship("Document", backref="review_assignments")
     workflow = relationship("Workflow", backref="review_assignments")
     reviewer = relationship("User", foreign_keys=[reviewer_id], backref="assigned_reviews")
@@ -3370,30 +3407,6 @@ class ReviewAssignment(Base):
         """Convert model to dictionary."""
         return {
             "id": self.id,
-            "order_id": self.order_id,
-            "user_id": self.user_id,
-            "symbol": self.symbol,
-            "side": self.side,
-            "order_type": self.order_type,
-            "quantity": float(self.quantity) if self.quantity else None,
-            "price": float(self.price) if self.price else None,
-            "stop_price": float(self.stop_price) if self.stop_price else None,
-            "status": self.status,
-            "filled_quantity": float(self.filled_quantity) if self.filled_quantity else None,
-            "average_fill_price": float(self.average_fill_price) if self.average_fill_price else None,
-            "commission": float(self.commission) if self.commission else None,
-            "commission_currency": self.commission_currency,
-            "trading_api": self.trading_api,
-            "trading_api_order_id": self.trading_api_order_id,
-            "time_in_force": self.time_in_force,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
-            "filled_at": self.filled_at.isoformat() if self.filled_at else None,
-            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
-            "rejection_reason": self.rejection_reason,
-            "metadata": self.order_metadata,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "document_id": self.document_id,
             "workflow_id": self.workflow_id,
             "reviewer_id": self.reviewer_id,

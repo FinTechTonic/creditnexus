@@ -33,22 +33,21 @@ from app.api.websocket_routes import router as websocket_router
 from app.api.securitization_routes import router as securitization_router
 from app.api.config_routes import router as config_router
 from app.api.workflow_delegation_routes import router as workflow_delegation_router
-from app.api.nexus_routes import router as nexus_router
 from app.api.recovery_routes import router as recovery_router
 from app.api.twilio_routes import router as twilio_router
 from app.api.remote_routes import remote_router
 from app.api.fdc3_routes import router as fdc3_router
-from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
-from app.api.metrics_routes import router as metrics_router
 from app.api.trading_routes import router as trading_router
 from app.api.review_routes import router as review_router
+from app.api.nexus_routes import router as nexus_router
+from app.api.p2p_routes import router as p2p_router
+from app.api.metrics_routes import router as metrics_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -169,12 +168,10 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize x402 payment service: {e}")
             if settings.X402_ENABLED:
                 raise  # Fail fast if x402 is required
-    
-    # Initialize x402 Payment Service (else clause)
-    if not settings.X402_ENABLED:
+    else:
         logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
         app.state.x402_payment_service = None
-    
+
     # Initialize metrics
     if settings.METRICS_ENABLED:
         try:
@@ -203,19 +200,6 @@ async def lifespan(app: FastAPI):
             app.state.metrics_task = None
     else:
         app.state.metrics_task = None
-    
-    # Initialize x402 Payment Service
-    if settings.X402_ENABLED:
-        try:
-            from app.services.x402_payment_service import X402PaymentService
-            app.state.x402_payment_service = X402PaymentService()
-            logger.info("x402 Payment service initialized")
-        except Exception as e:
-            logger.warning(f"Failed to initialize x402 Payment service: {e}")
-            app.state.x402_payment_service = None
-    else:
-        logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
-        app.state.x402_payment_service = None
     
     # Initialize database
     if settings.DATABASE_ENABLED:
@@ -519,7 +503,6 @@ async def lifespan(app: FastAPI):
     # Note: If CancelledError occurs after this point, it's from uvicorn's
     # internal reload mechanism and is expected behavior during development.
 
-
 app = FastAPI(
     title="CreditNexus API",
     description="FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
@@ -552,7 +535,6 @@ _JWT_SKIP_SESSION = {
     ("/api/auth/change-password", "POST"),
 }
 
-
 class _ConditionalSessionMiddleware(SessionMiddleware):
     """Runs SessionMiddleware except for JWT auth routes that do not need session, to avoid
     500 when decoding a stale/mismatched session cookie."""
@@ -568,7 +550,6 @@ class _ConditionalSessionMiddleware(SessionMiddleware):
             await self.app(scope, receive, send)
             return
         await super().__call__(scope, receive, send)
-
 
 # Session middleware with secure settings
 app.add_middleware(
@@ -659,16 +640,17 @@ app.include_router(websocket_router)
 app.include_router(securitization_router)
 app.include_router(config_router)
 app.include_router(workflow_delegation_router)
-app.include_router(nexus_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
 app.include_router(trading_router)
+app.include_router(review_router)
+app.include_router(nexus_router)
+app.include_router(p2p_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
 app.include_router(fdc3_router, prefix="/api/fdc3")
 app.include_router(implementation_router)
-app.include_router(review_router)
 
 # Metrics routes
 if settings.METRICS_ENABLED:
@@ -677,9 +659,6 @@ if settings.METRICS_ENABLED:
 # GDPR compliance routes
 from app.api.gdpr_routes import gdpr_router
 app.include_router(gdpr_router, prefix="/api")
-
-# FDC3 App Directory API
-app.include_router(fdc3_router, prefix="/api/fdc3")
 
 # Serve OpenFin manifest files
 openfin_dir = Path(__file__).parent / "openfin"
@@ -730,7 +709,6 @@ else:
             "docs": "/docs",
             "health": "/api/health"
         }
-
 
 if __name__ == "__main__":
     import uvicorn

@@ -152,7 +152,6 @@ class DealService:
         self.db.add(policy_decision)
         self.db.commit()
         self.db.refresh(deal)
-
         # Auto-evaluate green finance on deal creation (if enabled and location data available)
         if settings.ENHANCED_SATELLITE_ENABLED:
             try:

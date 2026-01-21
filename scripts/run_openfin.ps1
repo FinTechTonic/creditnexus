@@ -50,15 +50,11 @@ try {
     }
     
     $manifestUrl = "http://localhost:8000/openfin/app.json"
-
     # Verify backend is serving the manifest
     try {
         $response = Invoke-WebRequest -Uri $manifestUrl -Method Head -TimeoutSec 2 -ErrorAction Stop
         Write-Host "   Backend manifest accessible. Launching via RVM..." -ForegroundColor Gray
-
-        # Launch via URL - RVM handles runtime download and app launch
         Start-Process $manifestUrl
-
         Write-Host "   OpenFin application launch initiated." -ForegroundColor Green
         Write-Host "   Note: If this is the first launch, OpenFin Runtime may download automatically." -ForegroundColor Yellow
     } catch {

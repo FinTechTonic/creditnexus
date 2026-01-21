@@ -140,13 +140,6 @@ class WebSearchService:
         """
         start_time = time.time()
         
-        if not self.serper_api_key:
-            await record_request(None, num_results)
-            raise ValueError(
-                "SERPER_API_KEY not configured. "
-                "Set SERPER_API_KEY environment variable or pass to constructor."
-            )
-        
         # Validate inputs
         if num_results is None:
             num_results = 4
@@ -154,6 +147,15 @@ class WebSearchService:
         
         if search_type not in ["search", "news"]:
             search_type = "search"
+        
+        # Serper is the default and required web search backend
+        if not self.serper_api_key:
+            duration = time.time() - start_time
+            await record_request(duration, num_results or 4)
+            raise ValueError(
+                "SERPER_API_KEY not configured. "
+                "Set SERPER_API_KEY (get from https://serper.dev) to use web search."
+            )
         
         try:
             # Check rate limit
@@ -261,6 +263,36 @@ class WebSearchService:
                     }
                 
                 chunks.append(chunk)
+            
+            # Fallback: when trafilatura extracts nothing, use snippet so agents get usable content
+            if not chunks and results:
+                for meta in results:
+                    link = meta.get("link", "")
+                    snippet = meta.get("snippet", "")
+                    domain = (link.split("/")[2].replace("www.", "") if len(link.split("/")) > 2 else "") if link else ""
+                    if search_type == "news":
+                        try:
+                            date_str = meta.get("date", "")
+                            date_iso = dateparser.parse(date_str, fuzzy=True).strftime("%Y-%m-%d") if date_str else ""
+                        except Exception:
+                            date_iso = ""
+                        chunks.append({
+                            "title": meta.get("title", ""),
+                            "source": meta.get("source", domain),
+                            "domain": domain,
+                            "date": date_iso,
+                            "url": link,
+                            "content": snippet or "(No content extracted)"
+                        })
+                    else:
+                        chunks.append({
+                            "title": meta.get("title", ""),
+                            "domain": domain,
+                            "source": domain,
+                            "url": link,
+                            "content": snippet or "(No content extracted)"
+                        })
+                chunks = chunks[: num_results]
             
             # Rerank results if enabled
             if rerank and chunks:

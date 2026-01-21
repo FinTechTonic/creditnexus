@@ -808,8 +808,7 @@ async def deep_research_query(
             user_id=current_user.id
         )
         
-        # TODO: Store research result in deep_research_results table
-        # For now, just return the result
+        # DeepResearchResult is persisted in DeepResearchService.research()
         
         # Update deal timeline if deal_id provided
         if request.deal_id:
@@ -847,6 +846,7 @@ async def deep_research_query(
         
         return {
             "status": "success",
+            "research_id": result.get("research_id"),
             "answer": result.get("answer", ""),
             "knowledge_items": result.get("knowledge_items", []),
             "visited_urls": result.get("visited_urls", []),
@@ -1650,7 +1650,7 @@ async def list_quantitative_analysis_results(
         query = query.filter(QuantitativeAnalysisResult.deal_id == deal_id)
     
     # Non-admin users only see their own results
-    if not current_user.is_admin:
+    if current_user.role != "admin":
         query = query.filter(QuantitativeAnalysisResult.user_id == current_user.id)
     
     results = query.order_by(QuantitativeAnalysisResult.created_at.desc()).limit(limit).all()
@@ -1692,7 +1692,7 @@ async def get_quantitative_analysis_result(
             )
         
         # Basic authorization: ensure user can view their own analysis or is admin
-        if result.user_id != current_user.id and not current_user.is_admin:
+        if result.user_id != current_user.id and current_user.role != "admin":
             raise HTTPException(
                 status_code=403,
                 detail={"status": "error", "message": "Not authorized to view this analysis result"}
@@ -4122,7 +4122,8 @@ async def digitizer_chatbot_chat(
 async def digitizer_chatbot_launch_workflow(
     request: DigitizerChatbotLaunchWorkflowRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth)
+    current_user: User = Depends(require_auth),
+    policy_service: Optional[PolicyService] = Depends(get_policy_service),
 ):
     """
     Launch a workflow from the digitizer chatbot.
@@ -4170,12 +4171,51 @@ async def digitizer_chatbot_launch_workflow(
                 user_id=current_user.id
             )
         elif workflow_type == "langalpha":
-            # Placeholder - not yet implemented
+            from app.services.quantitative_analysis_service import QuantitativeAnalysisService
+            query = workflow_params.get("query") or workflow_params.get("company_name") or ""
+            if not query:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"status": "error", "message": "query or company_name is required for LangAlpha workflow"}
+                )
+            analysis_type = (workflow_params.get("analysis_type") or "company").lower()
+            svc = QuantitativeAnalysisService(db, policy_service=policy_service)
+            if analysis_type == "market":
+                out = await svc.analyze_market(
+                    query=query,
+                    market_type=workflow_params.get("market_type"),
+                    deal_id=request.deal_id,
+                    user_id=current_user.id,
+                    time_range=workflow_params.get("time_range"),
+                )
+            elif analysis_type == "loan_application":
+                deal_id = request.deal_id or workflow_params.get("deal_id")
+                if not deal_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"status": "error", "message": "deal_id is required for LangAlpha loan-application analysis"}
+                    )
+                out = await svc.analyze_loan_application(
+                    query=query,
+                    borrower_name=workflow_params.get("borrower_name"),
+                    deal_id=int(deal_id),
+                    user_id=current_user.id,
+                    time_range=workflow_params.get("time_range"),
+                )
+            else:
+                out = await svc.analyze_company(
+                    query=query,
+                    ticker=workflow_params.get("ticker"),
+                    company_name=workflow_params.get("company_name"),
+                    deal_id=request.deal_id,
+                    user_id=current_user.id,
+                    time_range=workflow_params.get("time_range"),
+                )
             result = {
                 "workflow_type": "langalpha",
-                "message": "LangAlpha quantitative analysis workflow is not yet implemented.",
-                "result": None,
-                "cdm_events": []
+                "message": "LangAlpha analysis completed. View results in the Agent Dashboard.",
+                "result": out,
+                "cdm_events": [out.get("cdm_event")] if out.get("cdm_event") else [],
             }
         else:
             raise HTTPException(
@@ -4302,7 +4342,7 @@ async def get_digitizer_chatbot_history(
             )
         
         # Check authorization
-        if session.user_id != current_user.id and not current_user.is_admin:
+        if session.user_id != current_user.id and current_user.role != "admin":
             raise HTTPException(
                 status_code=403,
                 detail={"status": "error", "message": "Not authorized to view this session"}
@@ -7393,7 +7433,6 @@ async def settle_trade_with_payment(
     try:
         # Step 1: Get trade execution event
         trade_event = get_trade_execution(trade_id, db)
-
         if not trade_event:
             raise HTTPException(
                 status_code=404,

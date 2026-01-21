@@ -92,6 +92,15 @@ class State(TypedDict, total=False):
 # Helper Functions
 # ============================================================================
 
+
+def _get_last_message_content(messages: List) -> str:
+    """Get content from the last message; supports BaseMessage (.content) or plain str."""
+    if not messages:
+        return ""
+    last = messages[-1]
+    return str(getattr(last, "content", last))
+
+
 def _get_agent_llm_map(budget_level: str = "medium") -> Dict[str, str]:
     """Get agent LLM mapping based on budget level."""
     budget_level = budget_level.lower()
@@ -254,7 +263,7 @@ async def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]
     messages = state.get("messages", [])
     
     # Invoke LLM to generate plan
-    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nUser query: " + str(messages[-1].content) if messages else "")])
+    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nUser query: " + _get_last_message_content(messages))])
     
     plan_content = response.content if hasattr(response, 'content') else str(response)
     
@@ -293,7 +302,7 @@ async def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]
     )
 
 
-async def supervisor_node(state: State) -> Command[Literal["researcher", "coder", "reporter", "market", "browser", "analyst", "__end__", "FINISH"]]:
+async def supervisor_node(state: State) -> Command[Literal["researcher", "coder", "reporter", "market", "browser", "analyst", "__end__"]]:
     """Supervisor node that decides which agent should act next."""
     agent_llm_map = state.get("agent_llm_map") or _get_agent_llm_map()
     supervisor_llm_type = agent_llm_map.get("supervisor", "basic")
@@ -307,14 +316,14 @@ async def supervisor_node(state: State) -> Command[Literal["researcher", "coder"
     messages = state.get("messages", [])
     
     # Invoke LLM to decide next agent
-    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nContext: " + str(messages[-1].content) if messages else "")])
+    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nContext: " + _get_last_message_content(messages))])
     
     # Parse response to determine next agent
     # TODO: Use structured output for SupervisorInstructions
     response_text = response.content if hasattr(response, 'content') else str(response)
     
     # Simple routing logic (will be improved with structured output)
-    goto = "FINISH"
+    goto: str = "__end__"
     if "researcher" in response_text.lower():
         goto = "researcher"
     elif "market" in response_text.lower():
@@ -327,9 +336,6 @@ async def supervisor_node(state: State) -> Command[Literal["researcher", "coder"
         goto = "coder"
     elif "browser" in response_text.lower():
         goto = "browser"
-    
-    if goto == "FINISH":
-        goto = "__end__"
     
     return Command(
         update={
@@ -366,7 +372,7 @@ async def research_node(state: State) -> Command[Literal["supervisor"]]:
     
     # Get task from supervisor
     messages = state.get("messages", [])
-    task_message = HumanMessage(content=prompt + "\n\nTask: " + str(messages[-1].content) if messages else "")
+    task_message = HumanMessage(content=prompt + "\n\nTask: " + _get_last_message_content(messages))
     
     # Execute agent
     result = await agent.ainvoke({"messages": [task_message]})
@@ -413,7 +419,7 @@ async def market_node(state: State) -> Command[Literal["supervisor"]]:
     
     # Get task from supervisor
     messages = state.get("messages", [])
-    task_message = HumanMessage(content=prompt + "\n\nTask: " + str(messages[-1].content) if messages else "")
+    task_message = HumanMessage(content=prompt + "\n\nTask: " + _get_last_message_content(messages))
     
     # Execute agent
     result = await agent.ainvoke({"messages": [task_message]})
@@ -449,7 +455,7 @@ async def analyst_node(state: State) -> Command[Literal["supervisor"]]:
     messages = state.get("messages", [])
     
     # Invoke LLM to generate analysis
-    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nContext: " + str(messages[-1].content) if messages else "")])
+    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nContext: " + _get_last_message_content(messages))])
     
     analysis_content = response.content if hasattr(response, 'content') else str(response)
     
@@ -477,7 +483,7 @@ async def reporter_node(state: State) -> Command[Literal["__end__"]]:
     messages = state.get("messages", [])
     
     # Invoke LLM to generate report
-    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nContext: " + str(messages[-1].content) if messages else "")])
+    response = await llm.ainvoke([HumanMessage(content=prompt + "\n\nContext: " + _get_last_message_content(messages))])
     
     report_content = response.content if hasattr(response, 'content') else str(response)
     
@@ -515,7 +521,7 @@ async def coder_node(state: State) -> Command[Literal["supervisor"]]:
     
     # Get task from supervisor
     messages = state.get("messages", [])
-    task_message = HumanMessage(content=prompt + "\n\nTask: " + str(messages[-1].content) if messages else "")
+    task_message = HumanMessage(content=prompt + "\n\nTask: " + _get_last_message_content(messages))
     
     # Execute agent
     result = await agent.ainvoke({"messages": [task_message]})
@@ -555,7 +561,7 @@ async def browser_node(state: State) -> Command[Literal["supervisor"]]:
     
     # Get task from supervisor
     messages = state.get("messages", [])
-    task_message = HumanMessage(content=prompt + "\n\nTask: " + str(messages[-1].content) if messages else "")
+    task_message = HumanMessage(content=prompt + "\n\nTask: " + _get_last_message_content(messages))
     
     # Execute agent
     result = await agent.ainvoke({"messages": [task_message]})
@@ -621,7 +627,6 @@ def build_langalpha_graph(checkpointing_enabled: bool = True) -> StateGraph:
             "coder": "coder",
             "browser": "browser",
             "__end__": END,
-            "FINISH": END,
         }
     )
     

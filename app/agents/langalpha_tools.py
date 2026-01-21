@@ -32,7 +32,7 @@ import numpy as np
 from langchain_core.tools import tool, Tool
 from langchain_experimental.utilities import PythonREPL
 from polygon.rest import RESTClient
-from alpha_vantage.fundamentals import Fundamentals
+from alpha_vantage.fundamentaldata import FundamentalData
 from yahooquery import Ticker
 import httpx
 
@@ -43,6 +43,30 @@ from app.utils.audit import log_audit_action
 from app.db.models import AuditAction
 
 logger = logging.getLogger(__name__)
+
+
+def _to_json_serializable(obj: Any) -> Any:
+    """Convert DataFrame, numpy types, and nested structures for json.dumps."""
+    if isinstance(obj, pd.DataFrame):
+        rows = obj.to_dict(orient="records")
+        return [
+            {k: (None if (isinstance(v, float) and (v != v)) else v) for k, v in r.items()}
+            for r in rows
+        ]
+    if hasattr(obj, "item") and callable(obj.item):  # numpy scalar
+        return obj.item()
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: _to_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_serializable(x) for x in obj]
+    return obj
+
 
 # Context variables for audit logging (set by graph nodes)
 _audit_db: ContextVar[Optional[Any]] = ContextVar('audit_db', default=None)
@@ -179,7 +203,7 @@ def get_market_data(
                 limit=limit
             )
             
-            # Convert to dict
+            # Convert to list of dicts (values may be numpy; use _to_json_serializable for JSON)
             data = []
             for agg in aggs:
                 data.append({
@@ -192,7 +216,7 @@ def get_market_data(
                     "vwap": agg.vwap if hasattr(agg, 'vwap') else None
                 })
             
-            result = f'{{"ticker": "{ticker}", "data": {data}, "count": {len(data)}}}'
+            result = json.dumps(_to_json_serializable({"ticker": ticker, "data": data, "count": len(data)}))
             _log_tool_usage("get_market_data", params, success=True)
             return result
             
@@ -226,7 +250,7 @@ def get_ticker_snapshot(ticker: str) -> str:
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
-            snapshot = client.get_snapshot_ticker(ticker=ticker)
+            snapshot = client.get_snapshot_ticker(market_type="stocks", ticker=ticker)
             
             # Convert to dict
             result = {
@@ -265,7 +289,7 @@ def get_ticker_snapshot(ticker: str) -> str:
 # Fundamental Data Tools (Alpha Vantage)
 # ============================================================================
 
-def _get_alpha_vantage_client() -> Optional[Fundamentals]:
+def _get_alpha_vantage_client() -> Optional[FundamentalData]:
     """Get Alpha Vantage client."""
     api_key = None
     if hasattr(settings, "ALPHA_VANTAGE_API_KEY") and settings.ALPHA_VANTAGE_API_KEY:
@@ -278,7 +302,7 @@ def _get_alpha_vantage_client() -> Optional[Fundamentals]:
         return None
     
     try:
-        return Fundamentals(key=api_key, output_format='json')
+        return FundamentalData(key=api_key, output_format='json')
     except Exception as e:
         logger.error(f"Failed to initialize Alpha Vantage client: {e}")
         return None
@@ -326,10 +350,9 @@ def get_fundamental_data(
             elif data_type == "cash_flow":
                 data = client.get_cash_flow_annual(symbol=ticker)
             elif data_type == "earnings":
-                data = client.get_earnings(symbol=ticker)
+                data = client.get_earnings_annual(symbol=ticker)
             
-            import json
-            result = json.dumps(data)
+            result = json.dumps(_to_json_serializable(data))
             _log_tool_usage("get_fundamental_data", params, success=True)
             return result
             
@@ -383,15 +406,15 @@ async def web_search(
             top_k_after_rerank=num_results
         )
         
-        # Format results for LangAlpha agents
+        # Format results for LangAlpha agents (unified shape: news has source/date, search has domain)
         formatted_results = []
         for chunk in result.get("extracted_content", []):
             formatted_results.append({
                 "title": chunk.get("title", ""),
                 "url": chunk.get("url", ""),
                 "content": chunk.get("content", ""),
-                "source": chunk.get("domain", ""),
-                "date": chunk.get("date", "")
+                "source": chunk.get("source") or chunk.get("domain", ""),
+                "date": chunk.get("date", ""),
             })
         
         import json
@@ -1014,14 +1037,14 @@ def get_trading_signals(
     }
     
     try:
-        # Get market data first
-        market_data_str = get_market_data(
-            ticker=ticker,
-            from_date=from_date,
-            to_date=to_date,
-            timespan="day",
-            limit=252  # Need at least 252 days for some strategies
-        )
+        # Get market data first (use .invoke: get_market_data is a @tool/StructuredTool)
+        market_data_str = get_market_data.invoke({
+            "ticker": ticker,
+            "from_date": from_date,
+            "to_date": to_date,
+            "timespan": "day",
+            "limit": 252,  # Need at least 252 days for some strategies
+        })
         
         market_data = json.loads(market_data_str)
         

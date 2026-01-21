@@ -9,7 +9,6 @@
 #   BACKEND_URL - Backend server URL (default: http://localhost:8000)
 #   FRONTEND_URL - Frontend dev server URL (default: http://localhost:5173)
 #   OPENFIN_MANIFEST_URL - Full manifest URL (default: ${BACKEND_URL}/openfin/app.json)
-#   DEBUG - Set to "true" to enable debug logging
 
 echo "CreditNexus OpenFin Launcher"
 echo "============================="
@@ -22,15 +21,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:5173}"
 MANIFEST_URL="${OPENFIN_MANIFEST_URL:-$BACKEND_URL/openfin/app.json}"
-
-# Optional debug logging (only if DEBUG environment variable is set)
-if [ "$DEBUG" = "true" ]; then
-    LOG_DATA=$(cat <<EOF
-{"sessionId":"openfin-launch","timestamp":"$(date -u +"%Y-%m-%dT%H:%M:%SZ")","data":{"projectRoot":"$PROJECT_ROOT","backendUrl":"$BACKEND_URL","frontendUrl":"$FRONTEND_URL","manifestUrl":"$MANIFEST_URL"}}
-EOF
-    )
-    echo "$LOG_DATA" >> "$PROJECT_ROOT/.cursor/debug.log" 2>/dev/null
-fi
 
 # Function to check if a service is ready
 test_service_ready() {

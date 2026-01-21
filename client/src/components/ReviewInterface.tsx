@@ -455,6 +455,13 @@ export function ReviewInterface({
                   Diff
                 </TabsTrigger>
               </TabsList>
+              <TabsContent value="data" className="mt-4">
+                <div className="rounded-lg border bg-muted/30 p-4 overflow-auto max-h-[360px]">
+                  <pre className="text-sm font-mono">
+                    {extractedData ? JSON.stringify(extractedData, null, 2) : 'No extracted data'}
+                  </pre>
+                </div>
+              </TabsContent>
               <TabsContent value="comments" className="mt-4">
                 <ReviewCommentPanel 
                   documentId={documentId} 

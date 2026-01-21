@@ -366,6 +366,42 @@ async def get_portfolio(
 # Market Data Endpoints
 # ============================================================================
 
+@router.get("/market-data")
+async def get_market_data_dashboard(
+    symbol: str = Query("SPY", description="Symbol for dashboard (default SPY)"),
+    trading_api_service: TradingAPIService = Depends(get_trading_api_service),
+    current_user: User = Depends(get_current_user)
+):
+    """Get market data in dashboard shape (prices, orderBook, recentTrades).
+
+    Supports GET /api/trades/market-data with optional ?symbol= for client compatibility.
+    Requires PERMISSION_TRADE_VIEW permission.
+    """
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    try:
+        data = trading_api_service.get_market_data(symbol.upper())
+        bid = float(data.get("bid_price") or 0)
+        ask = float(data.get("ask_price") or 0)
+        price = (bid + ask) / 2 if (bid or ask) else 0.0
+        return {
+            "prices": [{
+                "symbol": data.get("symbol", symbol),
+                "price": price,
+                "bid": bid or None,
+                "ask": ask or None,
+                "change": 0,
+                "change_percent": 0,
+                "volume": 0,
+                "timestamp": data.get("timestamp") or "",
+            }],
+            "orderBook": [],
+            "recentTrades": [],
+        }
+    except Exception:
+        return {"prices": [], "orderBook": [], "recentTrades": []}
+
+
 @router.get("/market-data/{symbol}", response_model=MarketDataResponse)
 async def get_market_data(
     symbol: str,

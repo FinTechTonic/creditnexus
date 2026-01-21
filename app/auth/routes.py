@@ -32,7 +32,6 @@ _jwks_client: Optional[PyJWKClient] = None
 _jwks_cache_time: float = 0
 JWKS_CACHE_DURATION = 3600
 
-
 def get_jwks_client() -> PyJWKClient:
     """Get or create a cached JWKS client for token verification."""
     global _jwks_client, _jwks_cache_time
@@ -43,7 +42,6 @@ def get_jwks_client() -> PyJWKClient:
         _jwks_cache_time = current_time
     
     return _jwks_client
-
 
 def verify_id_token(id_token: str, client_id: str) -> Dict[str, Any]:
     """Verify and decode the ID token using Replit's JWKS.
@@ -107,7 +105,6 @@ def verify_id_token(id_token: str, client_id: str) -> Dict[str, Any]:
             detail="Failed to verify authentication"
         )
 
-
 def generate_pkce_pair():
     """Generate PKCE code verifier and challenge."""
     code_verifier = secrets.token_urlsafe(64)
@@ -116,13 +113,11 @@ def generate_pkce_pair():
     ).decode().rstrip("=")
     return code_verifier, code_challenge
 
-
 def get_redirect_uri(request: Request) -> str:
     """Build the OAuth callback URL."""
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
     host = request.headers.get("x-forwarded-host", request.url.netloc)
     return f"{scheme}://{host}/api/auth/callback"
-
 
 @auth_router.get("/login")
 async def login(request: Request, next_url: Optional[str] = None):
@@ -155,7 +150,6 @@ async def login(request: Request, next_url: Optional[str] = None):
     
     auth_url = f"{REPLIT_ISSUER_URL}/auth?{urlencode(params)}"
     return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
-
 
 @auth_router.get("/callback")
 async def callback(
@@ -317,7 +311,6 @@ async def callback(
     
     return RedirectResponse(url=next_url, status_code=status.HTTP_302_FOUND)
 
-
 @auth_router.get("/logout")
 async def logout(request: Request, db: Session = Depends(get_db)):
     """Log out the current user."""
@@ -356,30 +349,43 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     
     return RedirectResponse(url=logout_url, status_code=status.HTTP_302_FOUND)
 
-
 @auth_router.get("/me")
 async def get_current_user_info(request: Request, db: Session = Depends(get_db)):
     """Get the current authenticated user's information.
     
     Supports both session-based auth (Replit OAuth) and JWT Bearer token auth.
     """
+    
     user = None
     
     auth_header = request.headers.get("Authorization", "")
-
+    
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
         from app.auth.jwt_auth import decode_access_token
-
+        
         payload = decode_access_token(token)
-
+        
         if payload:
             user_id = payload.get("sub")
             if user_id:
+                
                 user = db.query(User).filter(User.id == int(user_id)).first()
-
+                
                 if user and user.is_active:
-                    user_dict = user.to_dict()
+                    try:
+                        user_dict = user.to_dict()
+                    except Exception as e:
+                        logger.warning("user.to_dict() failed (e.g. decrypt), returning minimal user: %s", e)
+                        user_dict = {
+                            "id": user.id,
+                            "email": "",
+                            "display_name": "",
+                            "profile_image": getattr(user, "profile_image", None),
+                            "role": user.role or "viewer",
+                            "is_active": user.is_active,
+                            "last_login": None,
+                        }
                     return JSONResponse({
                         "authenticated": True,
                         "user": user_dict
@@ -395,8 +401,21 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
     if not user or not user.is_active:
         request.session.clear()
         return JSONResponse({"authenticated": False, "user": None})
-    
+
+    try:
+        user_dict = user.to_dict()
+    except Exception as e:
+        logger.warning("user.to_dict() failed (e.g. decrypt), returning minimal user: %s", e)
+        user_dict = {
+            "id": user.id,
+            "email": "",
+            "display_name": "",
+            "profile_image": getattr(user, "profile_image", None),
+            "role": user.role or "viewer",
+            "is_active": user.is_active,
+            "last_login": None,
+        }
     return JSONResponse({
         "authenticated": True,
-        "user": user.to_dict()
+        "user": user_dict
     })

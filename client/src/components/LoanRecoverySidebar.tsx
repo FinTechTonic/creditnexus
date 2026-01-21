@@ -64,7 +64,6 @@ export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySid
       params.append('limit', '50');
 
       const response = await fetchWithAuth(`/api/recovery/defaults?${params.toString()}`);
-
       if (!response.ok) throw new Error('Failed to fetch defaults');
       
       const data = await response.json();
@@ -98,18 +97,13 @@ export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySid
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_types: actionTypes || null })
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to trigger actions');
-      }
-
+      if (!response.ok) throw new Error('Failed to trigger actions');
       const actions = await response.json();
-
       // Handle both array and object responses
       const actionsArray = Array.isArray(actions) ? actions : (actions.actions || []);
       setRecoveryActions(prev => [...prev, ...actionsArray]);
       await fetchDefaults(); // Refresh defaults
-
+      
       // Show success message
       if (actionsArray.length > 0) {
         addToast(`Successfully triggered ${actionsArray.length} recovery action(s)`, 'success');
@@ -421,9 +415,7 @@ export function LoanRecoverySidebar({ dealId, onDefaultSelect }: LoanRecoverySid
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  if (selectedDefault) {
-                    handleTriggerActions(selectedDefault.id);
-                  }
+                  if (selectedDefault) handleTriggerActions(selectedDefault.id);
                 }}
                 disabled={!selectedDefault}
               >

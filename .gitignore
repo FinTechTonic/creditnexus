@@ -6,6 +6,7 @@ folder/
 .cursor/
 dist/
 *.log
+None/
 
 # SSL/TLS Certificates and Keys (auto-generated and manual)
 ssl_certs/
