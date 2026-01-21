@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.db.models import User, OAuth, AuditLog, AuditAction, UserRole
 
+from app.utils import get_debug_log_path
 logger = logging.getLogger(__name__)
 
 auth_router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -375,7 +376,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
         "timestamp": int(time.time() * 1000)
     }
     try:
-        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+        with open(r"get_debug_log_path()", "a") as f:
             f.write(json.dumps(log_data) + "\n")
     except:
         pass
@@ -396,7 +397,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
         "timestamp": int(time.time() * 1000)
     }
     try:
-        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+        with open(r"get_debug_log_path()", "a") as f:
             f.write(json.dumps(log_data) + "\n")
     except:
         pass
@@ -417,7 +418,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
             "timestamp": int(time.time() * 1000)
         }
         try:
-            with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            with open(r"get_debug_log_path()", "a") as f:
                 f.write(json.dumps(log_data) + "\n")
         except:
             pass
@@ -436,7 +437,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
             "timestamp": int(time.time() * 1000)
         }
         try:
-            with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            with open(r"get_debug_log_path()", "a") as f:
                 f.write(json.dumps(log_data) + "\n")
         except:
             pass
@@ -456,7 +457,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
                     "timestamp": int(time.time() * 1000)
                 }
                 try:
-                    with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                    with open(r"get_debug_log_path()", "a") as f:
                         f.write(json.dumps(log_data) + "\n")
                 except:
                     pass
@@ -475,7 +476,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
                     "timestamp": int(time.time() * 1000)
                 }
                 try:
-                    with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                    with open(r"get_debug_log_path()", "a") as f:
                         f.write(json.dumps(log_data) + "\n")
                 except:
                     pass
@@ -493,7 +494,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
                         "timestamp": int(time.time() * 1000)
                     }
                     try:
-                        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                        with open(r"get_debug_log_path()", "a") as f:
                             f.write(json.dumps(log_data) + "\n")
                     except:
                         pass
@@ -512,7 +513,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
                         "timestamp": int(time.time() * 1000)
                     }
                     try:
-                        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                        with open(r"get_debug_log_path()", "a") as f:
                             f.write(json.dumps(log_data) + "\n")
                     except:
                         pass
@@ -529,7 +530,7 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
                         "timestamp": int(time.time() * 1000)
                     }
                     try:
-                        with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                        with open(r"get_debug_log_path()", "a") as f:
                             f.write(json.dumps(log_data) + "\n")
                     except:
                         pass

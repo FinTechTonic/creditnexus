@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.db.models import (
+from app.utils import get_debug_log_path
     User, UserRole, Deal, Application, Document, DocumentVersion, Workflow,
     GeneratedDocument, DealNote, PolicyDecision, DealStatus,
     DealType, ApplicationStatus, ApplicationType, WorkflowState, GeneratedDocumentStatus,
@@ -1337,7 +1338,7 @@ The document contains placeholder content representing a credit agreement.
                                 "timestamp": int(datetime.now().timestamp() * 1000)
                             }
                             try:
-                                with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                                with open(r"get_debug_log_path()", "a") as f:
                                     f.write(json.dumps(log_data) + "\n")
                             except Exception:
                                 pass
@@ -1361,7 +1362,7 @@ The document contains placeholder content representing a credit agreement.
                                     "timestamp": int(datetime.now().timestamp() * 1000)
                                 }
                                 try:
-                                    with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                                    with open(r"get_debug_log_path()", "a") as f:
                                         f.write(json.dumps(log_data) + "\n")
                                 except Exception:
                                     pass
@@ -1403,7 +1404,7 @@ The document contains placeholder content representing a credit agreement.
                                 except TypeError as e:
                                     log_data["data"]["serialization_error"] = str(e)
                             try:
-                                with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+                                with open(r"get_debug_log_path()", "a") as f:
                                     f.write(json.dumps(log_data) + "\n")
                             except Exception:
                                 pass
