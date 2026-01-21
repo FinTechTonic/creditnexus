@@ -18,7 +18,7 @@ from app.agents.deep_research_agent import (
     ResearchContext,
     KnowledgeItem
 )
-from app.db.models import Document, Deal, Workflow
+from app.db.models import Document, Deal, Workflow, DeepResearchResult
 from app.utils.audit import log_audit_action
 from app.db.models import AuditAction
 from app.services.agent_note_service import AgentNoteService
@@ -75,8 +75,23 @@ class DeepResearchService:
             workflow_id=workflow_id
         )
         
-        # Store research result (TODO: Create deep_research_results table)
-        # For now, just return the result
+        # Persist to deep_research_results so GET /api/deep-research/results shows items
+        research_id = str(uuid.uuid4())
+        record = DeepResearchResult(
+            research_id=research_id,
+            query=query,
+            answer=result.get("answer"),
+            knowledge_items=result.get("knowledge_items"),
+            visited_urls=result.get("visited_urls") or [],
+            searched_queries=result.get("searched_queries") or [],
+            deal_id=deal_id,
+            workflow_id=workflow_id,
+            status="completed",
+            completed_at=datetime.utcnow(),
+        )
+        self.db.add(record)
+        self.db.flush()
+        result["research_id"] = research_id
         
         # Audit logging
         if user_id:

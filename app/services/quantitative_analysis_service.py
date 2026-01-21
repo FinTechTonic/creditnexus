@@ -874,9 +874,9 @@ class QuantitativeAnalysisService:
                     deal_id=deal_id,
                     user_id=user_id
                 )
-                    logger.info(f"Created agent interaction note {note.id} for loan application analysis {analysis_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to create agent interaction note: {e}")
+                logger.info(f"Created agent interaction note {note.id} for loan application analysis {analysis_id}")
+            except Exception as e:
+                logger.warning(f"Failed to create agent interaction note: {e}")
             
             # Create agent report and attach as document
             if deal_id:

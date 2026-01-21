@@ -9,7 +9,7 @@
     "backend": "python scripts/run_dev.py",
     "frontend": "cd client && npm run dev",
     "dev:pm2": "node -e \"require('fs').mkdirSync('logs/pm2',{recursive:true})\" && npx pm2 start ecosystem.config.cjs",
-    "dev:pm2:stop": "npx pm2 delete backend-dev frontend-dev || true",
+    "dev:pm2:stop": "npx pm2 delete backend-dev frontend-dev api-dev || true",
     "dev:pm2:restart": "npx pm2 restart ecosystem.config.cjs",
     "dev:pm2:logs": "npx pm2 logs",
     "dev:pm2:status": "npx pm2 status",
@@ -20,8 +20,7 @@
     "electron:build:win": "npx electron-builder --win",
     "electron:build:mac": "npx electron-builder --mac",
     "electron:build:linux": "npx electron-builder --linux",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "test:nexus-e2e": "uv run python tests/compatibility/test_nexus_file_transfer_e2e.py"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",

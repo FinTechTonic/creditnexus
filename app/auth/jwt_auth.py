@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 jwt_router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer(auto_error=False)
 
-
 # Rate limiting will be applied via decorators using limiter from app.state
 # For routes that need rate limiting, use: @limiter.limit("X/minute") 
 # where limiter is obtained from request.app.state.limiter at route definition
@@ -84,11 +83,9 @@ LOCKOUT_DURATION_MINUTES = 30
 
 MIN_PASSWORD_LENGTH = 12
 
-
 class PasswordStrengthError(Exception):
     """Raised when password doesn't meet security requirements."""
     pass
-
 
 class UserRegister(BaseModel):
     """Registration request schema."""
@@ -123,12 +120,10 @@ class UserRegister(BaseModel):
         
         return v
 
-
 class UserLogin(BaseModel):
     """Login request schema."""
     email: EmailStr
     password: str
-
 
 class PasswordChange(BaseModel):
     """Password change request schema."""
@@ -161,7 +156,6 @@ class PasswordChange(BaseModel):
         
         return v
 
-
 class TokenResponse(BaseModel):
     """Token response schema."""
     access_token: str
@@ -169,11 +163,9 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
 
-
 class RefreshTokenRequest(BaseModel):
     """Refresh token request schema."""
     refresh_token: str
-
 
 class UserSignupStep1(BaseModel):
     """Step 1 signup request: Basic info and role selection (all fields optional for partial signup)."""
@@ -211,7 +203,6 @@ class UserSignupStep1(BaseModel):
         
         return v
 
-
 class UserSignupStep2(BaseModel):
     """Step 2 signup request: Profile enrichment data."""
     phone: Optional[str] = None
@@ -224,13 +215,11 @@ class UserSignupStep2(BaseModel):
     # For law officers: law_firm, bar_number, etc.
     # For accountants: firm_name, certification_number, etc.
 
-
 class SignupTokenResponse(BaseModel):
     """Response for step 1 signup with temporary signup token."""
     signup_token: str
     expires_in: int  # seconds until expiration
     message: str = "User created successfully. Please complete profile in step 2."
-
 
 def get_password_hash(password: str) -> str:
     """Hash a password using bcrypt.
@@ -253,7 +242,6 @@ def get_password_hash(password: str) -> str:
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password_bytes, salt).decode('utf-8')
 
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash.
     
@@ -271,7 +259,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     else:
         return bcrypt.checkpw(password_bytes, hashed_bytes)
 
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
@@ -283,9 +270,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     })
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
-
 def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT refresh token and store it in the database."""
+    
     logger.debug("create_refresh_token called", extra={"user_id": data.get("sub")})
     
     to_encode = data.copy()
@@ -297,7 +284,7 @@ def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timede
         "type": "refresh",
         "jti": jti
     })
-
+    
     try:
         token_record = RefreshToken(
             jti=jti,
@@ -308,21 +295,20 @@ def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timede
         db.add(token_record)
     except Exception as e:
         raise
-
+    
     try:
         db.commit()
     except Exception as e:
         raise
-
+    
     logger.debug("Refresh token created", extra={"jti": jti, "user_id": data.get("sub")})
-
+    
     try:
         token = jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, algorithm=JWT_ALGORITHM)
     except Exception as e:
         raise
-
+    
     return token
-
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and validate an access token."""
@@ -333,7 +319,6 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         return payload
     except JWTError:
         return None
-
 
 def decode_refresh_token(token: str, db: Session) -> Optional[Dict[str, Any]]:
     """Decode and validate a refresh token, checking database for revocation."""
@@ -360,7 +345,6 @@ def decode_refresh_token(token: str, db: Session) -> Optional[Dict[str, Any]]:
     except JWTError:
         return None
 
-
 def revoke_refresh_token(jti: str, db: Session) -> None:
     """Revoke a refresh token by its JTI in the database."""
     token_record = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
@@ -368,7 +352,6 @@ def revoke_refresh_token(jti: str, db: Session) -> None:
         token_record.is_revoked = True
         token_record.revoked_at = datetime.utcnow()
         db.commit()
-
 
 def revoke_all_user_tokens(user_id: int, db: Session) -> None:
     """Revoke all refresh tokens for a user."""
@@ -380,7 +363,6 @@ def revoke_all_user_tokens(user_id: int, db: Session) -> None:
         "revoked_at": datetime.utcnow()
     })
     db.commit()
-
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -404,12 +386,12 @@ async def get_current_user(
     
     return user
 
-
 async def require_auth(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """Require valid authentication - raises exception if not authenticated."""
+
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -451,7 +433,6 @@ async def require_auth(
     
     return user
 
-
 def check_account_lockout(user: User) -> None:
     """Check if the user account is locked."""
     if user.locked_until and user.locked_until > datetime.utcnow():
@@ -460,7 +441,6 @@ def check_account_lockout(user: User) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Account is locked. Try again in {remaining} minutes."
         )
-
 
 def handle_failed_login(user: User, db: Session) -> None:
     """Handle a failed login attempt with progressive lockout."""
@@ -471,14 +451,12 @@ def handle_failed_login(user: User, db: Session) -> None:
     
     db.commit()
 
-
 def reset_login_attempts(user: User, db: Session) -> None:
     """Reset failed login attempts after successful login."""
     user.failed_login_attempts = 0
     user.locked_until = None
     user.last_login = datetime.utcnow()
     db.commit()
-
 
 @jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
@@ -538,7 +516,6 @@ async def register(
         refresh_token=refresh_token,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
-
 
 @jwt_router.post("/signup/step1", response_model=SignupTokenResponse, status_code=status.HTTP_201_CREATED)
 async def signup_step1(
@@ -608,7 +585,6 @@ async def signup_step1(
         message="User created successfully. Please complete profile in step 2."
     )
 
-
 class SignupProgressData(BaseModel):
     """Request model for saving signup progress."""
     user_id: int
@@ -616,7 +592,6 @@ class SignupProgressData(BaseModel):
     display_name: Optional[str] = None
     role: Optional[str] = None
     profile_data: Optional[dict] = None
-
 
 @jwt_router.post("/signup/save-progress")
 async def save_signup_progress(
@@ -682,7 +657,6 @@ async def save_signup_progress(
         "user_id": user.id,
         "message": "Signup progress saved successfully"
     }
-
 
 @jwt_router.post("/signup/step2", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def signup_step2(
@@ -788,7 +762,6 @@ async def signup_step2(
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
-
 @jwt_router.post("/login", response_model=TokenResponse)
 async def login(
     request: Request,
@@ -801,10 +774,11 @@ async def login(
     Rate limited via slowapi default_limits (60/minute) with additional
     account lockout protection (5 failed attempts = 30 min lockout).
     """
+    
     # Rate limiting is handled by slowapi's default_limits (60/minute)
     # Additional protection via account lockout mechanism (5 failed attempts)
     logger.debug("Login attempt", extra={"email": credentials.email})
-
+    
     # Fix for encrypted email query: The EncryptedString type encrypts to bytes via process_bind_param,
     # but the database column is VARCHAR, causing a type mismatch error (character varying = bytea).
     # Workaround: Query all users and filter in Python by decrypting emails.
@@ -817,6 +791,7 @@ async def login(
         if not settings.ENCRYPTION_ENABLED:
             user = db.query(User).filter(User.email == credentials.email).first()
         else:
+            
             # Workaround: Query all users and filter by comparing decrypted emails
             # This is not ideal for performance but works around the type mismatch
             all_users = db.query(User).all()
@@ -832,30 +807,30 @@ async def login(
                     continue
     except Exception as e:
         raise
-
+    
     if not user:
         logger.warning("Login failed: user not found", extra={"email": credentials.email})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
-
+    
     try:
         check_account_lockout(user)
     except Exception as e:
         raise
-
+    
     if not user.password_hash:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Password login not configured for this account. Use OAuth instead."
         )
-
+    
     try:
         password_valid = verify_password(credentials.password, user.password_hash)
     except Exception as e:
         raise
-
+    
     if not password_valid:
         handle_failed_login(user, db)
         remaining_attempts = MAX_LOGIN_ATTEMPTS - user.failed_login_attempts
@@ -874,7 +849,12 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated. Contact support."
         )
-
+    
+    try:
+        reset_login_attempts(user, db)
+    except Exception as e:
+        raise
+    
     try:
         audit_log = AuditLog(
             user_id=user.id,
@@ -889,19 +869,19 @@ async def login(
         db.commit()
     except Exception as e:
         raise
-
+    
     try:
         access_token = create_access_token({"sub": str(user.id), "email": user.email})
     except Exception as e:
         raise
-
+    
     try:
         refresh_token = create_refresh_token({"sub": str(user.id)}, db)
     except Exception as e:
         raise
-
+    
     logger.info("Login successful", extra={"user_id": user.id, "email": user.email})
-
+    
     try:
         response = TokenResponse(
             access_token=access_token,
@@ -910,9 +890,8 @@ async def login(
         )
     except Exception as e:
         raise
-
+    
     return response
-
 
 @jwt_router.post("/refresh", response_model=TokenResponse)
 async def refresh_tokens(token_request: RefreshTokenRequest, db: Session = Depends(get_db)):
@@ -947,7 +926,6 @@ async def refresh_tokens(token_request: RefreshTokenRequest, db: Session = Depen
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
-
 @jwt_router.post("/logout")
 async def logout(
     request: Request,
@@ -975,7 +953,6 @@ async def logout(
                 db.commit()
     
     return {"message": "Successfully logged out"}
-
 
 @jwt_router.post("/change-password")
 async def change_password(
@@ -1025,7 +1002,6 @@ async def change_password(
     
     return {"message": "Password changed successfully"}
 
-
 @jwt_router.get("/me")
 async def get_current_user_info(user: Optional[User] = Depends(get_current_user)):
     """Get the current authenticated user's information."""
@@ -1061,7 +1037,6 @@ async def get_current_user_info(user: Optional[User] = Depends(get_current_user)
         "authenticated": True,
         "user": user_dict
     }
-
 
 @jwt_router.get("/verify")
 async def verify_token(user: User = Depends(require_auth)):

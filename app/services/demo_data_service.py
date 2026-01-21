@@ -1339,7 +1339,7 @@ The document contains placeholder content representing a credit agreement.
                                 source_cdm_data = json.loads(json.dumps(source_cdm_data, default=json_serial))
                             else:
                                 source_cdm_data = None
-
+                    
                     document = Document(
                         title=title,
                         borrower_name=borrower_name,
