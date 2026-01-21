@@ -37,6 +37,7 @@ from yahooquery import Ticker
 import httpx
 
 from app.core.config import settings
+from app.core import data_cache as dc
 from app.core.llm_client import get_chat_model
 from app.services.web_search_service import WebSearchService, get_web_search_service
 from app.utils.audit import log_audit_action
@@ -149,6 +150,15 @@ def _get_polygon_client() -> Optional[RESTClient]:
         return None
 
 
+def _polygon_aggs_ttl(timespan: str) -> int:
+    t = (timespan or "day").lower()
+    if t in ("minute", "min"):
+        return dc.TTL_OHLCV_15M
+    if t in ("hour", "h"):
+        return dc.TTL_OHLCV_1H
+    return dc.TTL_OHLCV_1D
+
+
 @tool
 def get_market_data(
     ticker: str,
@@ -189,6 +199,13 @@ def get_market_data(
     if not from_date:
         from_date = (date.today() - timedelta(days=30)).isoformat()
     
+    cache_key = dc.make_key("polygon_aggs", ticker, from_date, to_date, timespan, limit)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        _log_tool_usage("get_market_data", params, success=True)
+        return json.dumps(cached)
+    
     # Retry logic
     last_error = None
     for attempt in range(MAX_RETRIES):
@@ -216,9 +233,10 @@ def get_market_data(
                     "vwap": agg.vwap if hasattr(agg, 'vwap') else None
                 })
             
-            result = json.dumps(_to_json_serializable({"ticker": ticker, "data": data, "count": len(data)}))
+            obj = _to_json_serializable({"ticker": ticker, "data": data, "count": len(data)})
+            dc.set(cache_key, obj, _polygon_aggs_ttl(timespan), dc.SOURCE_POLYGON, dc.KIND_TIMESERIES, _db)
             _log_tool_usage("get_market_data", params, success=True)
-            return result
+            return json.dumps(obj)
             
         except Exception as e:
             last_error = e
@@ -242,6 +260,12 @@ def get_ticker_snapshot(ticker: str) -> str:
     Returns:
         JSON string with ticker snapshot
     """
+    cache_key = dc.make_key("polygon_snapshot", ticker)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        return json.dumps(cached)
+    
     client = _get_polygon_client()
     if not client:
         return '{"error": "Polygon API key not configured"}'
@@ -272,7 +296,7 @@ def get_ticker_snapshot(ticker: str) -> str:
                 } if snapshot.last_trade else None,
             }
             
-            import json
+            dc.set(cache_key, result, dc.TTL_SNAPSHOT, dc.SOURCE_POLYGON, dc.KIND_PUNCTUAL, _db)
             return json.dumps(result)
             
         except Exception as e:
@@ -328,14 +352,21 @@ def get_fundamental_data(
         "data_type": data_type
     }
     
+    if data_type not in ["overview", "income_statement", "balance_sheet", "cash_flow", "earnings"]:
+        _log_tool_usage("get_fundamental_data", params, success=False, error=f"Unknown data_type: {data_type}")
+        return f'{{"error": "Unknown data_type: {data_type}"}}'
+    
+    cache_key = dc.make_key("av_fundamental", ticker, data_type)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        _log_tool_usage("get_fundamental_data", params, success=True)
+        return json.dumps(cached)
+    
     client = _get_alpha_vantage_client()
     if not client:
         _log_tool_usage("get_fundamental_data", params, success=False, error="Alpha Vantage API key not configured")
         return '{"error": "Alpha Vantage API key not configured"}'
-    
-    if data_type not in ["overview", "income_statement", "balance_sheet", "cash_flow", "earnings"]:
-        _log_tool_usage("get_fundamental_data", params, success=False, error=f"Unknown data_type: {data_type}")
-        return f'{{"error": "Unknown data_type: {data_type}"}}'
     
     # Retry logic
     last_error = None
@@ -352,9 +383,10 @@ def get_fundamental_data(
             elif data_type == "earnings":
                 data = client.get_earnings_annual(symbol=ticker)
             
-            result = json.dumps(_to_json_serializable(data))
+            obj = _to_json_serializable(data)
+            dc.set(cache_key, obj, dc.TTL_FUNDAMENTAL, dc.SOURCE_ALPHA_VANTAGE, dc.KIND_PUNCTUAL, _db)
             _log_tool_usage("get_fundamental_data", params, success=True)
-            return result
+            return json.dumps(obj)
             
         except Exception as e:
             last_error = e
@@ -403,7 +435,8 @@ async def web_search(
             search_type=search_type,
             num_results=num_results,
             rerank=True,
-            top_k_after_rerank=num_results
+            top_k_after_rerank=num_results,
+            db=_audit_db.get(),
         )
         
         # Format results for LangAlpha agents (unified shape: news has source/date, search has domain)
@@ -417,7 +450,6 @@ async def web_search(
                 "date": chunk.get("date", ""),
             })
         
-        import json
         search_result = json.dumps({
             "query": query,
             "search_type": search_type,
@@ -454,6 +486,20 @@ def get_tickertick_news(
     Returns:
         JSON string with news articles
     """
+    # Build query
+    if ticker:
+        feed_query = f"z:{ticker}"  # Specific ticker news
+    elif query:
+        feed_query = query
+    else:
+        return '{"error": "Either ticker or query must be provided"}'
+    
+    cache_key = dc.make_key("tickertick_news", feed_query, limit)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        return json.dumps(cached)
+    
     api_key = None
     if hasattr(settings, "TICKERTICK_API_KEY") and settings.TICKERTICK_API_KEY:
         api_key = settings.TICKERTICK_API_KEY.get_secret_value()
@@ -462,14 +508,6 @@ def get_tickertick_news(
     
     if not api_key:
         return '{"error": "Tickertick API key not configured"}'
-    
-    # Build query
-    if ticker:
-        feed_query = f"z:{ticker}"  # Specific ticker news
-    elif query:
-        feed_query = query
-    else:
-        return '{"error": "Either ticker or query must be provided"}'
     
     # Retry logic
     last_error = None
@@ -491,7 +529,7 @@ def get_tickertick_news(
                         timestamp_sec = story["time"] / 1000
                         story["time"] = datetime.fromtimestamp(timestamp_sec).isoformat()
             
-            import json
+            dc.set(cache_key, data, dc.TTL_NEWS, dc.SOURCE_TICKERTICK, dc.KIND_PUNCTUAL, _db)
             return json.dumps(data)
             
         except httpx.HTTPStatusError as e:

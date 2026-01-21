@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -39,9 +39,21 @@ from app.api.remote_routes import remote_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
 from app.api.trading_routes import router as trading_router
+from app.api.stock_prediction_routes import router as stock_prediction_router
+from app.api.banking_routes import router as banking_router
+from app.api.asset_routes import router as asset_router
+from app.api.portfolio_routes import router as portfolio_router
+from app.api.polymarket_routes import router as polymarket_router
+from app.api.cross_chain_routes import router as cross_chain_router
+from app.api.challenge_coin_routes import router as challenge_coin_router
+from app.api.bridge_builder_routes import router as bridge_builder_router
+from app.api.subscription_routes import router as subscription_router
 from app.api.review_routes import router as review_router
 from app.api.nexus_routes import router as nexus_router
+from app.api.organization_routes import router as organization_router
 from app.api.p2p_routes import router as p2p_router
+from app.api.whitelist_routes import router as whitelist_router
+from app.api.remote_profile_routes import router as remote_profile_router
 from app.api.metrics_routes import router as metrics_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
@@ -171,6 +183,28 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
         app.state.x402_payment_service = None
+
+    # RevenueCat (subscription / entitlements)
+    app.state.revenuecat_service = None
+    if getattr(settings, "REVENUECAT_ENABLED", False) and getattr(settings, "REVENUECAT_API_KEY", None):
+        try:
+            from app.services.revenuecat_service import RevenueCatService
+            app.state.revenuecat_service = RevenueCatService()
+            logger.info("RevenueCat service initialized")
+        except Exception as e:
+            logger.warning("RevenueCat service init failed: %s", e)
+
+    # Payment router (x402 + optional RevenueCat for POLYMARKET_*, SUBSCRIPTION_UPGRADE, etc.)
+    try:
+        from app.services.payment_router_service import PaymentRouterService
+        app.state.payment_router_service = PaymentRouterService(
+            x402_service=app.state.x402_payment_service,
+            revenuecat_service=getattr(app.state, "revenuecat_service", None),
+        )
+        logger.info("PaymentRouter service initialized")
+    except Exception as e:
+        logger.warning("PaymentRouter service init failed: %s", e)
+        app.state.payment_router_service = None
 
     # Initialize metrics
     if settings.METRICS_ENABLED:
@@ -643,9 +677,21 @@ app.include_router(workflow_delegation_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
 app.include_router(trading_router)
+app.include_router(stock_prediction_router)
+app.include_router(banking_router)
+app.include_router(asset_router)
+app.include_router(portfolio_router)
+app.include_router(polymarket_router)
+app.include_router(cross_chain_router)
+app.include_router(challenge_coin_router)
+app.include_router(bridge_builder_router)
+app.include_router(subscription_router)
 app.include_router(review_router)
 app.include_router(nexus_router)
+app.include_router(organization_router)
 app.include_router(p2p_router)
+app.include_router(whitelist_router)
+app.include_router(remote_profile_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
@@ -671,7 +717,23 @@ if openfin_dir.exists():
             return FileResponse(str(manifest_path), media_type="application/json")
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="OpenFin manifest not found")
-    
+
+    @app.get("/openfin/app-dev.json")
+    async def serve_openfin_manifest_dev():
+        """Serve OpenFin manifest for dev: view URL points at Vite (5000) so OpenFin wraps the dev client."""
+        manifest_path = openfin_dir / "app.json"
+        if not manifest_path.exists():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="OpenFin manifest not found")
+        import json
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        dev_url = os.environ.get("OPENFIN_DEV_APP_URL", "http://localhost:5000")
+        try:
+            data["snapshot"]["windows"][0]["layout"]["content"][0]["content"][0]["componentState"]["url"] = dev_url
+        except (KeyError, IndexError, TypeError):
+            pass
+        return JSONResponse(data, media_type="application/json")
+
     @app.get("/openfin/{filename}")
     async def serve_openfin_file(filename: str):
         """Serve other OpenFin configuration files."""
@@ -682,9 +744,10 @@ if openfin_dir.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
 static_dir = Path(__file__).parent / "client" / "dist"
-if static_dir.exists():
+assets_dir = static_dir / "assets"
+if static_dir.exists() and assets_dir.exists():
     logger.info(f"Serving static files from {static_dir}")
-    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+    app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
     
     @app.get("/")
     async def serve_frontend():

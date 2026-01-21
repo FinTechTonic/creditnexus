@@ -129,6 +129,30 @@ export const router = createAppRouter([
     ),
   },
   {
+    path: '/app/link-accounts',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/asset-alerts',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/portfolio-risk',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/app/green-lens',
     element: (
       <ProtectedRoute>
@@ -182,6 +206,14 @@ export const router = createAppRouter([
       <AdminRoute>
         <DesktopAppLayout />
       </AdminRoute>
+    ),
+  },
+  {
+    path: '/app/whitelisting-dashboard',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
     ),
   },
   {

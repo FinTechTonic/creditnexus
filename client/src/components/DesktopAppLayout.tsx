@@ -18,7 +18,7 @@ import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/button';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext, WorkflowLinkContext } from '@/context/FDC3Context';
@@ -30,11 +30,15 @@ import { SecuritizationWorkflow } from '@/apps/securitization/SecuritizationWork
 import { SecuritizationPoolDetail } from '@/components/SecuritizationPoolDetail';
 import { TranchePurchase } from '@/components/TranchePurchase';
 import { VerificationFileConfigEditor } from '@/apps/verification-config/VerificationFileConfigEditor';
+import { WhitelistingDashboard } from '@/apps/whitelisting-dashboard/WhitelistingDashboard';
 import { WorkflowShareInterface } from '@/components/WorkflowShareInterface';
 // WorkflowDelegationDashboard removed - unused
 import { WorkflowProcessingPage } from '@/components/WorkflowProcessingPage';
 import { LoanRecoverySidebar } from '@/components/LoanRecoverySidebar';
 import { AgentDashboard } from '@/apps/agent-dashboard/AgentDashboard';
+import { LinkAccounts } from '@/apps/link-accounts/LinkAccounts';
+import { AssetAlertsView } from '@/apps/asset-alerts/AssetAlertsView';
+import { PortfolioRiskView } from '@/apps/portfolio-risk/PortfolioRiskView';
 import { FilingStatusDashboard } from '@/components/FilingStatusDashboard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useThemeClasses } from '@/utils/themeUtils';
@@ -53,7 +57,7 @@ import {
   PERMISSION_AUDIT_VIEW,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'whitelisting-dashboard' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings' | 'link-accounts' | 'asset-alerts' | 'portfolio-risk';
 
 interface AppConfig {
   id: AppView;
@@ -127,6 +131,27 @@ const sidebarApps: AppConfig[] = [
     requiredPermission: PERMISSION_TRADE_VIEW,
   },
   {
+    id: 'link-accounts',
+    name: 'Link accounts',
+    icon: <Link2 className="h-5 w-5 text-cyan-400" />,
+    description: 'Connect bank and data sources',
+    requiredPermission: PERMISSION_TRADE_VIEW,
+  },
+  {
+    id: 'asset-alerts',
+    name: 'Asset alerts',
+    icon: <Bell className="h-5 w-5 text-amber-400" />,
+    description: 'Maturities and amortization reminders',
+    requiredPermission: PERMISSION_TRADE_VIEW,
+  },
+  {
+    id: 'portfolio-risk',
+    name: 'Risk analysis',
+    icon: <BarChart2 className="h-5 w-5 text-cyan-400" />,
+    description: 'Asset-class allocation and diversification (Pro+)',
+    requiredPermission: PERMISSION_TRADE_VIEW,
+  },
+  {
     id: 'risk-war-room',
     name: 'Risk War Room',
     icon: <RadioTower className="h-5 w-5 text-red-500" />,
@@ -188,6 +213,13 @@ const sidebarApps: AppConfig[] = [
     name: 'Verification Config',
     icon: <Shield className="h-5 w-5 text-cyan-400" />,
     description: 'Configure verification file whitelist',
+    requiredPermission: PERMISSION_USER_VIEW,
+  },
+  {
+    id: 'whitelisting-dashboard',
+    name: 'Whitelisting',
+    icon: <Shield className="h-5 w-5 text-emerald-400" />,
+    description: 'File, IP, Implementation & Node whitelists',
     requiredPermission: PERMISSION_USER_VIEW,
   },
   {
@@ -258,8 +290,8 @@ export function DesktopAppLayout() {
       'dashboard', 'applications', 'admin-signups', 'calendar', 'deals',
       'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
       'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
-      'policy-editor', 'library', 'auditor', 'securitization', 'verification-config',
-      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings'
+      'policy-editor', 'library', 'auditor', 'securitization', 'verification-config', 'whitelisting-dashboard',
+      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk'
     ];
     
     // Try to restore from sessionStorage first
@@ -280,6 +312,9 @@ export function DesktopAppLayout() {
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
+      '/app/link-accounts': 'link-accounts',
+      '/app/asset-alerts': 'asset-alerts',
+      '/app/portfolio-risk': 'portfolio-risk',
       '/app/workflow/share': 'workflow-share',
       '/app/workflow/process': 'workflow-processor',
       '/app/green-lens': 'green-lens',
@@ -289,6 +324,7 @@ export function DesktopAppLayout() {
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
       '/app/verification-config': 'verification-config',
+      '/app/whitelisting-dashboard': 'whitelisting-dashboard',
       '/app/agent-dashboard': 'agent-dashboard',
       '/app/filings': 'filings',
       '/library': 'library',
@@ -469,6 +505,9 @@ export function DesktopAppLayout() {
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
+      '/app/link-accounts': 'link-accounts',
+      '/app/asset-alerts': 'asset-alerts',
+      '/app/portfolio-risk': 'portfolio-risk',
       '/app/green-lens': 'green-lens',
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
@@ -476,6 +515,7 @@ export function DesktopAppLayout() {
       '/app/risk-war-room': 'risk-war-room',
       '/app/policy-editor': 'policy-editor',
       '/app/verification-config': 'verification-config',
+      '/app/whitelisting-dashboard': 'whitelisting-dashboard',
       '/app/agent-dashboard': 'agent-dashboard',
       '/app/loan-recovery': 'loan-recovery',
       '/library': 'library',
@@ -626,6 +666,9 @@ export function DesktopAppLayout() {
       'document-parser': '/app/document-parser',
       'document-generator': '/app/document-generator',
       'trade-blotter': '/app/trade-blotter',
+      'link-accounts': '/app/link-accounts',
+      'asset-alerts': '/app/asset-alerts',
+      'portfolio-risk': '/app/portfolio-risk',
       'green-lens': '/app/green-lens',
       'ground-truth': '/app/ground-truth',
       'verification-demo': '/app/verification-demo',
@@ -633,6 +676,7 @@ export function DesktopAppLayout() {
       'risk-war-room': '/app/risk-war-room',
       'policy-editor': '/app/policy-editor',
       'verification-config': '/app/verification-config',
+      'whitelisting-dashboard': '/app/whitelisting-dashboard',
       'securitization': '/app/securitization',
       'agent-dashboard': '/app/agent-dashboard',
       'library': '/library',
@@ -1019,6 +1063,9 @@ export function DesktopAppLayout() {
               setState={setTradeBlotterState}
             />
           )}
+          {activeApp === 'link-accounts' && <LinkAccounts />}
+          {activeApp === 'asset-alerts' && <AssetAlertsView />}
+          {activeApp === 'portfolio-risk' && <PortfolioRiskView />}
           {activeApp === 'green-lens' && <GreenLens />}
           {activeApp === 'document-generator' && (
             <DocumentGenerator
@@ -1034,6 +1081,7 @@ export function DesktopAppLayout() {
           {activeApp === 'risk-war-room' && <RiskWarRoom />}
           {activeApp === 'policy-editor' && <PolicyEditor />}
           {activeApp === 'verification-config' && <VerificationFileConfigEditor />}
+          {activeApp === 'whitelisting-dashboard' && <WhitelistingDashboard />}
           {activeApp === 'workflow-share' && <WorkflowShareInterface />}
           {activeApp === 'workflow-processor' && <WorkflowProcessingPage />}
           {activeApp === 'auditor' && <AuditorRouter />}

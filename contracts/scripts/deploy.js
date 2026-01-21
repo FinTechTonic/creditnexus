@@ -35,15 +35,25 @@ async function main() {
   const routerAddress = await router.getAddress();
   console.log("SecuritizationPaymentRouter deployed to:", routerAddress);
 
+  // Deploy CreditToken (rolling credits; often deployed per-organization)
+  console.log("\nDeploying CreditToken...");
+  const CreditToken = await hre.ethers.getContractFactory("CreditToken");
+  const creditToken = await CreditToken.deploy();
+  await creditToken.waitForDeployment();
+  const creditTokenAddress = await creditToken.getAddress();
+  console.log("CreditToken deployed to:", creditTokenAddress);
+
   console.log("\n=== Deployment Summary ===");
   console.log("SecuritizationNotarization:", notarizationAddress);
   console.log("SecuritizationToken:", tokenAddress);
   console.log("SecuritizationPaymentRouter:", routerAddress);
-  
+  console.log("CreditToken:", creditTokenAddress);
+
   console.log("\nAdd these addresses to your .env file:");
   console.log(`SECURITIZATION_NOTARIZATION_CONTRACT=${notarizationAddress}`);
   console.log(`SECURITIZATION_TOKEN_CONTRACT=${tokenAddress}`);
   console.log(`SECURITIZATION_PAYMENT_ROUTER_CONTRACT=${routerAddress}`);
+  console.log(`CREDIT_TOKEN_CONTRACT=${creditTokenAddress}`);
 }
 
 main()

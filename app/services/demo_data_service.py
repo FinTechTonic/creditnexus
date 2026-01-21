@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.db.models import (
+from app.utils import get_debug_log_path
     User, UserRole, Deal, Application, Document, DocumentVersion, Workflow,
     GeneratedDocument, DealNote, PolicyDecision, DealStatus,
     DealType, ApplicationStatus, ApplicationType, WorkflowState, GeneratedDocumentStatus,

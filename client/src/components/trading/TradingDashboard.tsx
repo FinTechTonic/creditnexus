@@ -12,7 +12,10 @@ import { OrderForm } from './OrderForm';
 import { PortfolioView } from './PortfolioView';
 import { MarketData } from './MarketData';
 import { OrderHistory } from './OrderHistory';
-import { TrendingUp, Wallet, BarChart3, History } from 'lucide-react';
+import { StockPredictionTab } from './StockPredictionTab';
+import { BacktestTab } from './BacktestTab';
+import { StructuredProductsTab } from './StructuredProductsTab';
+import { TrendingUp, Wallet, BarChart3, History, LineChart, BarChart2, Layers } from 'lucide-react';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 
@@ -45,7 +48,7 @@ export function TradingDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-7">
             <TabsTrigger value="orders" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               <span className="hidden sm:inline">Orders</span>
@@ -56,11 +59,23 @@ export function TradingDashboard() {
             </TabsTrigger>
             <TabsTrigger value="market" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
-              <span className="hidden sm:inline">Market Data</span>
+              <span className="hidden sm:inline">Market</span>
+            </TabsTrigger>
+            <TabsTrigger value="predictions" className="flex items-center gap-2">
+              <LineChart className="h-4 w-4" />
+              <span className="hidden sm:inline">Predictions</span>
+            </TabsTrigger>
+            <TabsTrigger value="backtest" className="flex items-center gap-2">
+              <BarChart2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Backtest</span>
             </TabsTrigger>
             <TabsTrigger value="history" className="flex items-center gap-2">
               <History className="h-4 w-4" />
               <span className="hidden sm:inline">History</span>
+            </TabsTrigger>
+            <TabsTrigger value="structured" className="flex items-center gap-2">
+              <Layers className="h-4 w-4" />
+              <span className="hidden sm:inline">Structured</span>
             </TabsTrigger>
           </TabsList>
 
@@ -76,8 +91,19 @@ export function TradingDashboard() {
             <MarketData />
           </TabsContent>
 
+          <TabsContent value="predictions" className="space-y-4 mt-6">
+            <StockPredictionTab />
+          </TabsContent>
+
+          <TabsContent value="backtest" className="space-y-4 mt-6">
+            <BacktestTab />
+          </TabsContent>
+
           <TabsContent value="history" className="space-y-4 mt-6">
             <OrderHistory />
+          </TabsContent>
+          <TabsContent value="structured" className="space-y-4 mt-6">
+            <StructuredProductsTab />
           </TabsContent>
         </Tabs>
       </div>

@@ -696,9 +696,14 @@ class ExtractionResult(BaseModel):
 class UnderlyingAsset(BaseModel):
     """Underlying asset in securitization pool."""
     asset_id: str = Field(..., description="Asset identifier")
-    asset_type: str = Field(..., description="Type: 'deal', 'loan_asset'")
+    asset_type: str = Field(
+        ...,
+        description="Type: 'deal', 'loan_asset', 'equity', 'commodity'",
+    )
     deal_id: Optional[str] = Field(None, description="Deal ID if applicable")
     loan_asset_id: Optional[str] = Field(None, description="Loan asset ID if applicable")
+    equity_symbol: Optional[str] = Field(None, description="Equity symbol (e.g. AAPL) when asset_type=equity")
+    commodity_code: Optional[str] = Field(None, description="Commodity code (e.g. GOLD, WTI) when asset_type=commodity")
     asset_value: Money = Field(..., description="Asset value")
     allocation_percentage: Decimal = Field(..., description="Allocation percentage")
 

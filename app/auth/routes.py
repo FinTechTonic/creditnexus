@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.db.models import User, OAuth, AuditLog, AuditAction, UserRole
 
+from app.utils import get_debug_log_path
 logger = logging.getLogger(__name__)
 
 auth_router = APIRouter(prefix="/auth", tags=["authentication"])

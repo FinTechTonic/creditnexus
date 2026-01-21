@@ -6,8 +6,9 @@ This guide describes how to run CreditNexus development processes with **PM2** a
 
 | Deliverable | Location |
 |-------------|----------|
-| PM2 ecosystem | `ecosystem.config.cjs` (backend-dev, frontend-dev, `logs/pm2/`) |
+| PM2 ecosystem | `ecosystem.config.cjs` (backend-dev, frontend-dev, openfin-dev, `logs/pm2/`) |
 | NPM scripts | `dev:pm2`, `dev:pm2:stop`, `dev:pm2:restart`, `dev:pm2:logs`, `dev:pm2:status` |
+| OpenFin (PM2) | `openfin-dev` waits for backend+frontend, launches OpenFin via `app-dev.json` (view at Vite :5000); logs to `logs/pm2/openfin-dev-*.log` |
 | Log directory | `logs/pm2/` (ignored via `logs/` in `.gitignore`) |
 | Documentation | This file; conceptual notes in `dev/pm2.md` |
 | Dependencies | `pm2` in `devDependencies`; use `npx pm2` in scripts |
@@ -43,6 +44,8 @@ This guide describes how to run CreditNexus development processes with **PM2** a
 | Backend stderr | `logs/pm2/backend-dev-error.log` |
 | Frontend stdout | `logs/pm2/frontend-dev-out.log` |
 | Frontend stderr | `logs/pm2/frontend-dev-error.log` |
+| OpenFin launcher stdout | `logs/pm2/openfin-dev-out.log` (PM2 may add `-<id>`, e.g. `openfin-dev-out-2.log`; use `pm2 logs openfin-dev` to tail) |
+| OpenFin launcher stderr | `logs/pm2/openfin-dev-error.log` (or `openfin-dev-error-<id>.log`) |
 
 `logs/` is in `.gitignore`; log files are local only.
 
@@ -54,9 +57,11 @@ This guide describes how to run CreditNexus development processes with **PM2** a
 |----------|---------|------|-------|
 | `backend-dev` | `.venv/.../python scripts/run_dev.py` or `python scripts/run_dev.py` (Uvicorn) | 8000 | Uses `.venv` when present; `PM2=1` disables Uvicorn reload so logs reach `logs/pm2/` |
 | `frontend-dev` | `npm run dev` (Vite) in `client/` | 5000 | Proxies `/api` → `http://127.0.0.1:8000` |
+| `openfin-dev` | `node scripts/pm2-openfin-launcher.js` | — | Waits for backend and frontend, then runs `scripts/launch_openfin.ps1` or `scripts/launch_openfin.sh` with `OPENFIN_MANIFEST_URL=http://localhost:8000/openfin/app-dev.json`. The `app-dev.json` manifest points the view at `http://localhost:5000` (Vite) so OpenFin wraps the dev client. `autorestart: false`. Set `OPENFIN_ENABLED=0` to skip. |
 
 - **Backend**: <http://127.0.0.1:8000>, docs at <http://127.0.0.1:8000/docs>.
 - **Frontend**: <http://localhost:5000> (or <http://0.0.0.0:5000>).
+- **OpenFin (dev)**: `openfin-dev` uses `GET /openfin/app-dev.json` (view URL `http://localhost:5000`). To disable: `OPENFIN_ENABLED=0 npm run dev:pm2`. To start only the OpenFin launcher after backend+frontend are up: `npx pm2 start ecosystem.config.cjs --only openfin-dev`.
 
 ---
 
@@ -68,9 +73,10 @@ Run from **project root**:
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev:pm2` | Ensure `logs/pm2` exists and start both apps from `ecosystem.config.cjs` |
-| `npm run dev:pm2:stop` | Delete `backend-dev` and `frontend-dev` from PM2 |
-| `npm run dev:pm2:restart` | Restart both apps (does **not** reload `ecosystem.config.cjs`; after editing it, use `dev:pm2:stop` then `dev:pm2`) |
+| `npm run dev:pm2` | Ensure `logs/pm2` exists and start backend, frontend, and openfin-dev (OpenFin wrapper) from `ecosystem.config.cjs` |
+| `npm run dev:pm2:stop` | Delete `backend-dev`, `frontend-dev`, `openfin-dev`, and `api-dev` from PM2 |
+| `npm run dev:pm2:restart` | Restart all apps (backend, frontend, openfin-dev). Does **not** reload `ecosystem.config.cjs`; after editing it, use `dev:pm2:stop` then `dev:pm2`. Restarting openfin-dev re-runs the launcher and may open another OpenFin window. |
+| `npm run dev:pm2:openfin` | Start only the OpenFin launcher (run after backend and frontend are already up) |
 | `npm run dev:pm2:logs` | Live tail of all PM2 logs |
 | `npm run dev:pm2:status` | Show status of PM2 processes |
 
@@ -80,13 +86,16 @@ If PM2 is only in `devDependencies`, use `npx pm2` instead of `pm2`.
 
 | Command | Description |
 |---------|-------------|
-| `pm2 start ecosystem.config.cjs` | Start all apps in the ecosystem file |
+| `pm2 start ecosystem.config.cjs` | Start all apps (backend, frontend, openfin-dev) |
 | `pm2 start ecosystem.config.cjs --only backend-dev` | Start only backend |
 | `pm2 start ecosystem.config.cjs --only frontend-dev` | Start only frontend |
+| `pm2 start ecosystem.config.cjs --only backend-dev,frontend-dev` | Start backend and frontend without OpenFin |
+| `pm2 start ecosystem.config.cjs --only openfin-dev` | Start only the OpenFin launcher (after backend+frontend are up) |
 | `pm2 status` | List apps, PID, status, restarts, CPU/mem |
 | `pm2 logs` | Tail all logs (stdout + stderr) |
 | `pm2 logs backend-dev` | Tail only backend |
 | `pm2 logs frontend-dev` | Tail only frontend |
+| `pm2 logs openfin-dev` | Tail OpenFin launcher (wait/launch and any RVM/URL output) |
 | `pm2 logs --lines 200` | Show last 200 lines |
 | `pm2 info backend-dev` | Detailed info for one app |
 | `pm2 restart backend-dev` | Restart one app |
@@ -135,6 +144,9 @@ Then open:
 
 - Frontend: http://localhost:5000  
 - API docs: http://127.0.0.1:8000/docs  
+- OpenFin: `openfin-dev` will wait for backend and frontend, then launch OpenFin using `app-dev.json` (view at :5000). Logs: `pm2 logs openfin-dev` or `logs/pm2/openfin-dev-out.log`.
+
+To run without OpenFin: `OPENFIN_ENABLED=0 npm run dev:pm2`, or start with `--only backend-dev,frontend-dev`.
 
 View logs:
 
@@ -231,4 +243,5 @@ On laptops this is usually optional.
 | **EINVAL on spawn** (Windows) | Frontend runs `npm` via `cmd /c` on Windows (spawning `npm` or `npm.cmd` directly can EINVAL). Backend uses `python` + `scripts/run_dev.py` with `interpreter: 'none'`. If backend still EINVALs, try `script: 'py'`, `args: ['-3', 'scripts/run_dev.py']`. |
 | **SyntaxError in ...\\PYTHON.EXE** (Windows) | PM2 can pass the resolved `python.exe` path as the script to Python. The ecosystem uses `script: 'cmd'`, `args: ['/c', 'python', 'scripts/run_dev.py']` on Windows to avoid that. On Unix, `script: 'python'`, `args: ['scripts/run_dev.py']` is used. |
 | **"The service is no longer running: write EPIPE"** (vite:esbuild) or **500 on .tsx** | Vite’s esbuild child has exited. Set `optimizeDeps.force` to `false` in `client/vite.config.ts`. If it persists, run the frontend without PM2 (`npm run frontend`) to isolate; if that works, the cause is likely PM2 + `cmd /c` + esbuild. See `dev/errors-inventory.md`. |
-| **`api-dev`**, **"can't open file 'main.py'"**, **"Could not import module 'app.main'"**, or **"Script ... PYTHON.EXE had too many unstable restarts"** | A stale `api-dev` app is in PM2 (not in `ecosystem.config.cjs`). It tries to run `main.py` or `app.main`, which do not exist; the real backend is `backend-dev` via `scripts/run_dev.py` → `server:app`. Run `npx pm2 delete api-dev` (or `npm run dev:pm2:stop`, which now removes `api-dev` too), then `npm run dev:pm2` to start only `backend-dev` and `frontend-dev`. |
+| **`api-dev`**, **"can't open file 'main.py'"**, **"Could not import module 'app.main'"**, or **"Script ... PYTHON.EXE had too many unstable restarts"** | A stale `api-dev` app is in PM2 (not in `ecosystem.config.cjs`). It tries to run `main.py` or `app.main`, which do not exist; the real backend is `backend-dev` via `scripts/run_dev.py` → `server:app`. Run `npx pm2 delete api-dev` (or `npm run dev:pm2:stop`, which now removes `api-dev` too), then `npm run dev:pm2` to start only `backend-dev`, `frontend-dev`, and `openfin-dev`. |
+| **OpenFin does not open** or **openfin-dev exits with error** | Read `logs/pm2/openfin-dev-out*.log` and `logs/pm2/openfin-dev-error*.log` (or `pm2 logs openfin-dev`). They log `BACKEND_URL`, `FRONTEND_URL`, `OPENFIN_MANIFEST_URL` and the wrap step. Ensure `OPENFIN_ENABLED` is not `0` if you expect OpenFin. Backend and frontend must be up (launcher waits for `/api/health` and `FRONTEND_URL`). If you see **"backend did not become ready; aborting OpenFin launch"**, the backend never responded in time: check `backend-dev` is running and stable (`pm2 status`, `logs/pm2/backend-dev-error*.log` for crash loops). Install OpenFin RVM if needed; see `scripts/launch_openfin.ps1` or `scripts/launch_openfin.sh`. On Windows, ensure PowerShell can run the launch script; on Unix, ensure `bash` and RVM (or `xdg-open`/`open`) are available. |

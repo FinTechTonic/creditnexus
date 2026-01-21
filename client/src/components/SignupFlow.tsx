@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -25,14 +26,13 @@ interface SignupFormData {
   confirmPassword: string;
   displayName: string;
   role: UserRole | null;
-  
-  // Step 2: Profile Enrichment (will be populated by ProfileEnrichment component)
+  organizationId: number | null;
+
+  // Profile Enrichment (will be populated by ProfileEnrichment component)
   profileData: Record<string, any>;
-  
-  // Step 3: Documents
+
+  // Documents
   documents: File[];
-  
-  // Step 4: Review (no additional data)
 }
 
 interface SignupFlowProps {
@@ -43,10 +43,48 @@ interface SignupFlowProps {
 const STEPS = [
   { id: 0, title: 'AI Profile Extraction', description: 'Extract profile data using AI' },
   { id: 1, title: 'Basic Information', description: 'Email, password, and role selection' },
-  { id: 2, title: 'Profile Enrichment', description: 'Complete your profile information' },
-  { id: 3, title: 'Document Upload', description: 'Upload supporting documents (optional)' },
-  { id: 4, title: 'Review & Submit', description: 'Review your information and complete signup' },
+  { id: 2, title: 'Organization', description: 'Select your organization (optional)' },
+  { id: 3, title: 'Profile Enrichment', description: 'Complete your profile information' },
+  { id: 4, title: 'Document Upload', description: 'Upload supporting documents (optional)' },
+  { id: 5, title: 'Review & Submit', description: 'Review your information and complete signup' },
 ];
+
+function OrganizationSelectionStep({
+  formData,
+  updateFormData,
+}: {
+  formData: SignupFormData;
+  updateFormData: (u: Partial<SignupFormData>) => void;
+}) {
+  const [choices, setChoices] = useState<{ id: number; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(resolveApiUrl('/api/organizations/signup-choices'))
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setChoices)
+      .catch(() => setChoices([]))
+      .finally(() => setLoading(false));
+  }, []);
+  return (
+    <div className="space-y-6">
+      <p className="text-slate-400">Optionally select an organization to join.</p>
+      <div>
+        <label className="block text-sm font-medium text-slate-300 mb-2">Organization</label>
+        <select
+          value={formData.organizationId ?? ''}
+          onChange={(e) => updateFormData({ organizationId: e.target.value === '' ? null : Number(e.target.value) })}
+          className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          disabled={loading}
+        >
+          <option value="">None</option>
+          {choices.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
 
 export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
   const [currentStep, setCurrentStep] = useState(0);
@@ -56,6 +94,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
     confirmPassword: '',
     displayName: '',
     role: null,
+    organizationId: null,
     profileData: {},
     documents: [],
   });
@@ -135,6 +174,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         email: formData.email,
         password: formData.password,
         display_name: formData.displayName,
+        organization_id: formData.organizationId ?? undefined,
       });
       
       if (success) {
@@ -396,6 +436,9 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         );
 
       case 2:
+        return <OrganizationSelectionStep formData={formData} updateFormData={updateFormData} />;
+
+      case 3:
         return (
           <div className="space-y-6">
             {formData.role ? (
@@ -413,7 +456,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
           </div>
         );
 
-      case 3:
+      case 4:
         return (
           <div className="space-y-6">
             <div className="text-center py-8">
@@ -427,7 +470,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
           </div>
         );
 
-      case 4:
+      case 5:
         return (
           <div className="space-y-6">
             <div className="bg-slate-800/50 rounded-lg p-6 space-y-4">

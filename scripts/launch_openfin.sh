@@ -7,8 +7,8 @@
 #
 # Environment Variables:
 #   BACKEND_URL - Backend server URL (default: http://localhost:8000)
-#   FRONTEND_URL - Frontend dev server URL (default: http://localhost:5173)
-#   OPENFIN_MANIFEST_URL - Full manifest URL (default: ${BACKEND_URL}/openfin/app.json)
+#   FRONTEND_URL - Frontend dev server URL (default: http://localhost:5000, matches Vite in client)
+#   OPENFIN_MANIFEST_URL - Full manifest URL (default: ${BACKEND_URL}/openfin/app.json). Use app-dev.json for dev (view at Vite).
 
 echo "CreditNexus OpenFin Launcher"
 echo "============================="
@@ -19,7 +19,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Load configuration from environment or use defaults
 BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
-FRONTEND_URL="${FRONTEND_URL:-http://localhost:5173}"
+FRONTEND_URL="${FRONTEND_URL:-http://localhost:5000}"
 MANIFEST_URL="${OPENFIN_MANIFEST_URL:-$BACKEND_URL/openfin/app.json}"
 
 # Function to check if a service is ready

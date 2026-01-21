@@ -21,7 +21,7 @@ from app.models.loan_asset import LoanAsset
 from app.agents.audit_workflow import run_full_audit
 from app.services.layer_processing_service import LayerProcessingService
 from app.services.layer_storage_service import LayerStorageService
-from app.auth.jwt_auth import verify_token
+from app.auth.jwt_auth import verify_token, decode_access_token  # decode_access_token for /ws/trading
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +154,48 @@ async def websocket_verification(
             active_connections[asset_id].discard(websocket)
             if not active_connections[asset_id]:
                 del active_connections[asset_id]
+
+
+@router.websocket("/trading/{user_id}")
+async def websocket_trading(websocket: WebSocket, user_id: int):
+    """
+    WebSocket for trading (Phase 4): portfolio/order updates. Requires ?token=JWT.
+    Sends { type: "connected", user_id } on connect. Keeps connection open with ping/pong.
+    """
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001)
+        return
+    payload = decode_access_token(token)
+    if not payload:
+        await websocket.close(code=4001)
+        return
+    try:
+        sub = int(payload.get("sub") or 0)
+    except (TypeError, ValueError):
+        await websocket.close(code=4001)
+        return
+    if sub != user_id:
+        await websocket.close(code=4001)
+        return
+    await websocket.accept()
+    await send_message(websocket, {"type": "connected", "user_id": user_id})
+    try:
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+                try:
+                    msg = json.loads(data)
+                    if msg.get("type") == "ping":
+                        await send_message(websocket, {"type": "pong"})
+                except json.JSONDecodeError:
+                    pass
+            except asyncio.TimeoutError:
+                await send_message(websocket, {"type": "ping"})
+    except WebSocketDisconnect:
+        logger.info("Trading WebSocket disconnected for user_id=%s", user_id)
+    except Exception as e:
+        logger.warning("Trading WebSocket error user_id=%s: %s", user_id, e)
 
 
 async def handle_start_verification(asset_id: int, websocket: WebSocket):

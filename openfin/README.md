@@ -72,13 +72,23 @@ This approach provides:
 | `ViewESGAnalytics` | View ESG scores and metrics | `finos.creditnexus.portfolio`, `finos.creditnexus.agreement` | `finos.creditnexus.esgData` |
 | `ExtractCreditAgreement` | Extract data from a document | `finos.creditnexus.document` | `finos.creditnexus.agreement` |
 | `ViewPortfolio` | View portfolio overview | `fdc3.portfolio`, `finos.creditnexus.portfolio` | `finos.creditnexus.portfolio` |
+| `GenerateLMATemplate` | Generate LMA document from agreement/loan | `finos.creditnexus.agreement`, `finos.creditnexus.loan` | `finos.creditnexus.generatedDocument` |
+| `ShareWorkflowLink` | Share workflow link | `finos.creditnexus.workflow` | `finos.creditnexus.workflow` |
+| `ProcessWorkflowLink` | Process received workflow link | `finos.creditnexus.workflow` | `finos.creditnexus.workflow` |
+| `ViewInstrument` | Focus on instrument/symbol (Trading, Order Form, Stock Prediction) | `fdc3.instrument`, `finos.creditnexus.instrument` | `fdc3.instrument` |
+| `ViewStockPrediction` | Open stock prediction for symbol (Chronos/technical) | `finos.creditnexus.stockPrediction`, `fdc3.instrument` | `finos.creditnexus.stockPrediction` |
+| `ViewPredictionMarket` | Focus Polymarket-style SFP market | `finos.creditnexus.predictionMarket` | `finos.creditnexus.predictionMarket` |
+| `ViewAgentResult` | Open LangAlpha/DeepResearch/PeopleHub result | `finos.creditnexus.agentResult` | `finos.creditnexus.agentResult` |
 
 ### Raises (Outgoing)
 
 | Intent | Description | Context Types |
 |--------|-------------|---------------|
 | `ViewChart` | Request chart visualization | `fdc3.timeRange` |
-| `ViewInstrument` | View instrument details | `fdc3.instrument` |
+| `ViewInstrument` | View instrument details | `fdc3.instrument`, `finos.creditnexus.instrument` |
+| `ViewStockPrediction` | View stock prediction | `finos.creditnexus.stockPrediction`, `fdc3.instrument` |
+| `ViewPredictionMarket` | View prediction market | `finos.creditnexus.predictionMarket` |
+| `ViewAgentResult` | View agent analysis result | `finos.creditnexus.agentResult` |
 
 ## Custom Context Types
 
@@ -135,12 +145,41 @@ ESG analytics data:
 - `greenLoanIndicators` - Array of green loan markers
 - `sustainabilityLinkedTerms` - Whether sustainability terms apply
 
+### `finos.creditnexus.instrument`
+Instrument/symbol for trading; CDM- and fdc3.instrument-aligned.
+- `type` (const) - "finos.creditnexus.instrument"
+- `id.ticker`, `id.symbol` - Ticker/symbol
+- `name`, `exchange` - Optional
+- `signal` - Optional: "bullish", "bearish", "neutral"
+
+### `finos.creditnexus.stockPrediction`
+Stock prediction result (Chronos/technical).
+- `type` (const) - "finos.creditnexus.stockPrediction"
+- `symbol` (required) - Ticker
+- `timeframe` - "daily", "hourly", "15min"
+- `strategy`, `forecast`, `signal`, `prediction_id`, `cached`
+
+### `finos.creditnexus.predictionMarket`
+Polymarket-style SFP / prediction market.
+- `type` (const) - "finos.creditnexus.predictionMarket"
+- `market_id` (required)
+- `question`, `outcome_type`, `deal_id`, `sfp_id`, `resolved_at`, `resolution_outcome`
+
+### `finos.creditnexus.agentResult`
+LangAlpha/DeepResearch/PeopleHub analysis result.
+- `type` (const) - "finos.creditnexus.agentResult"
+- `analysis_id` (required), `agent_type` (required): "langalpha" | "deep_research" | "peoplehub"
+- `query`, `summary`, `symbols[]`, `recommendations[]`, `deal_id`
+
+### `finos.creditnexus.loan`, `finos.creditnexus.workflow`, `finos.creditnexus.generatedDocument`
+See `openfin/fdc3-intents.json` `customConfig.contextTypes`. `finos.cdm.landUse` and `finos.cdm.greenFinanceAssessment` are used for satellite/green finance.
+
 ## App Channels
 
 ### `creditnexus.workflow`
 Workflow state updates and approval requests/responses.
-- Broadcasts: `finos.creditnexus.agreement`, `finos.creditnexus.approvalResult`
-- Listens for: `finos.creditnexus.approvalResult`
+- Broadcasts: `finos.creditnexus.agreement`, `finos.creditnexus.approvalResult`, `finos.creditnexus.workflow`
+- Listens for: `finos.creditnexus.approvalResult`, `finos.creditnexus.workflow`
 
 ### `creditnexus.extraction`
 Document extraction progress and completion events.
@@ -151,6 +190,16 @@ Document extraction progress and completion events.
 Portfolio analytics updates.
 - Broadcasts: `finos.creditnexus.portfolio`, `finos.creditnexus.esgData`
 - Listens for: `finos.creditnexus.portfolio`
+
+### `creditnexus.trading`
+Instrument, stock prediction, order context (Alpaca, Chronos).
+- Broadcasts: `fdc3.instrument`, `finos.creditnexus.instrument`, `finos.creditnexus.stockPrediction`
+- Listens for: `fdc3.instrument`, `finos.creditnexus.instrument`, `finos.creditnexus.stockPrediction`
+
+### `creditnexus.predictionMarket`
+Polymarket-style SFP and prediction market context.
+- Broadcasts: `finos.creditnexus.predictionMarket`
+- Listens for: `finos.creditnexus.predictionMarket`
 
 ## Deployment
 
