@@ -37,8 +37,11 @@ from app.api.recovery_routes import router as recovery_router
 from app.api.twilio_routes import router as twilio_router
 from app.api.remote_routes import remote_router
 from app.api.fdc3_routes import router as fdc3_router
-from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
+from app.api.trading_routes import router as trading_router
+from app.api.review_routes import router as review_router
+from app.api.nexus_routes import router as nexus_router
+from app.api.p2p_routes import router as p2p_router
 from app.api.metrics_routes import router as metrics_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
@@ -636,6 +639,10 @@ app.include_router(config_router)
 app.include_router(workflow_delegation_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
+app.include_router(trading_router)
+app.include_router(review_router)
+app.include_router(nexus_router)
+app.include_router(p2p_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
@@ -649,9 +656,6 @@ if settings.METRICS_ENABLED:
 # GDPR compliance routes
 from app.api.gdpr_routes import gdpr_router
 app.include_router(gdpr_router, prefix="/api")
-
-# FDC3 App Directory API
-app.include_router(fdc3_router, prefix="/api/fdc3")
 
 # Serve OpenFin manifest files
 openfin_dir = Path(__file__).parent / "openfin"

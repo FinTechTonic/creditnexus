@@ -10,10 +10,9 @@ import {
   Users, 
   Clock, 
   CheckCircle2, 
-  XCircle,
   Calendar
 } from 'lucide-react';
-import { fetchWithAuth, useAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext';
 
 interface ReviewAssignment {
   id: number;
@@ -43,7 +42,6 @@ export function ReviewAssignmentPanel({
   documentId, 
   onAssignmentAdded 
 }: ReviewAssignmentPanelProps) {
-  const { user } = useAuth();
   const [assignments, setAssignments] = useState<ReviewAssignment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);

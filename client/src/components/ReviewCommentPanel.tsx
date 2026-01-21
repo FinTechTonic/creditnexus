@@ -7,10 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { 
   MessageSquare, 
   CheckCircle2, 
-  XCircle, 
   Trash2,
-  Reply,
-  AlertCircle
+  Reply
 } from 'lucide-react';
 import { fetchWithAuth, useAuth } from '@/context/AuthContext';
 

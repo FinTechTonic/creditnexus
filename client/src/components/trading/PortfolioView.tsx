@@ -50,8 +50,16 @@ export function PortfolioView() {
           throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: Failed to load portfolio`);
         }
 
-        const data: PortfolioSummary = await response.json();
-        setPortfolio(data);
+        const raw = await response.json();
+        // Map API (market_value, unrealized_pl) to UI (total_value, unrealized_pnl, id for positions)
+        const positions = (raw?.positions || []).map((p: any, i: number) => ({
+          ...p,
+          id: p?.id ?? `${p?.symbol ?? 'pos'}-${i}`,
+          total_value: p?.total_value ?? p?.market_value ?? 0,
+          unrealized_pnl: p?.unrealized_pnl ?? p?.unrealized_pl ?? 0,
+          realized_pnl: p?.realized_pnl ?? 0,
+        }));
+        setPortfolio({ ...raw, positions });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load portfolio');
         // Set mock data for development
