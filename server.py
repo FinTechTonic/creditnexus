@@ -39,6 +39,8 @@ from app.api.remote_routes import remote_router
 from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
 from app.api.trading_routes import router as trading_router
+from app.api.polymarket_routes import router as polymarket_router
+from app.api.subscription_routes import router as subscription_router
 from app.api.review_routes import router as review_router
 from app.api.nexus_routes import router as nexus_router
 from app.api.p2p_routes import router as p2p_router
@@ -171,6 +173,28 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
         app.state.x402_payment_service = None
+
+    # RevenueCat (subscription / entitlements)
+    app.state.revenuecat_service = None
+    if getattr(settings, "REVENUECAT_ENABLED", False) and getattr(settings, "REVENUECAT_API_KEY", None):
+        try:
+            from app.services.revenuecat_service import RevenueCatService
+            app.state.revenuecat_service = RevenueCatService()
+            logger.info("RevenueCat service initialized")
+        except Exception as e:
+            logger.warning("RevenueCat service init failed: %s", e)
+
+    # Payment router (x402 + optional RevenueCat for POLYMARKET_*, SUBSCRIPTION_UPGRADE, etc.)
+    try:
+        from app.services.payment_router_service import PaymentRouterService
+        app.state.payment_router_service = PaymentRouterService(
+            x402_service=app.state.x402_payment_service,
+            revenuecat_service=getattr(app.state, "revenuecat_service", None),
+        )
+        logger.info("PaymentRouter service initialized")
+    except Exception as e:
+        logger.warning("PaymentRouter service init failed: %s", e)
+        app.state.payment_router_service = None
 
     # Initialize metrics
     if settings.METRICS_ENABLED:
@@ -643,6 +667,8 @@ app.include_router(workflow_delegation_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
 app.include_router(trading_router)
+app.include_router(polymarket_router)
+app.include_router(subscription_router)
 app.include_router(review_router)
 app.include_router(nexus_router)
 app.include_router(p2p_router)

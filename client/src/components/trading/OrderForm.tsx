@@ -76,7 +76,7 @@ export function OrderForm() {
 
       const payload: Record<string, unknown> = {
         side: orderData.side,
-        type: orderData.type,
+        order_type: orderData.type,
         symbol: orderData.symbol.trim().toUpperCase(),
         quantity: parseFloat(orderData.quantity),
       };

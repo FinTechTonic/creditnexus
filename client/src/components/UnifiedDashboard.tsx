@@ -6,6 +6,7 @@ import { Dashboard } from '@/components/Dashboard';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
 import { TradingDashboard } from '@/components/trading/TradingDashboard';
+import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -21,15 +22,6 @@ import {
   PERMISSION_DOCUMENT_VIEW,
   PERMISSION_APPLICATION_VIEW,
 } from '@/utils/permissions';
-
-function MarketDashboard() {
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Polymarket Dashboard</h2>
-      <p className="text-muted-foreground">Polymarket integration will be implemented here.</p>
-    </div>
-  );
-}
 
 function SignatureDashboard() {
   return (
@@ -108,8 +100,8 @@ export function UnifiedDashboard() {
         id: 'polymarket',
         label: 'Polymarket',
         icon: <BarChart3 className="h-4 w-4" />,
-        component: MarketDashboard,
-        requiredPermission: 'MARKET_VIEW', // Will be added to permissions.ts
+        component: () => <MarketDashboard />,
+        requiredPermission: 'MARKET_VIEW',
         subscriptionTier: 'pro'
       },
       {

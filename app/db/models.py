@@ -1318,6 +1318,8 @@ class Deal(Base):
     filings = relationship("DocumentFiling", back_populates="deal", cascade="all, delete-orphan")
     loan_defaults = relationship("LoanDefault", back_populates="deal", cascade="all, delete-orphan")
     borrower_contacts = relationship("BorrowerContact", back_populates="deal", cascade="all, delete-orphan")
+    sfp_packages = relationship("SFPPackage", back_populates="deal", cascade="all, delete-orphan")
+    market_events = relationship("MarketEvent", back_populates="deal", cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -1411,9 +1413,51 @@ class DealNote(Base):
         }
 
 
+class SFPPackage(Base):
+    """Structured Financial Product bundle with Merkle root anchor."""
 
-    """Remote application profile for API access control."""
+    __tablename__ = "sfp_packages"
 
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sfp_id = Column(String(255), unique=True, nullable=False, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False, index=True)
+    merkle_root = Column(String(66), nullable=False)
+    cdm_hash = Column(String(66), nullable=False)
+    signature_hashes = Column(JSONB, nullable=False)
+    filing_hashes = Column(JSONB, nullable=False)
+    transaction_hash = Column(String(66), nullable=True)
+    block_number = Column(Integer, nullable=True)
+    bundle_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    market_event_type = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    deal = relationship("Deal", back_populates="sfp_packages")
+    market_events = relationship("MarketEvent", back_populates="sfp_package", cascade="all, delete-orphan")
+
+
+class MarketEvent(Base):
+    """Polymarket prediction market event linked to SFP."""
+
+    __tablename__ = "market_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    market_id = Column(String(255), unique=True, nullable=False, index=True)
+    sfp_package_id = Column(Integer, ForeignKey("sfp_packages.id"), nullable=False, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    outcome_type = Column(String(50), nullable=False)
+    resolution_condition = Column(JSONB, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+    resolution_outcome = Column(String(20), nullable=True)
+    oracle_triggered = Column(Boolean, default=False, nullable=False)
+    liquidity_pool_address = Column(String(66), nullable=True)
+    visibility = Column(String(20), default="public", nullable=False)
+
+    sfp_package = relationship("SFPPackage", back_populates="market_events")
+    deal = relationship("Deal", back_populates="market_events")
+    creator = relationship("User", foreign_keys=[created_by])
 
 
 class Policy(Base):

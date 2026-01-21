@@ -317,6 +317,45 @@ COMPANIES_HOUSE_API_KEY=your_api_key_here
 </details>
 
 <details>
+<summary><b>Polymarket (SFP prediction markets)</b></summary>
+
+Polymarket-style prediction markets for structured and securitized products. Internal create/list/resolve; optional Gamma/CLOB for discovery and order books.
+
+1. **Copy `.env.example` to `.env` and add:**
+```env
+POLYMARKET_ENABLED=true
+POLYMARKET_GAMMA_API_URL=https://gamma-api.polymarket.com
+POLYMARKET_API_URL=https://clob.polymarket.com
+# L2/Builder (all four for CLOB L2): POLYMARKET_API_KEY, POLYMARKET_SECRET, POLYMARKET_PASSPHRASE, POLYMARKET_SIGNER_ADDRESS
+# POLYMARKET_PUBLISH_EXTERNAL=false
+```
+
+2. **Frontend:** Market creation has a “Register with Polymarket (Gamma/CLOB)” option; `POST /api/polymarket/markets` supports `publish_to_polymarket`.
+
+> 📖 **Full setup:** [dev/POLYMARKET_CONFIGURATION_GUIDE.md](dev/POLYMARKET_CONFIGURATION_GUIDE.md) — L2/Builder (api key, secret, passphrase, signer address), HMAC auth, create-market, proxy endpoints, troubleshooting.
+
+</details>
+
+<details>
+<summary><b>RevenueCat (subscriptions & entitlements)</b></summary>
+
+RevenueCat for Pro (and custom) entitlements, integrated with x402: subscription upgrade payments trigger optional promotional entitlement grants.
+
+1. **Copy `.env.example` to `.env` and add:**
+```env
+REVENUECAT_ENABLED=true
+REVENUECAT_API_KEY=sk_your_secret_key
+REVENUECAT_ENTITLEMENT_PRO=pro
+SUBSCRIPTION_UPGRADE_AMOUNT=9.99
+```
+
+2. **Endpoints:** `GET /api/subscriptions/entitlement` (check Pro), `POST /api/subscriptions/upgrade` (x402 flow; without `payment_payload` returns 402 with `payment_request`).
+
+> 📖 **Full setup:** [dev/REVENUECAT_CONFIGURATION_GUIDE.md](dev/REVENUECAT_CONFIGURATION_GUIDE.md) — env vars, entitlement/upgrade flows, PaymentRouter and x402, troubleshooting.
+
+</details>
+
+<details>
 <summary><b>0.6. Smart Contract Deployment (Optional - for Securitization Features)</b></summary>
 
 CreditNexus includes smart contracts for securitization workflows. To enable blockchain features:
@@ -471,6 +510,8 @@ npm run dev
 - **[✍️ DigiSigner Webhook Setup](https://tonic-ai.mintlify.app/guides/digisigner-setup)** - Guide for configuring DigiSigner webhooks for digital signatures
 - **[📜 Smart Contracts](contracts/README.md)** - Solidity contract documentation and specifications
 - **[🏗️ Securitization Feature](https://tonic-ai.mintlify.app/features/securitization)** - Complete securitization workflow documentation
+- **[📊 Polymarket Configuration](dev/POLYMARKET_CONFIGURATION_GUIDE.md)** - SFP prediction markets, Gamma/CLOB, env vars
+- **[💳 RevenueCat Configuration](dev/REVENUECAT_CONFIGURATION_GUIDE.md)** - Subscriptions, entitlements, x402 upgrade flow
 
 ---
 

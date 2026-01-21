@@ -205,6 +205,62 @@ class Settings(BaseSettings):
         description="Allow admin users to skip payment requirement"
     )
 
+    # Polymarket (Prediction Markets / SFP) Configuration
+    POLYMARKET_ENABLED: bool = Field(
+        default=False,
+        description="Feature flag to enable Polymarket-style prediction markets for SFPs"
+    )
+    POLYMARKET_API_URL: Optional[str] = Field(
+        default=None,
+        description="Polymarket/CTF API URL (e.g. https://clob.polymarket.com)"
+    )
+    POLYMARKET_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="API key for Polymarket CLOB L2 / Builder (POLY_API_KEY)"
+    )
+    POLYMARKET_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        description="Secret for Polymarket CLOB L2 HMAC (POLY_SIGNATURE). From Builder or createOrDeriveApiKey."
+    )
+    POLYMARKET_PASSPHRASE: Optional[SecretStr] = Field(
+        default=None,
+        description="Passphrase for Polymarket CLOB L2 (POLY_PASSPHRASE). From Builder or createOrDeriveApiKey."
+    )
+    POLYMARKET_SIGNER_ADDRESS: Optional[str] = Field(
+        default=None,
+        description="Wallet/funder address for L2 (POLY_ADDRESS). Required when using L2 auth (api_key+secret+passphrase)."
+    )
+    POLYMARKET_NETWORK: str = Field(
+        default="polygon",
+        description="Blockchain network for Polymarket: polygon, amoy, ethereum"
+    )
+    POLYMARKET_GAMMA_API_URL: Optional[str] = Field(
+        default="https://gamma-api.polymarket.com",
+        description="Gamma API base URL for events/markets discovery"
+    )
+    POLYMARKET_PUBLISH_EXTERNAL: bool = Field(
+        default=False,
+        description="When True, attempt to register SFP markets with Polymarket Gamma/CLOB (if supported)"
+    )
+
+    # RevenueCat (subscription / entitlements) – integrates with x402 for subscription upgrades
+    REVENUECAT_ENABLED: bool = Field(
+        default=False,
+        description="Enable RevenueCat for entitlement checks and subscription tiers"
+    )
+    REVENUECAT_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="RevenueCat secret API key (sk_...) for REST API"
+    )
+    REVENUECAT_ENTITLEMENT_PRO: str = Field(
+        default="pro",
+        description="Entitlement identifier for Pro tier (Polymarket, premium features)"
+    )
+    SUBSCRIPTION_UPGRADE_AMOUNT: Decimal = Field(
+        default=Decimal("9.99"),
+        description="Amount in USD for subscription upgrade via x402 (Pro tier)"
+    )
+
     # Audio Transcription (STT) Configuration
     STT_API_URL: Optional[str] = None  # Gradio Space URL (default: nvidia/canary-1b-v2)
     STT_SOURCE_LANG: str = "en"  # Source language code for transcription
