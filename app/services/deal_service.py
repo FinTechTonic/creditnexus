@@ -18,6 +18,7 @@ import uuid
 from app.utils.audit import log_audit_action, AuditAction
 from app.core.config import settings
 
+from app.utils import get_debug_log_path
 logger = logging.getLogger(__name__)
 
 
@@ -169,7 +170,7 @@ class DealService:
         }
         try:
             import json
-            with open(r"c:\Users\MeMyself\creditnexus\.cursor\debug.log", "a") as f:
+            with open(r"get_debug_log_path()", "a") as f:
                 f.write(json.dumps(log_data) + "\n")
         except:
             pass

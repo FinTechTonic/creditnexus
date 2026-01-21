@@ -42,6 +42,7 @@ from app.chains.document_retrieval_chain import DocumentRetrievalService, add_us
 from app.utils.audit import log_audit_action
 from fastapi import Request
 
+from app.utils import get_debug_log_path
 logger = logging.getLogger(__name__)
 
 # Deep Tech Components (Loaded on startup)
@@ -13092,7 +13093,7 @@ async def get_compliance_report(
     current_user: User = Depends(require_auth)
 ):
     # #region agent log
-    with open(r'c:\Users\MeMyself\creditnexus\.cursor\debug.log', 'a') as f:
+    with open(r'get_debug_log_path()', 'a') as f:
         import json, time
         f.write(json.dumps({'location': 'routes.py:12961', 'message': 'Entering get_compliance_report API', 'data': {'deal_id': deal_id, 'jurisdiction': jurisdiction}, 'timestamp': int(time.time()*1000), 'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B'}) + '\n')
     # #endregion
