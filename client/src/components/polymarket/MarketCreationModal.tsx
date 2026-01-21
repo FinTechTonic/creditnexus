@@ -112,8 +112,8 @@ export function MarketCreationModal({ open, onOpenChange, onCreated }: MarketCre
           )}
           <div>
             <Label htmlFor="deal">Deal</Label>
-            <Select value={dealId} onValueChange={setDealId} required>
-              <SelectTrigger id="deal">
+            <Select id="deal" value={dealId} onValueChange={setDealId} required>
+              <SelectTrigger>
                 <SelectValue placeholder={loadingDeals ? 'Loading...' : 'Select deal'} />
               </SelectTrigger>
               <SelectContent>
@@ -136,8 +136,8 @@ export function MarketCreationModal({ open, onOpenChange, onCreated }: MarketCre
           </div>
           <div>
             <Label htmlFor="outcome">Outcome type</Label>
-            <Select value={outcomeType} onValueChange={(v) => setOutcomeType(v as 'binary' | 'categorical')}>
-              <SelectTrigger id="outcome">
+            <Select id="outcome" value={outcomeType} onValueChange={(v) => setOutcomeType(v as 'binary' | 'categorical')}>
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -184,7 +184,7 @@ export function MarketCreationModal({ open, onOpenChange, onCreated }: MarketCre
               checked={publishToPolymarket}
               onChange={(e) => setPublishToPolymarket(e.target.checked)}
             />
-            <Label htmlFor="publish">Register with Polymarket (Gamma/CLOB)</Label>
+            <Label htmlFor="publish">Also export to external Polymarket (optional, for discovery only)</Label>
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

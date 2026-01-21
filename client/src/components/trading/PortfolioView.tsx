@@ -1,14 +1,15 @@
 /**
  * Portfolio View Component
- * 
- * Displays current positions, P&L, asset allocation, and performance charts.
+ *
+ * Displays aggregated portfolio from /api/portfolio/overview (trading + bank + manual).
+ * Subscribes to /ws/trading/{user_id} for live updates; refetches on non-ping messages.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { TrendingUp, TrendingDown, DollarSign, PieChart, Loader2 } from 'lucide-react';
-import { fetchWithAuth } from '@/context/AuthContext';
-import { resolveApiUrl } from '@/utils/apiBase';
+import { fetchWithAuth, useAuth } from '@/context/AuthContext';
+import { useTradingWebSocket } from '@/hooks/useTradingWebSocket';
 
 interface Position {
   id: string;
@@ -30,53 +31,54 @@ interface PortfolioSummary {
 }
 
 export function PortfolioView() {
+  const { user } = useAuth();
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refetch, setRefetch] = useState(0);
+
+  const loadPortfolio = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetchWithAuth('/api/portfolio/overview', { method: 'GET' });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to load portfolio' }));
+        throw new Error(err.detail || err.message || `HTTP ${response.status}`);
+      }
+      const raw = await response.json();
+      const u = Number(raw?.unrealized_pl) || 0;
+      const r = 0;
+      const positions = (raw?.positions || []).map((p: Record<string, unknown>, i: number) => ({
+        id: (p?.id as string) ?? `${(p?.symbol as string) ?? 'pos'}-${i}`,
+        symbol: String(p?.symbol ?? ''),
+        quantity: Number(p?.quantity ?? 0),
+        average_price: Number(p?.average_price ?? 0),
+        current_price: Number(p?.current_price ?? 0),
+        unrealized_pnl: Number(p?.unrealized_pnl ?? p?.unrealized_pl ?? 0),
+        realized_pnl: Number(p?.realized_pnl ?? 0),
+        total_value: Number(p?.total_value ?? p?.market_value ?? 0),
+      }));
+      setPortfolio({
+        total_value: Number(raw?.total_equity) ?? 0,
+        unrealized_pnl: u,
+        realized_pnl: r,
+        total_pnl: u + r,
+        positions,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load portfolio');
+      setPortfolio({ total_value: 0, unrealized_pnl: 0, realized_pnl: 0, total_pnl: 0, positions: [] });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useTradingWebSocket(user?.id ?? null, () => setRefetch((r) => r + 1));
 
   useEffect(() => {
-    const loadPortfolio = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const apiUrl = resolveApiUrl('/api/trades/portfolio');
-        const response = await fetchWithAuth(apiUrl, {
-          method: 'GET',
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: 'Failed to load portfolio' }));
-          throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: Failed to load portfolio`);
-        }
-
-        const raw = await response.json();
-        // Map API (market_value, unrealized_pl) to UI (total_value, unrealized_pnl, id for positions)
-        const positions = (raw?.positions || []).map((p: any, i: number) => ({
-          ...p,
-          id: p?.id ?? `${p?.symbol ?? 'pos'}-${i}`,
-          total_value: p?.total_value ?? p?.market_value ?? 0,
-          unrealized_pnl: p?.unrealized_pnl ?? p?.unrealized_pl ?? 0,
-          realized_pnl: p?.realized_pnl ?? 0,
-        }));
-        setPortfolio({ ...raw, positions });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load portfolio');
-        // Set mock data for development
-        setPortfolio({
-          total_value: 0,
-          unrealized_pnl: 0,
-          realized_pnl: 0,
-          total_pnl: 0,
-          positions: [],
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadPortfolio();
-  }, []);
+  }, [loadPortfolio, refetch]);
 
   if (isLoading) {
     return (

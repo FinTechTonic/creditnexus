@@ -13,7 +13,7 @@ import re
 import secrets
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, Set
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -24,7 +24,15 @@ import bcrypt
 import hashlib
 
 from app.db import get_db
-from app.db.models import User, AuditLog, AuditAction, UserRole, RefreshToken
+from app.db.models import (
+    AuditAction,
+    AuditLog,
+    Organization,
+    RefreshToken,
+    User,
+    UserImplementationConnection,
+    UserRole,
+)
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -93,6 +101,7 @@ class UserRegister(BaseModel):
     password: str
     display_name: str
     organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
+    organization_id: Optional[int] = None  # FK to organizations.id
     
     @field_validator("password")
     @classmethod
@@ -157,11 +166,13 @@ class PasswordChange(BaseModel):
         return v
 
 class TokenResponse(BaseModel):
-    """Token response schema."""
+    """Token response schema. Includes optional organization and implementations for hydrated sign-in."""
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    organization: Optional[Dict[str, Any]] = None
+    implementations: Optional[List[Dict[str, Any]]] = None
 
 class RefreshTokenRequest(BaseModel):
     """Refresh token request schema."""
@@ -458,6 +469,34 @@ def reset_login_attempts(user: User, db: Session) -> None:
     user.last_login = datetime.utcnow()
     db.commit()
 
+
+def _hydrate_user_context(user: User, db: Session) -> Dict[str, Any]:
+    """Load organization and implementations for hydrated sign-in and /me."""
+    org = None
+    if user.organization_id:
+        o = db.query(Organization).filter(Organization.id == user.organization_id).first()
+        if o:
+            org = o.to_dict()
+    conns = (
+        db.query(UserImplementationConnection)
+        .filter(
+            UserImplementationConnection.user_id == user.id,
+            UserImplementationConnection.is_active.is_(True),
+        )
+        .all()
+    )
+    impls: List[Dict[str, Any]] = []
+    for c in conns:
+        if c.implementation:
+            impls.append({
+                "id": c.implementation.id,
+                "name": c.implementation.name,
+                "display_name": c.implementation.display_name,
+                "category": c.implementation.category,
+            })
+    return {"organization": org, "implementations": impls}
+
+
 @jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: Request,
@@ -485,6 +524,7 @@ async def register(
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name,
         organization_identifier=user_data.organization_identifier,
+        organization_id=user_data.organization_id,
         role=UserRole.ANALYST.value,
         is_active=False,  # Require admin approval
         is_email_verified=False,
@@ -510,11 +550,13 @@ async def register(
     
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
-    
+    ctx = _hydrate_user_context(user, db)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
     )
 
 @jwt_router.post("/signup/step1", response_model=SignupTokenResponse, status_code=status.HTTP_201_CREATED)
@@ -755,11 +797,13 @@ async def signup_step2(
     # Generate full JWT tokens for login
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
-    
+    ctx = _hydrate_user_context(user, db)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
     )
 
 @jwt_router.post("/login", response_model=TokenResponse)
@@ -881,17 +925,14 @@ async def login(
         raise
     
     logger.info("Login successful", extra={"user_id": user.id, "email": user.email})
-    
-    try:
-        response = TokenResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        )
-    except Exception as e:
-        raise
-    
-    return response
+    ctx = _hydrate_user_context(user, db)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
+    )
 
 @jwt_router.post("/refresh", response_model=TokenResponse)
 async def refresh_tokens(token_request: RefreshTokenRequest, db: Session = Depends(get_db)):
@@ -919,11 +960,13 @@ async def refresh_tokens(token_request: RefreshTokenRequest, db: Session = Depen
     
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
-    
+    ctx = _hydrate_user_context(user, db)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
     )
 
 @jwt_router.post("/logout")
@@ -1003,18 +1046,17 @@ async def change_password(
     return {"message": "Password changed successfully"}
 
 @jwt_router.get("/me")
-async def get_current_user_info(user: Optional[User] = Depends(get_current_user)):
-    """Get the current authenticated user's information."""
+async def get_current_user_info(
+    user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the current authenticated user's information with organization and implementations."""
     if not user:
-        return {"authenticated": False, "user": None}
-    
+        return {"authenticated": False, "user": None, "organization": None, "implementations": []}
     try:
         user_dict = user.to_dict()
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error serializing user {user.id}: {e}", exc_info=True)
-        # Return a minimal user dict if to_dict() fails
         user_dict = {
             "id": user.id,
             "email": user.email or "",
@@ -1032,10 +1074,12 @@ async def get_current_user_info(user: Optional[User] = Depends(get_current_user)
             "profile_data": user.profile_data,
             "created_at": None,
         }
-    
+    ctx = _hydrate_user_context(user, db)
     return {
         "authenticated": True,
-        "user": user_dict
+        "user": user_dict,
+        "organization": ctx["organization"],
+        "implementations": ctx["implementations"],
     }
 
 @jwt_router.get("/verify")

@@ -12,10 +12,28 @@ interface User {
   created_at: string | null;
 }
 
+interface Organization {
+  id: number;
+  name: string;
+  slug: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface Implementation {
+  id: number;
+  name: string;
+  display_name: string;
+  category: string;
+}
+
 interface AuthTokens {
   access_token: string;
   refresh_token: string;
   expires_in: number;
+  organization?: Organization | null;
+  implementations?: Implementation[] | null;
 }
 
 interface LoginCredentials {
@@ -28,10 +46,13 @@ interface RegisterData {
   password: string;
   display_name: string;
   organization_identifier?: string;  // Organization alias, blockchain address, or key
+  organization_id?: number;  // FK to organizations.id
 }
 
 interface AuthContextType {
   user: User | null;
+  organization: Organization | null;
+  implementations: Implementation[];
   isLoading: boolean;
   isAuthenticated: boolean;
   authError: string | null;
@@ -80,6 +101,8 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [implementations, setImplementations] = useState<Implementation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -87,19 +110,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = getStoredToken();
     if (!token) {
       setUser(null);
+      setOrganization(null);
+      setImplementations([]);
       setIsLoading(false);
       return;
     }
 
     try {
       const response = await fetchWithAuth('/api/auth/me');
-      
       if (response.ok) {
         const data = await response.json();
         if (data.authenticated && data.user) {
           setUser(data.user);
+          setOrganization(data.organization ?? null);
+          setImplementations(Array.isArray(data.implementations) ? data.implementations : []);
         } else {
           setUser(null);
+          setOrganization(null);
+          setImplementations([]);
           clearTokens();
         }
       } else if (response.status === 401) {
@@ -112,13 +140,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
         setUser(null);
+        setOrganization(null);
+        setImplementations([]);
         clearTokens();
       } else {
         setUser(null);
+        setOrganization(null);
+        setImplementations([]);
       }
     } catch (error) {
       console.error('Error fetching user:', error);
       setUser(null);
+      setOrganization(null);
+      setImplementations([]);
     } finally {
       setIsLoading(false);
     }
@@ -231,6 +265,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       clearTokens();
       setUser(null);
+      setOrganization(null);
+      setImplementations([]);
     }
   };
 
@@ -240,6 +276,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
+        organization,
+        implementations,
         isLoading,
         isAuthenticated: !!user,
         authError,

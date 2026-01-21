@@ -1,31 +1,29 @@
 /**
  * LangAlpha Result View Component
- * 
+ *
  * Displays LangAlpha quantitative analysis results with:
- * - Executive summary
- * - Key findings
- * - Metrics and data visualizations
- * - Trading signals
- * - Policy evaluation results
+ * - Executive summary, key findings, metrics, trading signals, policy evaluation.
+ * FDC3: broadcasts finos.creditnexus.agentResult when result is loaded so Trading/Stock
+ * Prediction can focus on mentioned symbols.
  */
 
 import { useState, useEffect } from 'react';
 import {
   BarChart3,
   TrendingUp,
-  // TrendingDown, CheckCircle2 removed - unused
   AlertCircle,
   Loader2,
   Copy,
   Download,
   X,
   FileText,
-  // Shield removed - unused
   Target,
   DollarSign,
   Activity
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { useFDC3 } from '@/context/FDC3Context';
+import { createAgentResultContext } from '@/context/FDC3Context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -69,10 +67,40 @@ export function LangAlphaResultView({
   onClose,
   dealId: _dealId // Prefix with _ - unused
 }: LangAlphaResultViewProps) {
+  const { broadcast } = useFDC3();
   const [result, setResult] = useState<LangAlphaResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
+
+  useEffect(() => {
+    if (!result) return;
+    const at = result.analysis_type?.toLowerCase() ?? '';
+    const agentType: 'langalpha' | 'deep_research' | 'peoplehub' =
+      at.includes('deep') || at.includes('research') ? 'deep_research'
+      : at.includes('people') ? 'peoplehub'
+      : 'langalpha';
+    const md = result.market_data as Record<string, unknown> | null;
+    const symbols: string[] = Array.isArray((result.report as { structured_report?: { metrics?: { symbols?: string[]; tickers?: string[] } } })?.structured_report?.metrics?.symbols)
+      ? ((result.report as { structured_report?: { metrics?: { symbols?: string[] } } }).structured_report!.metrics!.symbols!)
+      : Array.isArray((result.report as { structured_report?: { metrics?: { tickers?: string[] } } })?.structured_report?.metrics?.tickers)
+        ? ((result.report as { structured_report?: { metrics?: { tickers?: string[] } } }).structured_report!.metrics!.tickers!)
+        : md && typeof md === 'object' ? (Object.keys(md).filter((k) => typeof k === 'string' && k.length <= 6) as string[]) : [];
+    const recs = (result.report as { structured_report?: { recommendations?: string[] } })?.structured_report?.recommendations;
+    const summary = (result.report as { structured_report?: { executive_summary?: string }; report?: string })?.structured_report?.executive_summary
+      ?? (typeof (result.report as { report?: string })?.report === 'string' ? ((result.report as { report: string }).report.slice(0, 500)) : undefined);
+    try {
+      broadcast(createAgentResultContext(result.analysis_id, agentType, {
+        query: result.query,
+        summary: summary ?? undefined,
+        symbols: symbols.length ? symbols : undefined,
+        recommendations: Array.isArray(recs) ? recs : undefined,
+        deal_id: result.deal_id ?? undefined,
+      }));
+    } catch {
+      // ignore FDC3 broadcast errors
+    }
+  }, [result, broadcast]);
 
   useEffect(() => {
     const fetchResult = async () => {

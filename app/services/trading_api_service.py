@@ -6,6 +6,8 @@ from typing import Dict, Any, Optional, List
 from decimal import Decimal
 from datetime import datetime
 
+from app.core import data_cache as dc
+
 logger = logging.getLogger(__name__)
 
 
@@ -102,11 +104,12 @@ class TradingAPIService(ABC):
         pass
     
     @abstractmethod
-    def get_market_data(self, symbol: str) -> Dict[str, Any]:
+    def get_market_data(self, symbol: str, db: Optional[Any] = None) -> Dict[str, Any]:
         """Get market data for a symbol (price, volume, etc.).
         
         Args:
             symbol: Stock symbol
+            db: Optional DB session for DataCache (Alpaca impl caches with TTL_TRADING_QUOTE).
             
         Returns:
             Dictionary with current price, bid, ask, volume, etc.
@@ -317,8 +320,12 @@ class AlpacaTradingAPIService(TradingAPIService):
             logger.error(f"Alpaca positions lookup failed: {e}", exc_info=True)
             raise TradingAPIError(f"Failed to get positions: {str(e)}")
     
-    def get_market_data(self, symbol: str) -> Dict[str, Any]:
-        """Get market data from Alpaca."""
+    def get_market_data(self, symbol: str, db: Optional[Any] = None) -> Dict[str, Any]:
+        """Get market data from Alpaca. Cached with TTL_TRADING_QUOTE when db is provided."""
+        cache_key = dc.make_key("trading_quote", symbol)
+        cached = dc.get(cache_key, db)
+        if cached is not None:
+            return cached
         try:
             from alpaca.data.historical import StockHistoricalDataClient
             from alpaca.data.requests import StockLatestQuoteRequest
@@ -337,7 +344,7 @@ class AlpacaTradingAPIService(TradingAPIService):
             
             q = quote[symbol]
             
-            return {
+            out = {
                 "symbol": symbol,
                 "bid_price": float(q.bp) if q.bp else None,
                 "ask_price": float(q.ap) if q.ap else None,
@@ -346,6 +353,8 @@ class AlpacaTradingAPIService(TradingAPIService):
                 "timestamp": q.timestamp.isoformat() if q.timestamp else None,
                 "raw_response": q.dict()
             }
+            dc.set(cache_key, out, dc.TTL_TRADING_QUOTE, dc.SOURCE_TRADING, dc.KIND_PUNCTUAL, db)
+            return out
             
         except Exception as e:
             logger.error(f"Alpaca market data lookup failed: {e}", exc_info=True)
@@ -427,8 +436,8 @@ class MockTradingAPIService(TradingAPIService):
         """Mock positions."""
         return self.positions
     
-    def get_market_data(self, symbol: str) -> Dict[str, Any]:
-        """Mock market data."""
+    def get_market_data(self, symbol: str, db: Optional[Any] = None) -> Dict[str, Any]:
+        """Mock market data. db is accepted for interface compatibility; no caching."""
         return {
             "symbol": symbol,
             "bid_price": 99.50,

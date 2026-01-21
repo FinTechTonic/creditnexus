@@ -4,20 +4,9 @@ Polymarket API Client for external market integration.
 Uses Polymarket Gamma API (events, markets) and CLOB (order book, orders)
 per https://docs.polymarket.com. Optionally registers SFP/securitized product
 markets when POLYMARKET_PUBLISH_EXTERNAL is enabled.
-
-CLOB L2 auth (when POLYMARKET_API_KEY, POLYMARKET_SECRET, POLYMARKET_PASSPHRASE,
-POLYMARKET_SIGNER_ADDRESS are set): HMAC-SHA256 per
-https://docs.polymarket.com/developers/CLOB/authentication — POLY_ADDRESS,
-POLY_API_KEY, POLY_PASSPHRASE, POLY_TIMESTAMP, POLY_SIGNATURE. Credentials can
-come from the Builder account or createOrDeriveApiKey.
 """
 
-import hmac
-import hashlib
 import logging
-import time
-from urllib.parse import urlencode
-
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -26,14 +15,8 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# CLOB: https://clob.polymarket.com — order book, orders, trades; L2 = POLY_* headers
-# Gamma: https://gamma-api.polymarket.com — events, markets (GET); public, no L2
-
-
-def _get_secret_str(val: Any) -> Optional[str]:
-    if val is None:
-        return None
-    return val.get_secret_value() if hasattr(val, "get_secret_value") else (str(val) if val else None)
+# CLOB: https://clob.polymarket.com — order book, orders, trades
+# Gamma: https://gamma-api.polymarket.com — events, markets (GET); create not in public API
 
 
 class PolymarketAPIClient:
@@ -48,36 +31,18 @@ class PolymarketAPIClient:
             getattr(settings, "POLYMARKET_GAMMA_API_URL", None)
             or "https://gamma-api.polymarket.com"
         )
-        self._api_key = _get_secret_str(getattr(settings, "POLYMARKET_API_KEY", None))
-        self._secret = _get_secret_str(getattr(settings, "POLYMARKET_SECRET", None))
-        self._passphrase = _get_secret_str(getattr(settings, "POLYMARKET_PASSPHRASE", None))
-        self._signer_address = getattr(settings, "POLYMARKET_SIGNER_ADDRESS", None) or None
+        self.data_url = (
+            getattr(settings, "POLYMARKET_DATA_API_URL", None)
+            or "https://data-api.polymarket.com"
+        )
+        _key = getattr(settings, "POLYMARKET_API_KEY", None)
+        self._api_key = _key.get_secret_value() if hasattr(_key, "get_secret_value") else _key
         self.network = getattr(settings, "POLYMARKET_NETWORK", "polygon")
 
-    def _gamma_headers(self) -> Dict[str, str]:
-        """Gamma is read-only and public; no L2 auth."""
-        return {"Content-Type": "application/json"}
-
-    def _clob_headers(self, method: str, path: str, body: str = "") -> Dict[str, str]:
-        """
-        CLOB L2: POLY_ADDRESS, POLY_API_KEY, POLY_PASSPHRASE, POLY_TIMESTAMP, POLY_SIGNATURE.
-        Message for HMAC-SHA256: timestamp + method + path + body. Hex-encoded.
-        """
+    def _headers(self) -> Dict[str, str]:
         h: Dict[str, str] = {"Content-Type": "application/json"}
-        if not all([self._api_key, self._secret, self._passphrase, self._signer_address]):
-            return h
-        ts = int(time.time())
-        message = str(ts) + method.upper() + path + (body or "")
-        sig = hmac.new(
-            self._secret.encode("utf-8"),
-            message.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        h["POLY_ADDRESS"] = self._signer_address
-        h["POLY_API_KEY"] = self._api_key
-        h["POLY_PASSPHRASE"] = self._passphrase
-        h["POLY_TIMESTAMP"] = str(ts)
-        h["POLY_SIGNATURE"] = sig
+        if self._api_key:
+            h["Authorization"] = f"Bearer {self._api_key}"
         return h
 
     # --- Gamma: events & markets (GET) ---
@@ -90,13 +55,13 @@ class PolymarketAPIClient:
         limit: int = 20,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """GET /events. List events with filters. Gamma is public; no L2."""
+        """GET /events. List events with filters."""
         try:
             with httpx.Client() as client:
                 r = client.get(
                     f"{self.gamma_url}/events",
                     params={"active": str(active).lower(), "closed": str(closed).lower(), "limit": limit, "offset": offset},
-                    headers=self._gamma_headers(),
+                    headers=self._headers(),
                     timeout=10.0,
                 )
             return r.json() if r.is_success else []
@@ -112,7 +77,7 @@ class PolymarketAPIClient:
         limit: int = 20,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """GET /markets. List markets with optional tag filter. Gamma is public."""
+        """GET /markets. List markets with optional tag filter."""
         try:
             params: Dict[str, Any] = {"active": str(active).lower(), "limit": limit, "offset": offset}
             if tag:
@@ -121,7 +86,7 @@ class PolymarketAPIClient:
                 r = client.get(
                     f"{self.gamma_url}/markets",
                     params=params,
-                    headers=self._gamma_headers(),
+                    headers=self._headers(),
                     timeout=10.0,
                 )
             return r.json() if r.is_success else []
@@ -130,12 +95,12 @@ class PolymarketAPIClient:
             return []
 
     def fetch_market_by_id(self, condition_id_or_slug: str) -> Optional[Dict[str, Any]]:
-        """GET /markets/{condition_id} or by slug. Gamma is public."""
+        """GET /markets/{condition_id} or by slug."""
         try:
             with httpx.Client() as client:
                 r = client.get(
                     f"{self.gamma_url}/markets/{condition_id_or_slug}",
-                    headers=self._gamma_headers(),
+                    headers=self._headers(),
                     timeout=10.0,
                 )
             return r.json() if r.is_success else None
@@ -143,22 +108,167 @@ class PolymarketAPIClient:
             logger.warning("Polymarket fetch_market_by_id failed: %s", e)
             return None
 
-    # --- CLOB: order book (uses L2 when api_key+secret+passphrase+signer_address) ---
+    # --- CLOB: order book ---
 
     def get_book(self, token_id: str) -> Dict[str, Any]:
-        """GET CLOB /book for outcome token_id. L2 POLY_* headers when configured."""
+        """GET CLOB /book for outcome token_id."""
         try:
-            path = "/book" + ("?" + urlencode({"token_id": token_id}) if token_id else "")
             with httpx.Client() as client:
                 r = client.get(
                     f"{self.clob_url}/book",
                     params={"token_id": token_id},
-                    headers=self._clob_headers("GET", path, ""),
+                    headers=self._headers(),
                     timeout=10.0,
                 )
             return r.json() if r.is_success else {}
         except Exception as e:
             logger.warning("Polymarket get_book failed: %s", e)
+            return {}
+
+    def _data_path(self, subpath: str) -> str:
+        """Build Data API URL for a subpath. Override if production paths differ."""
+        base = (self.data_url or "").rstrip("/")
+        return f"{base}/{subpath.lstrip('/')}" if base else ""
+
+    # --- Data API: trades, activity, holders, leaderboard, volume, open-interest ---
+    # When data_url is unset or the request fails, returns empty/default and logs debug.
+
+    def fetch_trades(
+        self,
+        *,
+        market: Optional[str] = None,
+        asset_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """GET /trades with optional market or asset_id. Returns list of trade dicts."""
+        url = self._data_path("trades")
+        if not url:
+            logger.debug("Polymarket Data API: data_url unset, fetch_trades returns []")
+            return []
+        try:
+            params: Dict[str, Any] = {"limit": limit}
+            if market:
+                params["market"] = market
+            if asset_id:
+                params["asset_id"] = asset_id
+            with httpx.Client() as client:
+                r = client.get(url, params=params, headers=self._headers(), timeout=15.0)
+            return r.json() if r.is_success else []
+        except Exception as e:
+            logger.debug("Polymarket fetch_trades failed: %s", e)
+            return []
+
+    def fetch_activity(
+        self,
+        *,
+        user: Optional[str] = None,
+        market: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """GET /activity with optional user or market filter."""
+        url = self._data_path("activity")
+        if not url:
+            logger.debug("Polymarket Data API: data_url unset, fetch_activity returns []")
+            return []
+        try:
+            params: Dict[str, Any] = {"limit": limit}
+            if user:
+                params["user"] = user
+            if market:
+                params["market"] = market
+            with httpx.Client() as client:
+                r = client.get(url, params=params, headers=self._headers(), timeout=15.0)
+            return r.json() if r.is_success else []
+        except Exception as e:
+            logger.debug("Polymarket fetch_activity failed: %s", e)
+            return []
+
+    def fetch_holders(
+        self,
+        token_id: str,
+        *,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """GET /holders for token_id (or CLOB/Subgraph-derived)."""
+        url = self._data_path("holders")
+        if not url:
+            logger.debug("Polymarket Data API: data_url unset, fetch_holders returns []")
+            return []
+        try:
+            with httpx.Client() as client:
+                r = client.get(
+                    url,
+                    params={"token_id": token_id, "limit": limit},
+                    headers=self._headers(),
+                    timeout=15.0,
+                )
+            return r.json() if r.is_success else []
+        except Exception as e:
+            logger.debug("Polymarket fetch_holders failed: %s", e)
+            return []
+
+    def fetch_leaderboard(self, *, limit: int = 50) -> List[Dict[str, Any]]:
+        """GET /leaderboard or /analytics/leaderboard."""
+        for subpath in ("leaderboard", "analytics/leaderboard"):
+            url = self._data_path(subpath)
+            if not url:
+                continue
+            try:
+                with httpx.Client() as client:
+                    r = client.get(
+                        url,
+                        params={"limit": limit},
+                        headers=self._headers(),
+                        timeout=15.0,
+                    )
+                if r.is_success:
+                    data = r.json()
+                    return data if isinstance(data, list) else []
+            except Exception as e:
+                logger.debug("Polymarket fetch_leaderboard %s failed: %s", subpath, e)
+        logger.debug("Polymarket Data API: fetch_leaderboard returns []")
+        return []
+
+    def fetch_live_volume(self, market: Optional[str] = None) -> Dict[str, Any]:
+        """GET /markets/{id}/volume or aggregated. Returns { volume, market }."""
+        if market:
+            url = self._data_path(f"markets/{market}/volume")
+        else:
+            url = self._data_path("volume")
+        if not url:
+            logger.debug("Polymarket Data API: data_url unset, fetch_live_volume returns {}")
+            return {}
+        try:
+            with httpx.Client() as client:
+                r = client.get(url, headers=self._headers(), timeout=15.0)
+            if r.is_success:
+                data = r.json()
+                data = data if isinstance(data, dict) else {}
+                return {"volume": data.get("volume", 0), "market": market or data.get("market")}
+            return {}
+        except Exception as e:
+            logger.debug("Polymarket fetch_live_volume failed: %s", e)
+            return {}
+
+    def fetch_open_interest(self, market: Optional[str] = None) -> Dict[str, Any]:
+        """GET /markets/{id}/open-interest or derived. Returns dict with open_interest, market."""
+        if market:
+            url = self._data_path(f"markets/{market}/open-interest")
+        else:
+            url = self._data_path("open-interest")
+        if not url:
+            logger.debug("Polymarket Data API: data_url unset, fetch_open_interest returns {}")
+            return {}
+        try:
+            with httpx.Client() as client:
+                r = client.get(url, headers=self._headers(), timeout=15.0)
+            if r.is_success:
+                data = r.json()
+                data = data if isinstance(data, dict) else {}
+                return {"open_interest": data.get("open_interest", 0), "market": market or data.get("market")}
+            return {}
+        except Exception as e:
+            logger.debug("Polymarket fetch_open_interest failed: %s", e)
             return {}
 
     # --- Optional: register SFP / securitized product market ---
@@ -213,12 +323,12 @@ class PolymarketAPIClient:
             body["condition_id"] = condition_id
 
         try:
-            # Gamma: POST /markets not in public API; try and handle. Gamma is public; no L2.
+            # Gamma: POST /markets not in public API; try and handle
             with httpx.Client() as client:
                 r = client.post(
                     f"{self.gamma_url}/markets",
                     json=body,
-                    headers=self._gamma_headers(),
+                    headers=self._headers(),
                     timeout=15.0,
                 )
             if r.status_code in (404, 405, 501):

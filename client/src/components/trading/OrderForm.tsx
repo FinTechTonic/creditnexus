@@ -1,10 +1,12 @@
 /**
  * Order Form Component
- * 
+ *
  * Form component for placing buy/sell orders with order type selection.
+ * FDC3: prefills symbol from fdc3.instrument, finos.creditnexus.instrument,
+ * finos.creditnexus.stockPrediction, finos.creditnexus.agentResult.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +16,16 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TrendingUp, TrendingDown, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { useFDC3 } from '@/context/FDC3Context';
 import { resolveApiUrl } from '@/utils/apiBase';
+
+function symbolFromFdc3Context(ctx: { type?: string; symbol?: string; id?: { ticker?: string; symbol?: string }; symbols?: string[] } | null): string | undefined {
+  if (!ctx) return undefined;
+  if (ctx.type === 'finos.creditnexus.stockPrediction' && ctx.symbol) return ctx.symbol;
+  if (ctx.type === 'finos.creditnexus.agentResult' && (ctx as { symbols?: string[] }).symbols?.[0]) return (ctx as { symbols?: string[] }).symbols![0];
+  const t = (ctx as { id?: { ticker?: string; symbol?: string } }).id?.ticker ?? (ctx as { id?: { ticker?: string; symbol?: string } }).id?.symbol;
+  return t;
+}
 
 type OrderSide = 'buy' | 'sell';
 type OrderType = 'market' | 'limit' | 'stop';
@@ -31,10 +42,12 @@ interface OrderFormData {
 interface OrderResponse {
   order_id: string;
   status: 'pending' | 'filled' | 'cancelled' | 'rejected';
+  /** From API: rejection_reason or status note for UI */
   message?: string;
 }
 
 export function OrderForm() {
+  const { context } = useFDC3();
   const [orderSide, setOrderSide] = useState<OrderSide>('buy');
   const [orderData, setOrderData] = useState<OrderFormData>({
     side: 'buy',
@@ -47,6 +60,11 @@ export function OrderForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderResponse, setOrderResponse] = useState<OrderResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const s = symbolFromFdc3Context(context as Parameters<typeof symbolFromFdc3Context>[0]);
+    if (s && s !== orderData.symbol) setOrderData(prev => ({ ...prev, symbol: s }));
+  }, [context]);
 
   const handleSideChange = (side: OrderSide) => {
     setOrderSide(side);
@@ -105,8 +123,8 @@ export function OrderForm() {
       const result: OrderResponse = await response.json();
       setOrderResponse(result);
 
-      // Reset form on success
-      if (result.status === 'filled' || result.status === 'pending') {
+      // Reset form on success (pending, submitted, or filled)
+      if (['filled', 'pending', 'submitted'].includes(result.status)) {
         setOrderData({
           side: orderSide,
           type: 'market',

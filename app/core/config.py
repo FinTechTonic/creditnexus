@@ -164,7 +164,15 @@ class Settings(BaseSettings):
         default="",
         description="SecuritizationPaymentRouter contract address (auto-deployed if empty)"
     )
-    
+    CREDIT_TOKEN_CONTRACT: str = Field(
+        default="",
+        description="CreditToken (ERC-721) contract for rolling credits / subscription balances"
+    )
+    CHALLENGE_COIN_NFT_CONTRACT: str = Field(
+        default="",
+        description="ChallengeCoinNFT (ERC-721) contract for securitized asset challenge coins and bridge trades"
+    )
+
     # USDC Token Address (Base network)
     USDC_TOKEN_ADDRESS: str = Field(
         default="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -216,19 +224,7 @@ class Settings(BaseSettings):
     )
     POLYMARKET_API_KEY: Optional[SecretStr] = Field(
         default=None,
-        description="API key for Polymarket CLOB L2 / Builder (POLY_API_KEY)"
-    )
-    POLYMARKET_SECRET: Optional[SecretStr] = Field(
-        default=None,
-        description="Secret for Polymarket CLOB L2 HMAC (POLY_SIGNATURE). From Builder or createOrDeriveApiKey."
-    )
-    POLYMARKET_PASSPHRASE: Optional[SecretStr] = Field(
-        default=None,
-        description="Passphrase for Polymarket CLOB L2 (POLY_PASSPHRASE). From Builder or createOrDeriveApiKey."
-    )
-    POLYMARKET_SIGNER_ADDRESS: Optional[str] = Field(
-        default=None,
-        description="Wallet/funder address for L2 (POLY_ADDRESS). Required when using L2 auth (api_key+secret+passphrase)."
+        description="API key for Polymarket CLOB (optional)"
     )
     POLYMARKET_NETWORK: str = Field(
         default="polygon",
@@ -238,9 +234,88 @@ class Settings(BaseSettings):
         default="https://gamma-api.polymarket.com",
         description="Gamma API base URL for events/markets discovery"
     )
+    POLYMARKET_DATA_API_URL: Optional[str] = Field(
+        default="https://data-api.polymarket.com",
+        description="Data API for trades, activity, leaderboard, etc.",
+    )
+    POLYMARKET_SURVEILLANCE_ENABLED: bool = Field(
+        default=False,
+        description="Enable Polymarket surveillance (baselines, alerts)",
+    )
     POLYMARKET_PUBLISH_EXTERNAL: bool = Field(
         default=False,
         description="When True, attempt to register SFP markets with Polymarket Gamma/CLOB (if supported)"
+    )
+
+    # Polymarket Cross-Chain (bridge, outcome tokens on L2s)
+    CROSS_CHAIN_ENABLED: bool = Field(
+        default=False,
+        description="Enable cross-chain bridge and outcome token minting for Polymarket/SFP",
+    )
+    POLYMARKET_BRIDGE_API_URL: Optional[str] = Field(
+        default=None,
+        description="Bridge API URL for cross-chain transfers (e.g. Polymarket bridge or custom relay)",
+    )
+    OUTCOME_TOKEN_CHAIN_ID: Optional[int] = Field(
+        default=None,
+        description="Chain ID where SFP outcome tokens are minted (e.g. Base=8453, Polygon=137)",
+    )
+    SFP_OUTCOME_TOKEN_CONTRACT: Optional[str] = Field(
+        default=None,
+        description="ERC-1155 contract address for SFP outcome tokens on OUTCOME_TOKEN_CHAIN_ID",
+    )
+
+    # Plaid / Banking (Trading Phase 1)
+    PLAID_ENABLED: bool = Field(default=False, description="Enable Plaid bank linking (accounts, balances, transactions)")
+    PLAID_CLIENT_ID: Optional[SecretStr] = Field(default=None, description="Plaid client ID")
+    PLAID_SECRET: Optional[SecretStr] = Field(default=None, description="Plaid secret (use development/sandbox secret for non-production)")
+    PLAID_ENV: str = Field(default="sandbox", description="Plaid environment: sandbox, development, production")
+
+    # Alpaca (Trading + Stock Prediction Market Data)
+    ALPACA_API_KEY: Optional[SecretStr] = Field(default=None, description="Alpaca API key (trading and historical bars)")
+    ALPACA_API_SECRET: Optional[SecretStr] = Field(default=None, description="Alpaca API secret")
+    ALPACA_BASE_URL: Optional[str] = Field(
+        default="https://paper-api.alpaca.markets",
+        description="Alpaca base URL (paper: https://paper-api.alpaca.markets, live: https://api.alpaca.markets)",
+    )
+    ALPACA_DATA_ENABLED: bool = Field(
+        default=False,
+        description="Use Alpaca for historical bars in stock prediction and backtesting when ALPACA_API_KEY/SECRET set",
+    )
+
+    # Stock Prediction
+    STOCK_PREDICTION_ENABLED: bool = Field(
+        default=False,
+        description="Enable stock prediction (daily, hourly, 15min) and backtesting",
+    )
+    STOCK_PREDICTION_DEFAULT_LOOKBACK_DAILY: int = Field(default=252, description="Default lookback bars for daily predictions")
+    STOCK_PREDICTION_DEFAULT_LOOKBACK_HOURLY: int = Field(default=504, description="Default lookback bars for hourly predictions")
+    STOCK_PREDICTION_DEFAULT_LOOKBACK_15MIN: int = Field(default=96, description="Default lookback bars for 15min predictions")
+
+    # Modal (Chronos inference, market, training)
+    MODAL_APP_NAME: str = Field(
+        default="creditnexus-stock-prediction",
+        description="Modal app name for stock prediction (inference, market)",
+    )
+    MODAL_TOKEN_ID: Optional[SecretStr] = Field(default=None, description="Modal token ID for server-side Modal client (optional)")
+    MODAL_TOKEN_SECRET: Optional[SecretStr] = Field(default=None, description="Modal token secret for server-side Modal client (optional)")
+    MODAL_USE_GPU: bool = Field(
+        default=False,
+        description="When True, Modal chronos_inference runs with GPU (T4). Set MODAL_USE_GPU=1 or true when deploying Modal app.",
+    )
+
+    # Chronos (time-series model for stock prediction)
+    CHRONOS_MODEL_ID: str = Field(
+        default="amazon/chronos-t5-small",
+        description="Chronos model ID (e.g. amazon/chronos-t5-small, amazon/chronos-t5-base)",
+    )
+    CHRONOS_DEVICE: str = Field(
+        default="cpu",
+        description="Device for Chronos: cpu, cuda, cuda:0. Used by Modal and when STOCK_PREDICTION_USE_LOCAL is True.",
+    )
+    STOCK_PREDICTION_USE_LOCAL: bool = Field(
+        default=False,
+        description="When True, run Chronos inference locally (CHRONOS_DEVICE) instead of Modal. Requires torch and chronos-bolt.",
     )
 
     # RevenueCat (subscription / entitlements) – integrates with x402 for subscription upgrades
@@ -255,6 +330,14 @@ class Settings(BaseSettings):
     REVENUECAT_ENTITLEMENT_PRO: str = Field(
         default="pro",
         description="Entitlement identifier for Pro tier (Polymarket, premium features)"
+    )
+    SURVEILLANCE_REQUIRES_PRO: bool = Field(
+        default=True,
+        description="Require Pro (or higher) subscription for market intelligence / surveillance",
+    )
+    REVENUECAT_ENTITLEMENT_MARKET_INTELLIGENCE: Optional[str] = Field(
+        default=None,
+        description="Entitlement for surveillance; if unset, uses REVENUECAT_ENTITLEMENT_PRO",
     )
     SUBSCRIPTION_UPGRADE_AMOUNT: Decimal = Field(
         default=Decimal("9.99"),
@@ -273,6 +356,17 @@ class Settings(BaseSettings):
     SERPER_API_KEY: Optional[SecretStr] = None  # Serper API key for web search
     WEB_SEARCH_RATE_LIMIT: str = "360/hour"  # Rate limit for web search
     WEB_SEARCH_ANALYTICS_DIR: Optional[Path] = None  # Analytics data directory
+
+    # Data cache TTL (seconds). Override via env (e.g. CACHE_TTL_OHLCV_1D=604800).
+    CACHE_TTL_OHLCV_1D: int = Field(default=7 * 24 * 3600, description="OHLCV daily bars cache TTL (seconds)")
+    CACHE_TTL_OHLCV_1H: int = Field(default=24 * 3600, description="OHLCV hourly bars cache TTL (seconds)")
+    CACHE_TTL_OHLCV_15M: int = Field(default=4 * 3600, description="OHLCV 15‑minute bars cache TTL (seconds)")
+    CACHE_TTL_SNAPSHOT: int = Field(default=90, description="Ticker snapshot cache TTL (seconds)")
+    CACHE_TTL_FUNDAMENTAL: int = Field(default=24 * 3600, description="Fundamental data cache TTL (seconds)")
+    CACHE_TTL_NEWS: int = Field(default=30 * 60, description="News cache TTL (seconds)")
+    CACHE_TTL_WEB_SEARCH: int = Field(default=60 * 60, description="Web search cache TTL (seconds)")
+    CACHE_TTL_TRADING_QUOTE: int = Field(default=60, description="Trading quote (Alpaca) cache TTL (seconds)")
+    CACHE_TTL_BACKTEST: int = Field(default=24 * 3600, description="Backtest result cache TTL (seconds)")
 
     # Reranking Configuration
     RERANKING_USE_LOCAL: bool = False  # Use local reranking model instead of API
@@ -394,6 +488,11 @@ class Settings(BaseSettings):
     VERIFICATION_BASE_URL: Optional[str] = None
     LINK_ENCRYPTION_KEY: Optional[SecretStr] = None  # Fernet key for link encryption
     VERIFICATION_FILE_CONFIG_PATH: Optional[Path] = None  # YAML config for file whitelist
+    # Verification file whitelist source: "yaml" (default) or "database"
+    VERIFICATION_WHITELIST_SOURCE: str = "yaml"
+    # When VERIFICATION_WHITELIST_SOURCE=database: use this WhitelistProfile id (scope=file).
+    # If None, the first active file-scope profile is used.
+    VERIFICATION_WHITELIST_PROFILE_ID: Optional[int] = None
     
     # Workflow Delegation Configuration
     WORKFLOW_DELEGATION_BASE_URL: Optional[str] = None  # Base URL for workflow delegation links (e.g., "https://josephrp.github.io/creditnexus")

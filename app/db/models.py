@@ -1,7 +1,8 @@
 """SQLAlchemy models for CreditNexus database."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Numeric, Date, Float
+from decimal import Decimal
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Numeric, Date, Float, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import relationship
 import enum
@@ -171,6 +172,79 @@ class SubscriptionType(str, enum.Enum):
     LIFETIME = "lifetime"
 
 
+class CreditType(str, enum.Enum):
+    """Credit types for different workflows (rolling credits, billing)."""
+    SIGNING = "signing"
+    DOCUMENT_REVIEW = "document_review"
+    VERIFICATION = "verification"
+    TRADING = "trading"
+    LOANING = "loaning"
+    BORROWING = "borrowing"
+    COMPLIANCE_CHECK = "compliance_check"
+    SECURITIZATION = "securitization"
+    RISK_ANALYSIS = "risk_analysis"
+    QUANTITATIVE_ANALYSIS = "quantitative_analysis"
+    STOCK_PREDICTION_DAILY = "stock_prediction_daily"
+    STOCK_PREDICTION_HOURLY = "stock_prediction_hourly"
+    STOCK_PREDICTION_15MIN = "stock_prediction_15min"
+    UNIVERSAL = "universal"
+
+
+class Organization(Base):
+    """Organization for multi-blockchain and multi-tenant use."""
+
+    __tablename__ = "organizations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, index=True)
+    slug = Column(String(100), unique=True, nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    users = relationship("User", back_populates="organization", foreign_keys="User.organization_id")
+    blockchain_deployments = relationship(
+        "OrganizationBlockchainDeployment", back_populates="organization", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "slug": self.slug,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class OrganizationBlockchainDeployment(Base):
+    """Per-organization blockchain deployment (contracts, chain)."""
+
+    __tablename__ = "organization_blockchain_deployments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    chain_id = Column(Integer, nullable=False, index=True)  # e.g. 137 Polygon, 8453 Base
+    deployment_type = Column(String(50), nullable=False, index=True)  # notarization, token, router, etc.
+    contract_address = Column(String(66), nullable=False, index=True)
+    is_primary = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    organization = relationship("Organization", back_populates="blockchain_deployments")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "organization_id": self.organization_id,
+            "chain_id": self.chain_id,
+            "deployment_type": self.deployment_type,
+            "contract_address": self.contract_address,
+            "is_primary": self.is_primary,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class User(Base):
     """User model for authentication and authorization."""
 
@@ -235,7 +309,10 @@ class User(Base):
     )
     implementation_connections = relationship("UserImplementationConnection", back_populates="user")
     organization_identifier = Column(EncryptedString(255), nullable=True, index=True)  # Organization alias, blockchain address, or key
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])
     subscriptions = relationship("UserSubscription", back_populates="user")
+    credit_balance = relationship("CreditBalance", back_populates="user", uselist=False)
     subscription_tier = Column(String(20), default=SubscriptionTier.FREE.value, nullable=False)
 
     def to_dict(self):
@@ -259,6 +336,7 @@ class User(Base):
             "signup_reviewed_by": self.signup_reviewed_by,
             "signup_rejection_reason": self.signup_rejection_reason,
             "profile_data": self.profile_data,
+            "organization_id": self.organization_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -1436,14 +1514,17 @@ class SFPPackage(Base):
 
 
 class MarketEvent(Base):
-    """Polymarket prediction market event linked to SFP."""
+    """Polymarket prediction market event linked to SFP, or to pool/tranche/loan for listings and loan binary markets."""
 
     __tablename__ = "market_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     market_id = Column(String(255), unique=True, nullable=False, index=True)
-    sfp_package_id = Column(Integer, ForeignKey("sfp_packages.id"), nullable=False, index=True)
-    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False, index=True)
+    sfp_package_id = Column(Integer, ForeignKey("sfp_packages.id"), nullable=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
+    pool_id = Column(Integer, ForeignKey("securitization_pools.id", ondelete="SET NULL"), nullable=True, index=True)
+    tranche_id = Column(Integer, ForeignKey("securitization_tranches.id", ondelete="SET NULL"), nullable=True, index=True)
+    loan_asset_id = Column(Integer, ForeignKey("loan_assets.id", ondelete="SET NULL"), nullable=True, index=True)
     question = Column(Text, nullable=False)
     outcome_type = Column(String(50), nullable=False)
     resolution_condition = Column(JSONB, nullable=False)
@@ -1458,6 +1539,113 @@ class MarketEvent(Base):
     sfp_package = relationship("SFPPackage", back_populates="market_events")
     deal = relationship("Deal", back_populates="market_events")
     creator = relationship("User", foreign_keys=[created_by])
+    orders = relationship("MarketOrder", back_populates="market_event", cascade="all, delete-orphan")
+
+
+class MarketOrder(Base):
+    """Order in the internal SFP marketplace (Polymarket-like)."""
+
+    __tablename__ = "market_orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    market_event_id = Column(Integer, ForeignKey("market_events.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    side = Column(String(10), nullable=False)  # "yes" | "no"
+    price = Column(Numeric(20, 8), nullable=False)
+    size = Column(Numeric(20, 8), nullable=False)
+    status = Column(String(20), nullable=False, default="open", index=True)  # open, filled, cancelled
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    filled_at = Column(DateTime, nullable=True)
+
+    market_event = relationship("MarketEvent", back_populates="orders")
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class PolymarketSurveillanceBaseline(Base):
+    """Baseline metrics for Polymarket surveillance (wallet, market, condition)."""
+
+    __tablename__ = "polymarket_surveillance_baselines"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entity_type = Column(String(50), nullable=False, index=True)  # "wallet", "market", "condition"
+    entity_id = Column(String(255), nullable=False, index=True)
+    window = Column(String(50), nullable=False)  # e.g. "1d", "7d", "30d"
+    metric = Column(String(100), nullable=False, index=True)  # e.g. "volume", "trade_count", "first_seen_ts"
+    value = Column(JSONB, nullable=True)  # flexible numeric/object
+    computed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("entity_type", "entity_id", "window", "metric", name="uq_polymarket_surveillance_baseline"),
+    )
+
+
+class PolymarketSurveillanceAlert(Base):
+    """Alerts from Polymarket surveillance detection (outsized bet, new wallet anomaly, etc.)."""
+
+    __tablename__ = "polymarket_surveillance_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    alert_type = Column(String(100), nullable=False, index=True)  # e.g. "outsized_bet", "new_wallet_anomaly"
+    severity = Column(String(20), nullable=False)  # "low", "medium", "high", "critical"
+    condition_id = Column(String(255), nullable=True, index=True)
+    proxy_wallet = Column(String(66), nullable=True, index=True)
+    event_id = Column(String(255), nullable=True)
+    signal_values = Column(JSONB, nullable=True)  # snapshot of signals that fired
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolution = Column(String(50), nullable=True)  # "dismissed", "escalated", "false_positive"
+
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+
+class CrossChainTransaction(Base):
+    """Cross-chain bridge transfer for Polymarket/SFP outcome tokens."""
+
+    __tablename__ = "cross_chain_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    source_chain_id = Column(Integer, nullable=False, index=True)  # e.g. 137 Polygon
+    dest_chain_id = Column(Integer, nullable=False, index=True)  # e.g. 8453 Base
+    bridge_external_id = Column(String(255), nullable=True, index=True)  # id from bridge API
+    status = Column(String(50), nullable=False, index=True)  # pending, submitted, completed, failed
+    amount = Column(Numeric(36, 18), nullable=True)
+    token_address = Column(String(66), nullable=True)
+    market_event_id = Column(Integer, ForeignKey("market_events.id"), nullable=True, index=True)
+    outcome_token_id = Column(String(255), nullable=True, index=True)
+    dest_tx_hash = Column(String(66), nullable=True, index=True)  # tx hash on destination chain
+    extra_data = Column(JSONB, nullable=True)  # extra payload from bridge API
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", backref="cross_chain_transactions")
+    organization = relationship("Organization", foreign_keys=[organization_id])
+    market_event = relationship("MarketEvent", backref="cross_chain_transactions")
+
+
+class BridgeTrade(Base):
+    """Bridge trade for ChallengeCoin NFT cross-chain transfers."""
+
+    __tablename__ = "bridge_trades"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_id = Column(Integer, nullable=False, index=True)
+    source_chain_id = Column(Integer, nullable=False, index=True)
+    target_chain_id = Column(Integer, nullable=False, index=True)
+    target_address = Column(String(66), nullable=False, index=True)
+    trade_type = Column(String(50), nullable=False, default="transfer", index=True)
+    status = Column(String(50), nullable=False, index=True)  # pending, locked, bridging, completed, failed
+    lock_tx_hash = Column(String(66), nullable=True, index=True)
+    bridge_external_id = Column(String(255), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", backref="bridge_trades")
 
 
 class Policy(Base):
@@ -1969,6 +2157,64 @@ class PermissionKey(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class WhitelistScope(str, enum.Enum):
+    """Scope of a whitelist profile: file, ip, implementation, node, or unified."""
+
+    FILE = "file"
+    IP = "ip"
+    IMPLEMENTATION = "implementation"
+    NODE = "node"
+    UNIFIED = "unified"
+
+
+class WhitelistProfile(Base):
+    """Unified whitelist: file categories/extensions, IP/CIDR, implementations, nodes."""
+
+    __tablename__ = "whitelist_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, index=True)
+    scope = Column(String(50), nullable=False, index=True)  # file, ip, implementation, node, unified
+
+    # File: aligned with verification_file_whitelist YAML
+    enabled_categories = Column(JSONB, nullable=True)  # ["legal","financial",...]
+    file_types = Column(JSONB, nullable=True)  # {"allowed_extensions":[...],"max_file_size_mb":50}
+    subdirectories = Column(JSONB, nullable=True)  # {"documents":{"enabled":true,"priority":1},...}
+
+    # IP
+    allowed_ips = Column(JSONB, nullable=True)  # ["1.2.3.4",...]
+    allowed_cidrs = Column(JSONB, nullable=True)  # ["10.0.0.0/8",...]
+
+    # Implementations and nodes
+    implementation_ids = Column(JSONB, nullable=True)  # [1,2] FK to verified_implementations.id
+    allowed_nodes = Column(JSONB, nullable=True)  # [{"id":"","host":"","purpose":"api"|"worker"|"blockchain"|"other"}]
+
+    preset_implementation_id = Column(Integer, ForeignKey("verified_implementations.id", ondelete="SET NULL"), nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "scope": self.scope,
+            "enabled_categories": self.enabled_categories,
+            "file_types": self.file_types,
+            "subdirectories": self.subdirectories,
+            "allowed_ips": self.allowed_ips,
+            "allowed_cidrs": self.allowed_cidrs,
+            "implementation_ids": self.implementation_ids,
+            "allowed_nodes": self.allowed_nodes,
+            "preset_implementation_id": self.preset_implementation_id,
+            "organization_id": self.organization_id,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class SharingEvent(Base):
     """Sharing event for blockchain-notarized send/receive of .nexus files."""
 
@@ -2279,6 +2525,8 @@ class SecuritizationPool(Base):
     cdm_payload = Column(JSONB, nullable=False)  # Full CDM SecuritizationPool object
     cdm_data = Column(JSONB, nullable=True)  # Additional CDM data (payment schedule, etc.)
     status = Column(String(50), nullable=False, index=True)  # 'draft', 'pending_notarization', 'notarized', 'filed', 'active'
+    lock_period_days = Column(Integer, nullable=True)  # Deterministic lock for equity bundles
+    lock_until = Column(DateTime, nullable=True)  # Lock expiry (lock_until or created_at + lock_period_days)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     notarized_at = Column(DateTime, nullable=True)
@@ -2306,6 +2554,8 @@ class SecuritizationPool(Base):
             "cdm_payload": self.cdm_payload,
             "cdm_data": self.cdm_data,
             "status": self.status,
+            "lock_period_days": self.lock_period_days,
+            "lock_until": self.lock_until.isoformat() if self.lock_until else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "notarized_at": self.notarized_at.isoformat() if self.notarized_at else None,
@@ -2439,10 +2689,12 @@ class SecuritizationPoolAsset(Base):
     pool_id = Column(Integer, ForeignKey("securitization_pools.id", ondelete="CASCADE"), nullable=False, index=True)
     deal_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
     loan_asset_id = Column(Integer, ForeignKey("loan_assets.id"), nullable=True, index=True)
-    asset_type = Column(String(50), nullable=False)  # 'deal', 'loan_asset'
-    asset_id = Column(String(255), nullable=False)  # Composite identifier
-    asset_value = Column(Numeric(20, 2), nullable=False)
-    currency = Column(String(3), nullable=False)
+    asset_type = Column(String(50), nullable=False)  # 'deal', 'loan_asset', 'equity', 'commodity'
+    asset_id = Column(String(255), nullable=True)  # Composite identifier (deal_N, loan_N, equity_SYM, commodity_CODE)
+    asset_value = Column(Numeric(20, 2), nullable=True)
+    currency = Column(String(3), nullable=True)
+    equity_symbol = Column(String(50), nullable=True)  # e.g. AAPL when asset_type=equity
+    commodity_code = Column(String(50), nullable=True)  # e.g. GOLD, WTI when asset_type=commodity
     allocation_percentage = Column(Numeric(5, 2), nullable=True)
     allocation_amount = Column(Numeric(20, 2), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -2461,8 +2713,10 @@ class SecuritizationPoolAsset(Base):
             "loan_asset_id": self.loan_asset_id,
             "asset_type": self.asset_type,
             "asset_id": self.asset_id,
-            "asset_value": str(self.asset_value),
+            "asset_value": str(self.asset_value) if self.asset_value is not None else None,
             "currency": self.currency,
+            "equity_symbol": self.equity_symbol,
+            "commodity_code": self.commodity_code,
             "allocation_percentage": float(self.allocation_percentage) if self.allocation_percentage else None,
             "allocation_amount": str(self.allocation_amount) if self.allocation_amount else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -2568,6 +2822,243 @@ class PaymentEvent(Base):
             "metadata": self.payment_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ============================================================================
+# Credit Models (Rolling Credits)
+# ============================================================================
+
+
+class CreditBalance(Base):
+    """User credit balance with type support (rolling credits from subscriptions)."""
+
+    __tablename__ = "credit_balances"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    organization_id = Column(Integer, nullable=True, index=True)  # FK to organizations.id when that table exists
+
+    balances = Column(JSONB, nullable=False, default=dict)
+    total_balance = Column(Numeric(19, 4), default=0, nullable=False)
+
+    lifetime_earned = Column(JSONB, nullable=False, default=dict)
+    lifetime_spent = Column(JSONB, nullable=False, default=dict)
+
+    blockchain_registered = Column(Boolean, default=False, nullable=False)
+    blockchain_token_id = Column(String(255), nullable=True, unique=True, index=True)
+    blockchain_tx_hash = Column(String(255), nullable=True, index=True)
+    blockchain_chain_id = Column(Integer, nullable=True)
+
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="credit_balance")
+    transactions = relationship("CreditTransaction", back_populates="balance", cascade="all, delete-orphan")
+
+    def get_balance(self, credit_type: str = "universal") -> Decimal:
+        if credit_type == "universal":
+            return Decimal(str(self.total_balance or 0))
+        b = self.balances or {}
+        return Decimal(str(b.get(credit_type, 0)))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "organization_id": self.organization_id,
+            "balances": self.balances or {},
+            "total_balance": float(self.total_balance) if self.total_balance is not None else 0,
+            "lifetime_earned": self.lifetime_earned or {},
+            "lifetime_spent": self.lifetime_spent or {},
+            "blockchain_registered": self.blockchain_registered,
+            "blockchain_token_id": self.blockchain_token_id,
+            "blockchain_tx_hash": self.blockchain_tx_hash,
+            "blockchain_chain_id": self.blockchain_chain_id,
+            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class CreditTransaction(Base):
+    """Credit transaction with type support (subscription, purchase, usage, conversion, refund)."""
+
+    __tablename__ = "credit_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    balance_id = Column(Integer, ForeignKey("credit_balances.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    organization_id = Column(Integer, nullable=True, index=True)
+
+    transaction_type = Column(String(50), nullable=False)
+    credit_type = Column(String(50), nullable=False, index=True)
+    amount = Column(Numeric(19, 4), nullable=False)
+
+    balance_before = Column(JSONB, nullable=True)
+    balance_after = Column(JSONB, nullable=True)
+
+    feature = Column(String(100), nullable=True, index=True)
+    related_transaction_id = Column(String(255), nullable=True, index=True)
+
+    subscription_id = Column(Integer, ForeignKey("user_subscriptions.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    blockchain_verified = Column(Boolean, default=False, nullable=False)
+    blockchain_tx_hash = Column(String(255), nullable=True, index=True)
+    bridge_tx_hash = Column(String(255), nullable=True, index=True)
+
+    base_cost = Column(Numeric(19, 4), nullable=True)
+    adaptive_cost = Column(Numeric(19, 4), nullable=True)
+    pricing_factors = Column(JSONB, nullable=True)
+
+    description = Column(Text, nullable=True)
+    payment_event_id = Column(Integer, ForeignKey("payment_events.id", ondelete="SET NULL"), nullable=True, index=True)
+    extra_metadata = Column(JSONB, name="metadata", nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    balance = relationship("CreditBalance", back_populates="transactions")
+    user = relationship("User", foreign_keys=[user_id])
+    subscription = relationship("UserSubscription", foreign_keys=[subscription_id])
+    payment_event = relationship("PaymentEvent", foreign_keys=[payment_event_id])
+
+
+class StockPrediction(Base):
+    """Stock price prediction from Chronos or technical strategy."""
+
+    __tablename__ = "stock_predictions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    timeframe = Column(String(20), nullable=False, index=True)  # daily, hourly, 15min
+    model_id = Column(String(255), nullable=False)
+    strategy = Column(String(50), nullable=False, index=True)  # chronos, technical
+    forecast = Column(JSONB, nullable=True)
+    lookback_days = Column(Integer, nullable=False)
+    horizon = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    prediction_metadata = Column(JSONB, name="metadata", nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "symbol": self.symbol,
+            "timeframe": self.timeframe,
+            "model_id": self.model_id,
+            "strategy": self.strategy,
+            "forecast": self.forecast,
+            "lookback_days": self.lookback_days,
+            "horizon": self.horizon,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "metadata": self.prediction_metadata,
+        }
+
+
+class StockPredictionCache(Base):
+    """Cache for stock prediction results by cache_key."""
+
+    __tablename__ = "stock_prediction_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cache_key = Column(String(512), nullable=False, unique=True, index=True)
+    result = Column(JSONB, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+
+class DataCache(Base):
+    """
+    Unified cache for market data, tool responses, and external API results.
+    Supports time series (OHLCV, aggregates) and punctual (snapshots, fundamentals, news, quotes).
+    source: provider (market_data, polygon, alpha_vantage, tickertick, web_search, trading).
+    kind: timeseries | punctual (for TTL and audit).
+    """
+
+    __tablename__ = "data_cache"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cache_key = Column(String(512), nullable=False, unique=True, index=True)
+    source = Column(String(64), nullable=False, index=True)
+    kind = Column(String(32), nullable=False, index=True)  # timeseries | punctual
+    result = Column(JSONB, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "cache_key": self.cache_key,
+            "source": self.source,
+            "kind": self.kind,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PredictionOrderRecommendation(Base):
+    """Order recommendation (buy/sell/hold) from prediction or strategy."""
+
+    __tablename__ = "prediction_order_recommendations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    prediction_id = Column(Integer, ForeignKey("stock_predictions.id", ondelete="SET NULL"), nullable=True, index=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    action = Column(String(20), nullable=False, index=True)  # buy, sell, hold
+    size = Column(Numeric(19, 4), nullable=True)
+    confidence = Column(Float, nullable=False)
+    strategy = Column(String(50), nullable=False, index=True)
+    reasoning = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    extra = Column(JSONB, nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    prediction = relationship("StockPrediction", foreign_keys=[prediction_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "prediction_id": self.prediction_id,
+            "symbol": self.symbol,
+            "action": self.action,
+            "size": float(self.size) if self.size is not None else None,
+            "confidence": self.confidence,
+            "strategy": self.strategy,
+            "reasoning": self.reasoning,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "extra": self.extra,
+        }
+
+
+class TrainingJob(Base):
+    """Chronos or other model training job."""
+
+    __tablename__ = "training_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    model_id = Column(String(255), nullable=False, index=True)
+    status = Column(String(50), nullable=False, index=True)  # pending, running, completed, failed
+    config = Column(JSONB, nullable=False)
+    metrics = Column(JSONB, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    error_message = Column(Text, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "model_id": self.model_id,
+            "status": self.status,
+            "config": self.config,
+            "metrics": self.metrics,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "error_message": self.error_message,
         }
 
 
@@ -3052,8 +3543,9 @@ class VerifiedImplementation(Base):
     base_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     configuration = Column(JSONB, nullable=True)  # Provider-specific config
+    whitelist_preset = Column(JSONB, nullable=True)  # Recommended enabled_categories, allowed_extensions, allowed_ips, etc. for "populate from verified implementation"
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
+
     user_connections = relationship("UserImplementationConnection", back_populates="implementation")
     
     def to_dict(self):
@@ -3340,6 +3832,86 @@ class Order(Base):
             "created_at": self.created_at.isoformat() if self.created_at else "",
             "updated_at": self.updated_at.isoformat() if self.updated_at else "",
         }
+
+
+class ManualHolding(Base):
+    """Manually entered asset holding (Phase 0: Manual Asset Entry)."""
+
+    __tablename__ = "manual_holdings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    symbol = Column(String(50), nullable=False, index=True)
+    quantity = Column(Numeric(20, 8), nullable=False)
+    average_cost = Column(Numeric(20, 8), nullable=True)
+    currency = Column(String(3), default="USD", nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", backref="manual_holdings")
+
+
+class ManualAsset(Base):
+    """Manually entered asset with optional amortization (Phase 3: fixed income, real estate, etc.)."""
+
+    __tablename__ = "manual_assets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    asset_type = Column(String(50), nullable=False, index=True)  # fixed_income, real_estate, physical, interest_account
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    purchase_price = Column(Numeric(19, 4), nullable=False)
+    current_value = Column(Numeric(19, 4), nullable=True)
+    quantity = Column(Numeric(19, 4), nullable=True)
+    unit = Column(String(20), nullable=True)  # oz, kg, shares
+    # Fixed income / amortization
+    maturity_date = Column(Date, nullable=True, index=True)
+    interest_rate = Column(Numeric(10, 4), nullable=True)
+    payment_frequency = Column(String(20), nullable=True)  # monthly, quarterly, annually, at_maturity
+    amortization_schedule = Column(JSONB, nullable=True)  # [{date, principal, interest, remaining}]
+    purchase_date = Column(Date, nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", backref="manual_assets")
+    alerts = relationship("AssetAlert", back_populates="asset", cascade="all, delete-orphan")
+
+
+class AssetAlert(Base):
+    """Alerts for manual assets: maturity, price threshold, amortization payment (Phase 3)."""
+
+    __tablename__ = "asset_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset_id = Column(Integer, ForeignKey("manual_assets.id", ondelete="CASCADE"), nullable=False, index=True)
+    alert_type = Column(String(50), nullable=False, index=True)  # maturity, price_threshold, amortization_payment
+    trigger_date = Column(Date, nullable=True, index=True)
+    trigger_price = Column(Numeric(19, 4), nullable=True)
+    message = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    notified = Column(Boolean, default=False, nullable=False)
+    notified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    asset = relationship("ManualAsset", back_populates="alerts")
+
+
+class Watchlist(Base):
+    """User watchlist of symbols (Trading Phase 4)."""
+
+    __tablename__ = "watchlists"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    symbols = Column(JSONB, nullable=False)  # ["AAPL","MSFT",...]; migration sets server_default '[]'::jsonb
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", backref="watchlists")
 
 
 # Document Review Models

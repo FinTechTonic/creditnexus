@@ -57,5 +57,26 @@ module.exports = {
       max_restarts: 10,
       min_uptime: '2s',
     },
+    // Wraps the Vite dev client (and backend) in OpenFin via app-dev.json (view at :5000). Logs to logs/pm2/openfin-dev-*.log.
+    {
+      name: 'openfin-dev',
+      script: 'node',
+      args: ['scripts/pm2-openfin-launcher.js'],
+      cwd: projectRoot,
+      interpreter: 'none',
+      env: {
+        NODE_ENV: 'development',
+        OPENFIN_ENABLED: process.env.OPENFIN_ENABLED || '1',
+        OPENFIN_MANIFEST_URL: process.env.OPENFIN_MANIFEST_URL || 'http://localhost:8000/openfin/app-dev.json',
+        BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:8000',
+        FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5000',
+      },
+      out_file: path.join(logsDir, 'openfin-dev-out.log'),
+      error_file: path.join(logsDir, 'openfin-dev-error.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS',
+      merge_logs: false,
+      watch: false,
+      autorestart: false,
+    },
   ],
 };

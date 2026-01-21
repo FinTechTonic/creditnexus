@@ -317,41 +317,57 @@ COMPANIES_HOUSE_API_KEY=your_api_key_here
 </details>
 
 <details>
-<summary><b>Polymarket (SFP prediction markets)</b></summary>
+<summary><b>Alpaca (Trading & Stock-Prediction Market Data)</b></summary>
 
-Polymarket-style prediction markets for structured and securitized products. Internal create/list/resolve; optional Gamma/CLOB for discovery and order books.
+Alpaca provides live/paper trading and historical bars for stock prediction and backtesting.
 
-1. **Copy `.env.example` to `.env` and add:**
+1. **Create an account** at https://alpaca.markets/ and get API keys (paper and/or live).
+2. **Copy `.env.example` to `.env` and add:**
 ```env
-POLYMARKET_ENABLED=true
-POLYMARKET_GAMMA_API_URL=https://gamma-api.polymarket.com
-POLYMARKET_API_URL=https://clob.polymarket.com
-# L2/Builder (all four for CLOB L2): POLYMARKET_API_KEY, POLYMARKET_SECRET, POLYMARKET_PASSPHRASE, POLYMARKET_SIGNER_ADDRESS
-# POLYMARKET_PUBLISH_EXTERNAL=false
+ALPACA_API_KEY=your_key
+ALPACA_API_SECRET=your_secret
+ALPACA_BASE_URL=https://paper-api.alpaca.markets   # or https://api.alpaca.markets for live
+ALPACA_DATA_ENABLED=true   # Use Alpaca for historical bars when set (else yahooquery)
 ```
+3. **Stock prediction**: Enable `STOCK_PREDICTION_ENABLED=true` to use daily/hourly/15min predictions and backtests. With `ALPACA_DATA_ENABLED=true`, OHLCV and trading quotes prefer Alpaca.
 
-2. **Frontend:** Market creation has a “Register with Polymarket (Gamma/CLOB)” option; `POST /api/polymarket/markets` supports `publish_to_polymarket`.
-
-> 📖 **Full setup:** [dev/POLYMARKET_CONFIGURATION_GUIDE.md](dev/POLYMARKET_CONFIGURATION_GUIDE.md) — L2/Builder (api key, secret, passphrase, signer address), HMAC auth, create-market, proxy endpoints, troubleshooting.
+> 📖 **Details**: See [dev/environment.md](dev/environment.md) for Alpaca and related cache TTLs.
 
 </details>
 
 <details>
-<summary><b>RevenueCat (subscriptions & entitlements)</b></summary>
+<summary><b>Polymarket (Prediction Markets / SFP)</b></summary>
 
-RevenueCat for Pro (and custom) entitlements, integrated with x402: subscription upgrade payments trigger optional promotional entitlement grants.
+Polymarket-style prediction markets for Structured Financial Products (SFPs).
 
-1. **Copy `.env.example` to `.env` and add:**
+1. **Enable the feature** and set CLOB/Gamma/Data URLs if using Polymarket’s public APIs.
+2. **Copy `.env.example` to `.env` and add (as needed):**
 ```env
-REVENUECAT_ENABLED=true
-REVENUECAT_API_KEY=sk_your_secret_key
-REVENUECAT_ENTITLEMENT_PRO=pro
-SUBSCRIPTION_UPGRADE_AMOUNT=9.99
+POLYMARKET_ENABLED=true
+POLYMARKET_API_URL=https://clob.polymarket.com
+POLYMARKET_API_KEY=optional_clob_key
+POLYMARKET_NETWORK=polygon
+POLYMARKET_GAMMA_API_URL=https://gamma-api.polymarket.com
+POLYMARKET_DATA_API_URL=https://data-api.polymarket.com
+POLYMARKET_SURVEILLANCE_ENABLED=false
+POLYMARKET_PUBLISH_EXTERNAL=false
 ```
+3. **Cross-chain (optional):** For outcome tokens on L2s, set `CROSS_CHAIN_ENABLED=true`, `POLYMARKET_BRIDGE_API_URL`, `OUTCOME_TOKEN_CHAIN_ID`, `SFP_OUTCOME_TOKEN_CONTRACT`.
 
-2. **Endpoints:** `GET /api/subscriptions/entitlement` (check Pro), `POST /api/subscriptions/upgrade` (x402 flow; without `payment_payload` returns 402 with `payment_request`).
+> 📖 **Details**: See [dev/environment.md](dev/environment.md) for all Polymarket and cross-chain options.
 
-> 📖 **Full setup:** [dev/REVENUECAT_CONFIGURATION_GUIDE.md](dev/REVENUECAT_CONFIGURATION_GUIDE.md) — env vars, entitlement/upgrade flows, PaymentRouter and x402, troubleshooting.
+</details>
+
+<details>
+<summary><b>Data Cache & New Services (Polygon, Alpha Vantage, Serper, Tavily, Cache TTLs)</b></summary>
+
+Unified caching for market data, tools, and external APIs. TTLs are configurable via environment variables.
+
+- **Cache TTLs (seconds):** `CACHE_TTL_OHLCV_1D`, `CACHE_TTL_OHLCV_1H`, `CACHE_TTL_OHLCV_15M`, `CACHE_TTL_SNAPSHOT`, `CACHE_TTL_FUNDAMENTAL`, `CACHE_TTL_NEWS`, `CACHE_TTL_WEB_SEARCH`, `CACHE_TTL_TRADING_QUOTE`, `CACHE_TTL_BACKTEST`. Used by `app.core.data_cache` for OHLCV, snapshots, fundamentals, news, web search, Alpaca quotes, and backtest results.
+- **LangAlpha / Quantitative:** `POLYGON_API_KEY` (Polygon.io), `ALPHA_VANTAGE_API_KEY`, `TAVILY_API_KEY`, `TICKERTICK_API_KEY` (optional), `SERPER_API_KEY` (web search).
+- **Web search:** `SERPER_API_KEY`, `WEB_SEARCH_RATE_LIMIT`, `WEB_SEARCH_ANALYTICS_DIR`.
+
+> 📖 **Full list**: See [dev/environment.md](dev/environment.md) for defaults and descriptions.
 
 </details>
 
@@ -510,8 +526,6 @@ npm run dev
 - **[✍️ DigiSigner Webhook Setup](https://tonic-ai.mintlify.app/guides/digisigner-setup)** - Guide for configuring DigiSigner webhooks for digital signatures
 - **[📜 Smart Contracts](contracts/README.md)** - Solidity contract documentation and specifications
 - **[🏗️ Securitization Feature](https://tonic-ai.mintlify.app/features/securitization)** - Complete securitization workflow documentation
-- **[📊 Polymarket Configuration](dev/POLYMARKET_CONFIGURATION_GUIDE.md)** - SFP prediction markets, Gamma/CLOB, env vars
-- **[💳 RevenueCat Configuration](dev/REVENUECAT_CONFIGURATION_GUIDE.md)** - Subscriptions, entitlements, x402 upgrade flow
 
 ---
 

@@ -99,6 +99,8 @@ dependencies = [
     "playwright>=1.57.0",
     "yahooquery>=2.4.1",
     "alpha-vantage>=3.0.0",
+    # Plaid / Banking (Trading Phase 1)
+    "plaid-python>=14.0.0,<40",
     # Metrics & Observability
     "prometheus-client>=0.19.0", # Prometheus Python client
     "prometheus-fastapi-instrumentator>=6.1.0", # FastAPI Prometheus integration

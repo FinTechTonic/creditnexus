@@ -7,6 +7,8 @@ import { DocumentHistory } from '@/components/DocumentHistory';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
 import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
+import { BridgeBuilder } from '@/components/BridgeBuilder';
+import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -17,6 +19,7 @@ import {
   PieChart,
   FileCheck,
   DollarSign,
+  ArrowLeftRight,
 } from 'lucide-react';
 import {
   PERMISSION_DOCUMENT_VIEW,
@@ -37,15 +40,6 @@ function ComplianceDashboard() {
     <div className="p-6">
       <h2 className="text-2xl font-bold mb-4">Compliance Dashboard</h2>
       <p className="text-muted-foreground">Compliance monitoring and reporting will be implemented here.</p>
-    </div>
-  );
-}
-
-function PortfolioDashboard() {
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Portfolio Dashboard</h2>
-      <p className="text-muted-foreground">Portfolio management and analytics will be implemented here.</p>
     </div>
   );
 }
@@ -103,6 +97,14 @@ export function UnifiedDashboard() {
         component: () => <MarketDashboard />,
         requiredPermission: 'MARKET_VIEW',
         subscriptionTier: 'pro'
+      },
+      {
+        id: 'bridge',
+        label: 'Bridge',
+        icon: <ArrowLeftRight className="h-4 w-4" />,
+        component: () => <BridgeBuilder />,
+        requiredPermission: 'TRADE_VIEW',
+        subscriptionTier: 'free'
       },
       {
         id: 'documents',
