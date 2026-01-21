@@ -64,6 +64,7 @@ class LinkPayloadGenerator:
         verifier_info: Optional[Dict[str, Any]] = None,
         file_references: Optional[List[Dict[str, Any]]] = None,
         expires_in_hours: int = 72,
+        hydrated_payload: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate encrypted verification link payload.
 
@@ -75,23 +76,29 @@ class LinkPayloadGenerator:
             verifier_info: Optional verifier metadata
             file_references: List of document metadata to include
             expires_in_hours: Link expiration time
+            hydrated_payload: Optional pre-hydrated payload (if provided, uses this instead)
 
         Returns:
             Base64url-encoded encrypted payload
         """
-        expires_at = (datetime.utcnow() + timedelta(hours=expires_in_hours)).isoformat()
+        # Use hydrated payload if provided
+        if hydrated_payload:
+            payload = hydrated_payload
+        else:
+            expires_at = (datetime.utcnow() + timedelta(hours=expires_in_hours)).isoformat()
 
-        payload = {
-            "verification_id": verification_id,
-            "deal_id": deal_id,
-            "deal_data": deal_data,
-            "cdm_payload": cdm_payload,
-            "verifier_info": verifier_info or {},
-            "file_references": file_references or [],
-            "expires_at": expires_at,
-            "created_at": datetime.utcnow().isoformat(),
-            "version": "2.0",
-        }
+            payload = {
+                "verification_id": verification_id,
+                "deal_id": deal_id,
+                "deal_data": deal_data,
+                "cdm_payload": cdm_payload,
+                "verifier_info": verifier_info or {},
+                "file_references": file_references or [],
+                "expires_at": expires_at,
+                "created_at": datetime.utcnow().isoformat(),
+                "version": "2.0",
+                "hydrated": False,
+            }
 
         # Serialize to JSON
         json_payload = json.dumps(payload, sort_keys=True, separators=(",", ":"))
