@@ -373,9 +373,19 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
                 user = db.query(User).filter(User.id == int(user_id)).first()
                 
                 if user and user.is_active:
-                    
-                    user_dict = user.to_dict()
-                    
+                    try:
+                        user_dict = user.to_dict()
+                    except Exception as e:
+                        logger.warning("user.to_dict() failed (e.g. decrypt), returning minimal user: %s", e)
+                        user_dict = {
+                            "id": user.id,
+                            "email": "",
+                            "display_name": "",
+                            "profile_image": getattr(user, "profile_image", None),
+                            "role": user.role or "viewer",
+                            "is_active": user.is_active,
+                            "last_login": None,
+                        }
                     return JSONResponse({
                         "authenticated": True,
                         "user": user_dict
@@ -391,8 +401,21 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
     if not user or not user.is_active:
         request.session.clear()
         return JSONResponse({"authenticated": False, "user": None})
-    
+
+    try:
+        user_dict = user.to_dict()
+    except Exception as e:
+        logger.warning("user.to_dict() failed (e.g. decrypt), returning minimal user: %s", e)
+        user_dict = {
+            "id": user.id,
+            "email": "",
+            "display_name": "",
+            "profile_image": getattr(user, "profile_image", None),
+            "role": user.role or "viewer",
+            "is_active": user.is_active,
+            "last_login": None,
+        }
     return JSONResponse({
         "authenticated": True,
-        "user": user.to_dict()
+        "user": user_dict
     })

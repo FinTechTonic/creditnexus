@@ -6,7 +6,6 @@ import { Dashboard } from '@/components/Dashboard';
 import { DocumentHistory } from '@/components/DocumentHistory';
 import { ApplicationDashboard } from '@/components/ApplicationDashboard';
 import { TradingDashboard } from '@/components/trading/TradingDashboard';
-import { PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -102,8 +101,8 @@ export function UnifiedDashboard() {
         label: 'Trading',
         icon: <TrendingUp className="h-4 w-4" />,
         component: () => <TradingDashboard />,
-        requiredPermission: PERMISSION_TRADE_VIEW,
-        subscriptionTier: 'pro'
+        // requiredPermission removed: tab always visible; TradingDashboard's PermissionGate gates content
+        subscriptionTier: 'free'
       },
       {
         id: 'polymarket',
@@ -173,9 +172,10 @@ export function UnifiedDashboard() {
         return false;
       }
       
-      // Check permissions
+      // Check permissions (admin bypass: always allow if role is admin)
       if (tab.requiredPermission) {
-        if (!hasPermission(tab.requiredPermission)) {
+        const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+        if (!isAdmin && !hasPermission(tab.requiredPermission)) {
           return false;
         }
       }
@@ -195,7 +195,7 @@ export function UnifiedDashboard() {
       setActiveTab(dashboardTabs[0].id);
     }
   }, [dashboardTabs, activeTab]);
-  
+
   return (
     <div className="flex flex-col h-full">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
