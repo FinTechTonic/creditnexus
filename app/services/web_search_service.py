@@ -22,6 +22,7 @@ from limits.aio.storage import MemoryStorage
 from limits.aio.strategies import MovingWindowRateLimiter
 
 from app.core.config import settings
+from app.core import data_cache as dc
 from app.services.web_search_analytics import (
     record_request,
     last_n_days_df,
@@ -118,7 +119,8 @@ class WebSearchService:
         search_type: str = "search",
         num_results: Optional[int] = 4,
         rerank: bool = True,
-        top_k_after_rerank: Optional[int] = None
+        top_k_after_rerank: Optional[int] = None,
+        db: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Search the web and optionally rerank results.
@@ -127,6 +129,7 @@ class WebSearchService:
         - Reranking support (local or remote)
         - CDM event generation
         - Analytics integration
+        - Optional caching via data_cache when db is provided (else in-memory)
         
         Args:
             query: Search query
@@ -134,18 +137,12 @@ class WebSearchService:
             num_results: Number of results to fetch (1-20)
             rerank: Whether to rerank results (default: True)
             top_k_after_rerank: Number of results after reranking (default: num_results)
+            db: Optional DB session for DataCache; None for in-memory only.
             
         Returns:
             Dict with search results, metadata, and CDM event
         """
         start_time = time.time()
-        
-        if not self.serper_api_key:
-            await record_request(None, num_results)
-            raise ValueError(
-                "SERPER_API_KEY not configured. "
-                "Set SERPER_API_KEY environment variable or pass to constructor."
-            )
         
         # Validate inputs
         if num_results is None:
@@ -154,6 +151,21 @@ class WebSearchService:
         
         if search_type not in ["search", "news"]:
             search_type = "search"
+        
+        tk = top_k_after_rerank if top_k_after_rerank is not None else num_results
+        cache_key = dc.make_key("web_search", query, search_type, num_results, rerank, tk)
+        cached = dc.get(cache_key, db)
+        if cached is not None:
+            return cached
+        
+        # Serper is the default and required web search backend
+        if not self.serper_api_key:
+            duration = time.time() - start_time
+            await record_request(duration, num_results or 4)
+            raise ValueError(
+                "SERPER_API_KEY not configured. "
+                "Set SERPER_API_KEY (get from https://serper.dev) to use web search."
+            )
         
         try:
             # Check rate limit
@@ -204,13 +216,16 @@ class WebSearchService:
             if not results:
                 duration = time.time() - start_time
                 await record_request(duration, num_results)
-                return {
+                out = {
                     "query": query,
                     "search_type": search_type,
                     "results": [],
                     "extracted_content": [],
-                    "cdm_event": None
+                    "cdm_event": None,
+                    "duration": duration,
                 }
+                dc.set(cache_key, out, dc.TTL_WEB_SEARCH, dc.SOURCE_WEB_SEARCH, dc.KIND_PUNCTUAL, db)
+                return out
             
             # Fetch and extract content
             urls = [r["link"] for r in results]
@@ -262,6 +277,36 @@ class WebSearchService:
                 
                 chunks.append(chunk)
             
+            # Fallback: when trafilatura extracts nothing, use snippet so agents get usable content
+            if not chunks and results:
+                for meta in results:
+                    link = meta.get("link", "")
+                    snippet = meta.get("snippet", "")
+                    domain = (link.split("/")[2].replace("www.", "") if len(link.split("/")) > 2 else "") if link else ""
+                    if search_type == "news":
+                        try:
+                            date_str = meta.get("date", "")
+                            date_iso = dateparser.parse(date_str, fuzzy=True).strftime("%Y-%m-%d") if date_str else ""
+                        except Exception:
+                            date_iso = ""
+                        chunks.append({
+                            "title": meta.get("title", ""),
+                            "source": meta.get("source", domain),
+                            "domain": domain,
+                            "date": date_iso,
+                            "url": link,
+                            "content": snippet or "(No content extracted)"
+                        })
+                    else:
+                        chunks.append({
+                            "title": meta.get("title", ""),
+                            "domain": domain,
+                            "source": domain,
+                            "url": link,
+                            "content": snippet or "(No content extracted)"
+                        })
+                chunks = chunks[: num_results]
+            
             # Rerank results if enabled
             if rerank and chunks:
                 chunks = await self._rerank_results(query, chunks, top_k_after_rerank or num_results)
@@ -288,14 +333,16 @@ class WebSearchService:
             duration = time.time() - start_time
             await record_request(duration, num_results)
             
-            return {
+            out = {
                 "query": query,
                 "search_type": search_type,
                 "results": results,
                 "extracted_content": chunks,
                 "cdm_event": cdm_event,
-                "duration": duration
+                "duration": duration,
             }
+            dc.set(cache_key, out, dc.TTL_WEB_SEARCH, dc.SOURCE_WEB_SEARCH, dc.KIND_PUNCTUAL, db)
+            return out
             
         except Exception as e:
             duration = time.time() - start_time

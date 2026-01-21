@@ -13,7 +13,7 @@ import re
 import secrets
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, Set
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -24,7 +24,15 @@ import bcrypt
 import hashlib
 
 from app.db import get_db
-from app.db.models import User, AuditLog, AuditAction, UserRole, RefreshToken
+from app.db.models import (
+    AuditAction,
+    AuditLog,
+    Organization,
+    RefreshToken,
+    User,
+    UserImplementationConnection,
+    UserRole,
+)
 from app.core.config import settings
 from app.utils import get_debug_log_path
 
@@ -32,7 +40,6 @@ logger = logging.getLogger(__name__)
 
 jwt_router = APIRouter(prefix="/auth", tags=["authentication"])
 security = HTTPBearer(auto_error=False)
-
 
 # Rate limiting will be applied via decorators using limiter from app.state
 # For routes that need rate limiting, use: @limiter.limit("X/minute")
@@ -91,12 +98,10 @@ LOCKOUT_DURATION_MINUTES = 30
 
 MIN_PASSWORD_LENGTH = 12
 
-
 class PasswordStrengthError(Exception):
     """Raised when password doesn't meet security requirements."""
 
     pass
-
 
 class UserRegister(BaseModel):
     """Registration request schema."""
@@ -104,7 +109,9 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     display_name: str
-
+    organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
+    organization_id: Optional[int] = None  # FK to organizations.id
+    
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
@@ -131,13 +138,11 @@ class UserRegister(BaseModel):
 
         return v
 
-
 class UserLogin(BaseModel):
     """Login request schema."""
 
     email: EmailStr
     password: str
-
 
 class PasswordChange(BaseModel):
     """Password change request schema."""
@@ -171,21 +176,19 @@ class PasswordChange(BaseModel):
 
         return v
 
-
 class TokenResponse(BaseModel):
-    """Token response schema."""
-
+    """Token response schema. Includes optional organization and implementations for hydrated sign-in."""
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
-
+    organization: Optional[Dict[str, Any]] = None
+    implementations: Optional[List[Dict[str, Any]]] = None
 
 class RefreshTokenRequest(BaseModel):
     """Refresh token request schema."""
 
     refresh_token: str
-
 
 class UserSignupStep1(BaseModel):
     """Step 1 signup request: Basic info and role selection (all fields optional for partial signup)."""
@@ -224,7 +227,6 @@ class UserSignupStep1(BaseModel):
 
         return v
 
-
 class UserSignupStep2(BaseModel):
     """Step 2 signup request: Profile enrichment data."""
 
@@ -238,14 +240,12 @@ class UserSignupStep2(BaseModel):
     # For law officers: law_firm, bar_number, etc.
     # For accountants: firm_name, certification_number, etc.
 
-
 class SignupTokenResponse(BaseModel):
     """Response for step 1 signup with temporary signup token."""
 
     signup_token: str
     expires_in: int  # seconds until expiration
     message: str = "User created successfully. Please complete profile in step 2."
-
 
 def get_password_hash(password: str) -> str:
     """Hash a password using bcrypt.
@@ -268,7 +268,6 @@ def get_password_hash(password: str) -> str:
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password_bytes, salt).decode("utf-8")
 
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash.
 
@@ -286,7 +285,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     else:
         return bcrypt.checkpw(password_bytes, hashed_bytes)
 
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
@@ -294,133 +292,42 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "access"})
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
-
 def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT refresh token and store it in the database."""
-    # #region agent log
-    import json
-
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "login-attempt",
-        "hypothesisId": "F",
-        "location": "jwt_auth.py:create_refresh_token:entry",
-        "message": "create_refresh_token called",
-        "data": {"user_id": data.get("sub")},
-        "timestamp": int(datetime.utcnow().timestamp() * 1000),
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     logger.debug("create_refresh_token called", extra={"user_id": data.get("sub")})
 
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
     jti = secrets.token_urlsafe(16)
-    to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "refresh", "jti": jti})
-
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:before_db_add"
-    log_data["message"] = "Before RefreshToken creation"
-    log_data["data"] = {
-        "jti": jti,
-        "user_id": data.get("sub"),
-        "user_id_int": int(data.get("sub")) if data.get("sub") else None,
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "refresh",
+        "jti": jti
+    })
+    
     try:
         token_record = RefreshToken(
             jti=jti, user_id=int(data.get("sub")), expires_at=expire, is_revoked=False
         )
         db.add(token_record)
     except Exception as e:
-        # #region agent log
-        log_data["location"] = "jwt_auth.py:create_refresh_token:db_add_error"
-        log_data["message"] = "RefreshToken creation/add failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:before_commit"
-    log_data["message"] = "Before db.commit()"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     try:
         db.commit()
     except Exception as e:
-        # #region agent log
-        log_data["location"] = "jwt_auth.py:create_refresh_token:commit_error"
-        log_data["message"] = "db.commit() failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
 
     logger.debug("Refresh token created", extra={"jti": jti, "user_id": data.get("sub")})
-
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:before_jwt_encode"
-    log_data["message"] = "Before JWT encoding"
-    log_data["data"] = {"has_refresh_secret": bool(JWT_REFRESH_SECRET_KEY)}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     try:
         token = jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, algorithm=JWT_ALGORITHM)
     except Exception as e:
-        # #region agent log
-        log_data["location"] = "jwt_auth.py:create_refresh_token:jwt_encode_error"
-        log_data["message"] = "JWT encoding failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["location"] = "jwt_auth.py:create_refresh_token:success"
-    log_data["message"] = "Refresh token created successfully"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     return token
-
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and validate an access token."""
@@ -431,7 +338,6 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         return payload
     except JWTError:
         return None
-
 
 def decode_refresh_token(token: str, db: Session) -> Optional[Dict[str, Any]]:
     """Decode and validate a refresh token, checking database for revocation."""
@@ -458,7 +364,6 @@ def decode_refresh_token(token: str, db: Session) -> Optional[Dict[str, Any]]:
     except JWTError:
         return None
 
-
 def revoke_refresh_token(jti: str, db: Session) -> None:
     """Revoke a refresh token by its JTI in the database."""
     token_record = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
@@ -467,14 +372,12 @@ def revoke_refresh_token(jti: str, db: Session) -> None:
         token_record.revoked_at = datetime.utcnow()
         db.commit()
 
-
 def revoke_all_user_tokens(user_id: int, db: Session) -> None:
     """Revoke all refresh tokens for a user."""
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user_id, RefreshToken.is_revoked == False
     ).update({"is_revoked": True, "revoked_at": datetime.utcnow()})
     db.commit()
-
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -498,30 +401,10 @@ async def get_current_user(
 
     return user
 
-
 async def require_auth(
     credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)
 ) -> User:
     """Require valid authentication - raises exception if not authenticated."""
-    # #region agent log
-    import json
-    from datetime import datetime
-
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "auth-check",
-        "hypothesisId": "JWT persistence",
-        "location": "jwt_auth.py:require_auth",
-        "message": "Checking authentication",
-        "data": {"has_credentials": credentials is not None},
-        "timestamp": int(datetime.now().timestamp() * 1000),
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
     if not credentials:
         raise HTTPException(
@@ -531,19 +414,6 @@ async def require_auth(
         )
 
     payload = decode_access_token(credentials.credentials)
-
-    # #region agent log
-    log_data["message"] = "Decoded token"
-    log_data["data"] = {
-        "payload_found": payload is not None,
-        "token_start": credentials.credentials[:10] if credentials.credentials else None,
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
     if not payload:
         raise HTTPException(
@@ -562,16 +432,6 @@ async def require_auth(
 
     user = db.query(User).filter(User.id == int(user_id)).first()
 
-    # #region agent log
-    log_data["message"] = "User lookup"
-    log_data["data"] = {"user_found": user is not None, "user_id": user_id}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -584,7 +444,6 @@ async def require_auth(
 
     return user
 
-
 def check_account_lockout(user: User) -> None:
     """Check if the user account is locked."""
     if user.locked_until and user.locked_until > datetime.utcnow():
@@ -593,7 +452,6 @@ def check_account_lockout(user: User) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Account is locked. Try again in {remaining} minutes.",
         )
-
 
 def handle_failed_login(user: User, db: Session) -> None:
     """Handle a failed login attempt with progressive lockout."""
@@ -604,13 +462,39 @@ def handle_failed_login(user: User, db: Session) -> None:
 
     db.commit()
 
-
 def reset_login_attempts(user: User, db: Session) -> None:
     """Reset failed login attempts after successful login."""
     user.failed_login_attempts = 0
     user.locked_until = None
     user.last_login = datetime.utcnow()
     db.commit()
+
+
+def _hydrate_user_context(user: User, db: Session) -> Dict[str, Any]:
+    """Load organization and implementations for hydrated sign-in and /me."""
+    org = None
+    if user.organization_id:
+        o = db.query(Organization).filter(Organization.id == user.organization_id).first()
+        if o:
+            org = o.to_dict()
+    conns = (
+        db.query(UserImplementationConnection)
+        .filter(
+            UserImplementationConnection.user_id == user.id,
+            UserImplementationConnection.is_active.is_(True),
+        )
+        .all()
+    )
+    impls: List[Dict[str, Any]] = []
+    for c in conns:
+        if c.implementation:
+            impls.append({
+                "id": c.implementation.id,
+                "name": c.implementation.name,
+                "display_name": c.implementation.display_name,
+                "category": c.implementation.category,
+            })
+    return {"organization": org, "implementations": impls}
 
 
 @jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -635,6 +519,7 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name,
         organization_identifier=user_data.organization_identifier,
+        organization_id=user_data.organization_id,
         role=UserRole.ANALYST.value,
         is_active=False,  # Require admin approval
         is_email_verified=False,
@@ -660,7 +545,7 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
 
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
-
+    ctx = _hydrate_user_context(user, db)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -668,10 +553,14 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
     )
 
 
-@jwt_router.post(
-    "/signup/step1", response_model=SignupTokenResponse, status_code=status.HTTP_201_CREATED
-)
-async def signup_step1(request: Request, user_data: UserSignupStep1, db: Session = Depends(get_db)):
+@jwt_router.post("/signup/step1", response_model=SignupTokenResponse, status_code=status.HTTP_201_CREATED)
+async def signup_step1(
+    request: Request,
+    user_data: UserSignupStep1,
+    db: Session = Depends(get_db),
+    organization=ctx["organization"],
+    implementations=ctx["implementations"],
+):
     """Step 1: Create user account with role selection.
 
     Creates a user account with basic information and selected role.
@@ -733,7 +622,6 @@ async def signup_step1(request: Request, user_data: UserSignupStep1, db: Session
         message="User created successfully. Please complete profile in step 2.",
     )
 
-
 class SignupProgressData(BaseModel):
     """Request model for saving signup progress."""
 
@@ -742,7 +630,6 @@ class SignupProgressData(BaseModel):
     display_name: Optional[str] = None
     role: Optional[str] = None
     profile_data: Optional[dict] = None
-
 
 @jwt_router.post("/signup/save-progress")
 async def save_signup_progress(
@@ -797,7 +684,6 @@ async def save_signup_progress(
     db.commit()
 
     return {"status": "saved", "user_id": user.id, "message": "Signup progress saved successfully"}
-
 
 @jwt_router.post("/signup/step2", response_model=TokenResponse, status_code=status.HTTP_200_OK)
 async def signup_step2(
@@ -890,13 +776,14 @@ async def signup_step2(
     # Generate full JWT tokens for login
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
-
+    ctx = _hydrate_user_context(user, db)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
     )
-
 
 @jwt_router.post("/login", response_model=TokenResponse)
 async def login(request: Request, credentials: UserLogin, db: Session = Depends(get_db)):
@@ -952,17 +839,7 @@ async def login(request: Request, credentials: UserLogin, db: Session = Depends(
         if not settings.ENCRYPTION_ENABLED:
             user = db.query(User).filter(User.email == credentials.email).first()
         else:
-            # #region agent log
-            log_data["hypothesisId"] = "A"
-            log_data["location"] = "jwt_auth.py:login:encrypted_email_workaround"
-            log_data["message"] = "Using workaround for encrypted email query"
-            try:
-                with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                    f.write(json.dumps(log_data) + "\n")
-            except Exception:
-                pass
-            # #endregion
-
+            
             # Workaround: Query all users and filter by comparing decrypted emails
             # This is not ideal for performance but works around the type mismatch
             all_users = db.query(User).all()
@@ -975,138 +852,32 @@ async def login(request: Request, credentials: UserLogin, db: Session = Depends(
                         break
                 except Exception as email_error:
                     # If decryption fails for this user, skip it
-                    # #region agent log
-                    log_data["hypothesisId"] = "A"
-                    log_data["location"] = "jwt_auth.py:login:decrypt_error"
-                    log_data["message"] = "Failed to decrypt email for user"
-                    log_data["data"] = {"user_id": u.id, "error": str(email_error)}
-                    try:
-                        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                            f.write(json.dumps(log_data) + "\n")
-                    except Exception:
-                        pass
-                    # #endregion
                     continue
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "A"
-        log_data["location"] = "jwt_auth.py:login:query_error"
-        log_data["message"] = "Database query failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["hypothesisId"] = "A"
-    log_data["location"] = "jwt_auth.py:login:after_query"
-    log_data["message"] = "After database query"
-    log_data["data"] = {"user_found": user is not None, "user_id": user.id if user else None}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     if not user:
         logger.warning("Login failed: user not found", extra={"email": credentials.email})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
-
-    # #region agent log
-    log_data["hypothesisId"] = "B"
-    log_data["location"] = "jwt_auth.py:login:before_lockout_check"
-    log_data["message"] = "Before account lockout check"
-    log_data["data"] = {"locked_until": str(user.locked_until) if user.locked_until else None}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     try:
         check_account_lockout(user)
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "B"
-        log_data["location"] = "jwt_auth.py:login:lockout_error"
-        log_data["message"] = "Account lockout check failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["hypothesisId"] = "B"
-    log_data["location"] = "jwt_auth.py:login:after_lockout_check"
-    log_data["message"] = "After account lockout check"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     if not user.password_hash:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Password login not configured for this account. Use OAuth instead.",
         )
-
-    # #region agent log
-    log_data["hypothesisId"] = "C"
-    log_data["location"] = "jwt_auth.py:login:before_password_verify"
-    log_data["message"] = "Before password verification"
-    log_data["data"] = {
-        "has_password_hash": bool(user.password_hash),
-        "hash_length": len(user.password_hash) if user.password_hash else 0,
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     try:
         password_valid = verify_password(credentials.password, user.password_hash)
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "C"
-        log_data["location"] = "jwt_auth.py:login:password_verify_error"
-        log_data["message"] = "Password verification failed with exception"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["hypothesisId"] = "C"
-    log_data["location"] = "jwt_auth.py:login:after_password_verify"
-    log_data["message"] = "After password verification"
-    log_data["data"] = {"password_valid": password_valid}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     if not password_valid:
         handle_failed_login(user, db)
         remaining_attempts = MAX_LOGIN_ATTEMPTS - user.failed_login_attempts
@@ -1124,57 +895,12 @@ async def login(request: Request, credentials: UserLogin, db: Session = Depends(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated. Contact support."
         )
-
-    # #region agent log
-    log_data["hypothesisId"] = "D"
-    log_data["location"] = "jwt_auth.py:login:before_reset_attempts"
-    log_data["message"] = "Before reset login attempts"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     try:
         reset_login_attempts(user, db)
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "D"
-        log_data["location"] = "jwt_auth.py:login:reset_attempts_error"
-        log_data["message"] = "Reset login attempts failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["hypothesisId"] = "D"
-    log_data["location"] = "jwt_auth.py:login:after_reset_attempts"
-    log_data["message"] = "After reset login attempts"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
-    # #region agent log
-    log_data["hypothesisId"] = "E"
-    log_data["location"] = "jwt_auth.py:login:before_audit_log"
-    log_data["message"] = "Before audit log creation"
-    log_data["data"] = {"user_id": user.id}
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     try:
         audit_log = AuditLog(
             user_id=user.id,
@@ -1188,139 +914,27 @@ async def login(request: Request, credentials: UserLogin, db: Session = Depends(
         db.add(audit_log)
         db.commit()
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "E"
-        log_data["location"] = "jwt_auth.py:login:audit_log_error"
-        log_data["message"] = "Audit log creation/commit failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["hypothesisId"] = "E"
-    log_data["location"] = "jwt_auth.py:login:after_audit_log"
-    log_data["message"] = "After audit log commit"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
-    # #region agent log
-    log_data["hypothesisId"] = "F"
-    log_data["location"] = "jwt_auth.py:login:before_token_creation"
-    log_data["message"] = "Before token creation"
-    log_data["data"] = {
-        "has_jwt_secret": bool(JWT_SECRET_KEY),
-        "has_refresh_secret": bool(JWT_REFRESH_SECRET_KEY),
-        "user_id": user.id,
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     try:
         access_token = create_access_token({"sub": str(user.id), "email": user.email})
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "F"
-        log_data["location"] = "jwt_auth.py:login:access_token_error"
-        log_data["message"] = "Access token creation failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
 
     try:
         refresh_token = create_refresh_token({"sub": str(user.id)}, db)
     except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "F"
-        log_data["location"] = "jwt_auth.py:login:refresh_token_error"
-        log_data["message"] = "Refresh token creation failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         raise
-
-    # #region agent log
-    log_data["hypothesisId"] = "F"
-    log_data["location"] = "jwt_auth.py:login:after_token_creation"
-    log_data["message"] = "After token creation"
-    log_data["data"] = {
-        "has_access_token": bool(access_token),
-        "has_refresh_token": bool(refresh_token),
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     logger.info("Login successful", extra={"user_id": user.id, "email": user.email})
-
-    # #region agent log
-    log_data["hypothesisId"] = "G"
-    log_data["location"] = "jwt_auth.py:login:before_response"
-    log_data["message"] = "Before TokenResponse creation"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
-    try:
-        response = TokenResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        )
-    except Exception as e:
-        # #region agent log
-        log_data["hypothesisId"] = "G"
-        log_data["location"] = "jwt_auth.py:login:response_error"
-        log_data["message"] = "TokenResponse creation failed"
-        log_data["data"] = {"error": str(e), "error_type": type(e).__name__}
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        raise
-
-    # #region agent log
-    log_data["hypothesisId"] = "G"
-    log_data["location"] = "jwt_auth.py:login:success"
-    log_data["message"] = "Login successful, returning response"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
-    return response
-
+    ctx = _hydrate_user_context(user, db)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
+    )
 
 @jwt_router.post("/refresh", response_model=TokenResponse)
 async def refresh_tokens(token_request: RefreshTokenRequest, db: Session = Depends(get_db)):
@@ -1346,13 +960,14 @@ async def refresh_tokens(token_request: RefreshTokenRequest, db: Session = Depen
 
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)
-
+    ctx = _hydrate_user_context(user, db)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
     )
-
 
 @jwt_router.post("/logout")
 async def logout(
@@ -1381,7 +996,6 @@ async def logout(
                 db.commit()
 
     return {"message": "Successfully logged out"}
-
 
 @jwt_router.post("/change-password")
 async def change_password(
@@ -1430,21 +1044,18 @@ async def change_password(
 
     return {"message": "Password changed successfully"}
 
-
 @jwt_router.get("/me")
-async def get_current_user_info(user: Optional[User] = Depends(get_current_user)):
-    """Get the current authenticated user's information."""
+async def get_current_user_info(
+    user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the current authenticated user's information with organization and implementations."""
     if not user:
-        return {"authenticated": False, "user": None}
-
+        return {"authenticated": False, "user": None, "organization": None, "implementations": []}
     try:
         user_dict = user.to_dict()
     except Exception as e:
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.error(f"Error serializing user {user.id}: {e}", exc_info=True)
-        # Return a minimal user dict if to_dict() fails
         user_dict = {
             "id": user.id,
             "email": user.email or "",
@@ -1462,9 +1073,13 @@ async def get_current_user_info(user: Optional[User] = Depends(get_current_user)
             "profile_data": user.profile_data,
             "created_at": None,
         }
-
-    return {"authenticated": True, "user": user_dict}
-
+    ctx = _hydrate_user_context(user, db)
+    return {
+        "authenticated": True,
+        "user": user_dict,
+        "organization": ctx["organization"],
+        "implementations": ctx["implementations"],
+    }
 
 @jwt_router.get("/verify")
 async def verify_token(user: User = Depends(require_auth)):

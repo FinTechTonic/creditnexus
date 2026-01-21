@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -37,15 +37,29 @@ from app.api.recovery_routes import router as recovery_router
 from app.api.twilio_routes import router as twilio_router
 from app.api.remote_routes import remote_router
 from app.api.fdc3_routes import router as fdc3_router
-from app.api.fdc3_routes import router as fdc3_router
 from app.api.implementation_routes import router as implementation_router
+from app.api.trading_routes import router as trading_router
+from app.api.stock_prediction_routes import router as stock_prediction_router
+from app.api.banking_routes import router as banking_router
+from app.api.asset_routes import router as asset_router
+from app.api.portfolio_routes import router as portfolio_router
+from app.api.polymarket_routes import router as polymarket_router
+from app.api.cross_chain_routes import router as cross_chain_router
+from app.api.challenge_coin_routes import router as challenge_coin_router
+from app.api.bridge_builder_routes import router as bridge_builder_router
+from app.api.subscription_routes import router as subscription_router
+from app.api.review_routes import router as review_router
+from app.api.nexus_routes import router as nexus_router
+from app.api.organization_routes import router as organization_router
+from app.api.p2p_routes import router as p2p_router
+from app.api.whitelist_routes import router as whitelist_router
+from app.api.remote_profile_routes import router as remote_profile_router
 from app.api.metrics_routes import router as metrics_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -166,7 +180,32 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize x402 payment service: {e}")
             if settings.X402_ENABLED:
                 raise  # Fail fast if x402 is required
-    
+    else:
+        logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
+        app.state.x402_payment_service = None
+
+    # RevenueCat (subscription / entitlements)
+    app.state.revenuecat_service = None
+    if getattr(settings, "REVENUECAT_ENABLED", False) and getattr(settings, "REVENUECAT_API_KEY", None):
+        try:
+            from app.services.revenuecat_service import RevenueCatService
+            app.state.revenuecat_service = RevenueCatService()
+            logger.info("RevenueCat service initialized")
+        except Exception as e:
+            logger.warning("RevenueCat service init failed: %s", e)
+
+    # Payment router (x402 + optional RevenueCat for POLYMARKET_*, SUBSCRIPTION_UPGRADE, etc.)
+    try:
+        from app.services.payment_router_service import PaymentRouterService
+        app.state.payment_router_service = PaymentRouterService(
+            x402_service=app.state.x402_payment_service,
+            revenuecat_service=getattr(app.state, "revenuecat_service", None),
+        )
+        logger.info("PaymentRouter service initialized")
+    except Exception as e:
+        logger.warning("PaymentRouter service init failed: %s", e)
+        app.state.payment_router_service = None
+
     # Initialize metrics
     if settings.METRICS_ENABLED:
         try:
@@ -195,9 +234,6 @@ async def lifespan(app: FastAPI):
             app.state.metrics_task = None
     else:
         app.state.metrics_task = None
-    else:
-        logger.info("x402 Payment service is disabled (X402_ENABLED=false)")
-        app.state.x402_payment_service = None
     
     # Initialize database
     if settings.DATABASE_ENABLED:
@@ -501,7 +537,6 @@ async def lifespan(app: FastAPI):
     # Note: If CancelledError occurs after this point, it's from uvicorn's
     # internal reload mechanism and is expected behavior during development.
 
-
 app = FastAPI(
     title="CreditNexus API",
     description="FINOS-Compliant Financial AI Agent for Credit Agreement Extraction",
@@ -518,13 +553,41 @@ is_production = os.environ.get("REPLIT_DEPLOYMENT") == "1" or os.environ.get("EN
 if not session_secret:
     if is_production:
         raise RuntimeError("SESSION_SECRET must be set in production")
-    logger.warning("SESSION_SECRET not set, generating temporary secret (not suitable for production)")
-    import secrets
-    session_secret = secrets.token_hex(32)
+    logger.warning("SESSION_SECRET not set, using stable dev secret (not suitable for production)")
+    session_secret = "dev-session-secret-creditnexus-fixed-for-local"
+
+# JWT auth (path, method) pairs that do not need session; skipping SessionMiddleware avoids
+# 500s when a stale or mismatched session cookie fails to decode (e.g. after secret or restart).
+_JWT_SKIP_SESSION = {
+    ("/api/auth/login", "POST"),
+    ("/api/auth/register", "POST"),
+    ("/api/auth/refresh", "POST"),
+    ("/api/auth/logout", "POST"),
+    ("/api/auth/signup/step1", "POST"),
+    ("/api/auth/signup/step2", "POST"),
+    ("/api/auth/signup/save-progress", "POST"),
+    ("/api/auth/change-password", "POST"),
+}
+
+class _ConditionalSessionMiddleware(SessionMiddleware):
+    """Runs SessionMiddleware except for JWT auth routes that do not need session, to avoid
+    500 when decoding a stale/mismatched session cookie."""
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        method = (scope.get("method") or "GET").upper()
+        if (path, method) in _JWT_SKIP_SESSION:
+            scope["session"] = {}
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
 
 # Session middleware with secure settings
 app.add_middleware(
-    SessionMiddleware,
+    _ConditionalSessionMiddleware,
     secret_key=session_secret,
     session_cookie="creditnexus_session",
     max_age=settings.SESSION_MAX_AGE,
@@ -613,6 +676,22 @@ app.include_router(config_router)
 app.include_router(workflow_delegation_router)
 app.include_router(recovery_router)
 app.include_router(twilio_router)
+app.include_router(trading_router)
+app.include_router(stock_prediction_router)
+app.include_router(banking_router)
+app.include_router(asset_router)
+app.include_router(portfolio_router)
+app.include_router(polymarket_router)
+app.include_router(cross_chain_router)
+app.include_router(challenge_coin_router)
+app.include_router(bridge_builder_router)
+app.include_router(subscription_router)
+app.include_router(review_router)
+app.include_router(nexus_router)
+app.include_router(organization_router)
+app.include_router(p2p_router)
+app.include_router(whitelist_router)
+app.include_router(remote_profile_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")
@@ -627,9 +706,6 @@ if settings.METRICS_ENABLED:
 from app.api.gdpr_routes import gdpr_router
 app.include_router(gdpr_router, prefix="/api")
 
-# FDC3 App Directory API
-app.include_router(fdc3_router, prefix="/api/fdc3")
-
 # Serve OpenFin manifest files
 openfin_dir = Path(__file__).parent / "openfin"
 if openfin_dir.exists():
@@ -641,7 +717,23 @@ if openfin_dir.exists():
             return FileResponse(str(manifest_path), media_type="application/json")
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="OpenFin manifest not found")
-    
+
+    @app.get("/openfin/app-dev.json")
+    async def serve_openfin_manifest_dev():
+        """Serve OpenFin manifest for dev: view URL points at Vite (5000) so OpenFin wraps the dev client."""
+        manifest_path = openfin_dir / "app.json"
+        if not manifest_path.exists():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="OpenFin manifest not found")
+        import json
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        dev_url = os.environ.get("OPENFIN_DEV_APP_URL", "http://localhost:5000")
+        try:
+            data["snapshot"]["windows"][0]["layout"]["content"][0]["content"][0]["componentState"]["url"] = dev_url
+        except (KeyError, IndexError, TypeError):
+            pass
+        return JSONResponse(data, media_type="application/json")
+
     @app.get("/openfin/{filename}")
     async def serve_openfin_file(filename: str):
         """Serve other OpenFin configuration files."""
@@ -652,9 +744,10 @@ if openfin_dir.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
 static_dir = Path(__file__).parent / "client" / "dist"
-if static_dir.exists():
+assets_dir = static_dir / "assets"
+if static_dir.exists() and assets_dir.exists():
     logger.info(f"Serving static files from {static_dir}")
-    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+    app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
     
     @app.get("/")
     async def serve_frontend():
@@ -679,7 +772,6 @@ else:
             "docs": "/docs",
             "health": "/api/health"
         }
-
 
 if __name__ == "__main__":
     import uvicorn

@@ -105,24 +105,6 @@ def create_peoplehub_research_graph():
 
 def start_node(state: ResearchState) -> Dict[str, Any]:
     """Initialize research state."""
-    # #region agent log
-    import json
-    from datetime import datetime
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "peoplehub-concurrency",
-                "hypothesisId": "CONCURRENCY",
-                "location": "peoplehub_research_graph.py:start_node",
-                "message": "start_node called",
-                "data": {"keys": list(state.keys())},
-                "timestamp": int(datetime.now().timestamp() * 1000)
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    # Only return fields that are being updated to avoid concurrent update errors
     return {
         "status": "Initializing research...",
         "errors": [],
@@ -134,23 +116,6 @@ def start_node(state: ResearchState) -> Dict[str, Any]:
 
 def fetch_linkedin_node(state: ResearchState) -> Dict[str, Any]:
     """Fetch LinkedIn profile data."""
-    # #region agent log
-    import json
-    from datetime import datetime
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "peoplehub-concurrency",
-                "hypothesisId": "CONCURRENCY",
-                "location": "peoplehub_research_graph.py:fetch_linkedin_node",
-                "message": "fetch_linkedin_node called",
-                "data": {"person_name": state.get("person_name"), "has_linkedin_url": bool(state.get("linkedin_url"))},
-                "timestamp": int(datetime.now().timestamp() * 1000)
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     # Implementation: Use Bright Data LinkedIn API or similar
     # This would integrate with existing LinkedIn scraping infrastructure
     logger.info(f"Fetching LinkedIn profile: {state.get('linkedin_url', 'N/A')}")
@@ -165,23 +130,6 @@ def fetch_linkedin_node(state: ResearchState) -> Dict[str, Any]:
 
 def generate_search_query_node(state: ResearchState) -> Dict[str, Any]:
     """Generate search query from person name and LinkedIn data."""
-    # #region agent log
-    import json
-    from datetime import datetime
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "peoplehub-concurrency",
-                "hypothesisId": "CONCURRENCY",
-                "location": "peoplehub_research_graph.py:generate_search_query_node",
-                "message": "generate_search_query_node called",
-                "data": {"person_name": state.get("person_name"), "linkedin_data_type": type(state.get("linkedin_data")).__name__},
-                "timestamp": int(datetime.now().timestamp() * 1000)
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     llm = get_chat_model(temperature=0.7)
     
     prompt = f"""Generate a Google search query to find information about {state['person_name']}.
@@ -216,60 +164,55 @@ Return only the search query, nothing else.
         }
 
 
-def execute_search_node(state: ResearchState) -> Dict[str, Any]:
-    """Execute web search."""
+async def execute_search_node(state: ResearchState) -> Dict[str, Any]:
+    """Execute web search using WebSearchService (LangChain-compatible return shape)."""
     search_query = state.get("search_query")
     if not search_query:
-        return {
-            "status": "No search query to execute"
-        }
-    
+        return {"status": "No search query to execute"}
+
     try:
         service = get_web_search_service()
-        # Use async search - for now, we'll need to handle this synchronously
-        # In a real implementation, this would be async
         logger.info(f"Executing search: {search_query}")
-        
-        # Placeholder - implement actual search using WebSearchService
-        # For now, return empty results
-        return {
-            "search_results": [],
-            "status": "Executed search"
-        }
+        result = await service.search_web(
+            query=search_query,
+            search_type="search",
+            num_results=8,
+            rerank=True,
+            top_k_after_rerank=6,
+        )
+        # Map extracted_content to search_results: [{url, title, content}] for scrape_web_page
+        extracted = result.get("extracted_content", [])
+        search_results = [
+            {"url": c.get("url", ""), "title": c.get("title", ""), "content": c.get("content", "")}
+            for c in extracted
+        ]
+        return {"search_results": search_results, "status": "Executed search"}
     except Exception as e:
         logger.error(f"Error executing search: {e}")
         return {
             "errors": state.get("errors", []) + [f"Search execution failed: {str(e)}"],
-            "status": "Error executing search"
+            "status": "Error executing search",
         }
 
 
 def scrape_web_page_node(state: ResearchState) -> Dict[str, Any]:
-    """Scrape web page content."""
+    """Use search result content; WebSearchService already extracted content in execute_search."""
     search_results = state.get("search_results", [])
     if not search_results:
-        return {
-            "status": "No search results to scrape"
-        }
-    
-    logger.info("Scraping web pages")
-    # Implementation: Use web scraping library (trafilatura, BeautifulSoup, etc.)
-    # For now, return empty scraped contents
+        return {"status": "No search results to scrape"}
+
+    logger.info("Using web search content for summarization")
     scraped_contents = []
-    for result in search_results[:5]:  # Limit to 5 pages
+    for result in search_results[:5]:
         url = result.get("url", "")
         if url:
-            # Placeholder - implement actual scraping
+            # Content already from WebSearchService.extracted_content when available
             scraped_contents.append({
                 "url": url,
-                "content": "",
-                "title": result.get("title", "")
+                "content": result.get("content", ""),
+                "title": result.get("title", ""),
             })
-    
-    return {
-        "scraped_contents": scraped_contents,
-        "status": "Scraped web pages"
-    }
+    return {"scraped_contents": scraped_contents, "status": "Scraped web pages"}
 
 
 def summarize_content_node(state: ResearchState) -> Dict[str, Any]:
@@ -410,7 +353,7 @@ async def execute_peoplehub_research(
         state = fetch_linkedin_node(state)
         state = generate_search_query_node(state)
         if state.get("search_query"):
-            state = execute_search_node(state)
+            state = await execute_search_node(state)
             if state.get("search_results"):
                 state = scrape_web_page_node(state)
                 if state.get("scraped_contents"):

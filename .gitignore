@@ -1,10 +1,12 @@
-dev/
+# Root dev/ folder only (not scripts/dev)
+/dev/
 folder/
 .cursorrules
 *.mdc
 .cursor/
 dist/
 *.log
+None/
 
 # SSL/TLS Certificates and Keys (auto-generated and manual)
 ssl_certs/
@@ -17,9 +19,12 @@ ssl_certs/
 *.cer
 *.der
 
-# Test artifacts and temporary files
-dev/*.txt
-dev/*.log
+# PM2 log output (development)
+logs/
+
+# Test artifacts and temporary files (root dev/ only)
+/dev/*.txt
+/dev/*.log
 *.test.log
 test_artifacts/
 .pytest_cache/

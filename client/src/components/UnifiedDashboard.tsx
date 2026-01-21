@@ -8,6 +8,10 @@ import { ApplicationDashboard } from '@/components/ApplicationDashboard';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import type { CreditAgreementData } from '@/context/FDC3Context';
 import { SignaturePad } from '@/components/ui/SignaturePad';
+import { TradingDashboard } from '@/components/trading/TradingDashboard';
+import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
+import { BridgeBuilder } from '@/components/BridgeBuilder';
+import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -18,62 +22,12 @@ import {
   PieChart,
   FileCheck,
   DollarSign,
+  ArrowLeftRight,
 } from 'lucide-react';
 import {
   PERMISSION_DOCUMENT_VIEW,
   PERMISSION_APPLICATION_VIEW,
 } from '@/utils/permissions';
-
-interface TradeBlotterState {
-  loanData: CreditAgreementData | null;
-  tradeStatus: 'pending' | 'confirmed' | 'settled';
-  settlementDate: string;
-  tradePrice: string;
-  tradeAmount: string;
-  tradeId: string | null;
-  policyDecision: any | null;
-  policyLoading: boolean;
-  policyError: string | null;
-  paymentRequest: any | null;
-  paymentLoading: boolean;
-  paymentError: string | null;
-  paymentStatus: 'idle' | 'requested' | 'processing' | 'completed' | 'failed';
-}
-
-// Trading Dashboard wrapper that manages TradeBlotter state
-function TradingDashboard() {
-  const [tradeBlotterState, setTradeBlotterState] = useState<TradeBlotterState>({
-    loanData: null,
-    tradeStatus: 'pending',
-    settlementDate: '',
-    tradePrice: '100.00',
-    tradeAmount: '',
-    tradeId: null,
-    policyDecision: null,
-    policyLoading: false,
-    policyError: null,
-    paymentRequest: null,
-    paymentLoading: false,
-    paymentError: null,
-    paymentStatus: 'idle',
-  });
-
-  return (
-    <TradeBlotter
-      state={tradeBlotterState}
-      setState={setTradeBlotterState}
-    />
-  );
-}
-
-function MarketDashboard() {
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Polymarket Dashboard</h2>
-      <p className="text-muted-foreground">Polymarket integration will be implemented here.</p>
-    </div>
-  );
-}
 
 function SignatureDashboard() {
   return (
@@ -120,15 +74,6 @@ function ComplianceDashboard() {
   );
 }
 
-function PortfolioDashboard() {
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Portfolio Dashboard</h2>
-      <p className="text-muted-foreground">Portfolio management and analytics will be implemented here.</p>
-    </div>
-  );
-}
-
 function BillingDashboard() {
   return (
     <div className="p-6">
@@ -171,17 +116,25 @@ export function UnifiedDashboard() {
         id: 'trading',
         label: 'Trading',
         icon: <TrendingUp className="h-4 w-4" />,
-        component: TradingDashboard,
-        requiredPermission: 'TRADING_VIEW', // Will be added to permissions.ts
-        subscriptionTier: 'pro'
+        component: () => <TradingDashboard />,
+        // requiredPermission removed: tab always visible; TradingDashboard's PermissionGate gates content
+        subscriptionTier: 'free'
       },
       {
         id: 'polymarket',
         label: 'Polymarket',
         icon: <BarChart3 className="h-4 w-4" />,
-        component: MarketDashboard,
-        requiredPermission: 'MARKET_VIEW', // Will be added to permissions.ts
+        component: () => <MarketDashboard />,
+        requiredPermission: 'MARKET_VIEW',
         subscriptionTier: 'pro'
+      },
+      {
+        id: 'bridge',
+        label: 'Bridge',
+        icon: <ArrowLeftRight className="h-4 w-4" />,
+        component: () => <BridgeBuilder />,
+        requiredPermission: 'TRADE_VIEW',
+        subscriptionTier: 'free'
       },
       {
         id: 'documents',
@@ -243,9 +196,10 @@ export function UnifiedDashboard() {
         return false;
       }
       
-      // Check permissions
+      // Check permissions (admin bypass: always allow if role is admin)
       if (tab.requiredPermission) {
-        if (!hasPermission(tab.requiredPermission)) {
+        const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+        if (!isAdmin && !hasPermission(tab.requiredPermission)) {
           return false;
         }
       }
@@ -265,7 +219,7 @@ export function UnifiedDashboard() {
       setActiveTab(dashboardTabs[0].id);
     }
   }, [dashboardTabs, activeTab]);
-  
+
   return (
     <div className="flex flex-col h-full">
       <Tabs value={activeTab} onValueChange={setActiveTab}>

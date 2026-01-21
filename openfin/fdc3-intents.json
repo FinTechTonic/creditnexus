@@ -4,8 +4,8 @@
     {
       "appId": "creditnexus",
       "name": "CreditNexus",
-      "title": "CreditNexus - Credit Agreement Extraction",
-      "description": "FINOS-Compliant Financial AI Agent for extracting structured credit agreement data from unstructured legal documents using AI",
+      "title": "CreditNexus - Credit, Trading & Prediction Markets",
+      "description": "FINOS CDM– and FDC3 2.0–compliant platform: credit agreement extraction, Alpaca trading, stock prediction (Chronos), Polymarket-style SFPs, LangAlpha quantitative analysis, and ESG verification",
       "version": "1.0.0",
       "publisher": "CreditNexus",
       "categories": [
@@ -13,7 +13,9 @@
         "Credit",
         "Lending",
         "AI",
-        "Document Processing"
+        "Document Processing",
+        "Trading",
+        "Prediction Markets"
       ],
       "icons": [
         {
@@ -89,6 +91,36 @@
                 "finos.creditnexus.workflow"
               ],
               "resultType": "finos.creditnexus.workflow"
+            },
+            "ViewInstrument": {
+              "displayName": "View Instrument",
+              "contexts": [
+                "fdc3.instrument",
+                "finos.creditnexus.instrument"
+              ],
+              "resultType": "fdc3.instrument"
+            },
+            "ViewStockPrediction": {
+              "displayName": "View Stock Prediction",
+              "contexts": [
+                "finos.creditnexus.stockPrediction",
+                "fdc3.instrument"
+              ],
+              "resultType": "finos.creditnexus.stockPrediction"
+            },
+            "ViewPredictionMarket": {
+              "displayName": "View Prediction Market",
+              "contexts": [
+                "finos.creditnexus.predictionMarket"
+              ],
+              "resultType": "finos.creditnexus.predictionMarket"
+            },
+            "ViewAgentResult": {
+              "displayName": "View Agent Result",
+              "contexts": [
+                "finos.creditnexus.agentResult"
+              ],
+              "resultType": "finos.creditnexus.agentResult"
             }
           },
           "raises": {
@@ -99,7 +131,24 @@
             },
             "ViewInstrument": {
               "contexts": [
+                "fdc3.instrument",
+                "finos.creditnexus.instrument"
+              ]
+            },
+            "ViewStockPrediction": {
+              "contexts": [
+                "finos.creditnexus.stockPrediction",
                 "fdc3.instrument"
+              ]
+            },
+            "ViewPredictionMarket": {
+              "contexts": [
+                "finos.creditnexus.predictionMarket"
+              ]
+            },
+            "ViewAgentResult": {
+              "contexts": [
+                "finos.creditnexus.agentResult"
               ]
             }
           }
@@ -110,12 +159,22 @@
             "finos.creditnexus.approvalResult",
             "finos.creditnexus.portfolio",
             "finos.creditnexus.workflow",
-            "finos.creditnexus.generatedDocument"
+            "finos.creditnexus.generatedDocument",
+            "finos.creditnexus.loan",
+            "finos.creditnexus.stockPrediction",
+            "finos.creditnexus.predictionMarket",
+            "finos.creditnexus.agentResult",
+            "fdc3.instrument",
+            "finos.creditnexus.instrument"
           ],
           "listensFor": [
             "fdc3.instrument",
             "fdc3.portfolio",
-            "finos.creditnexus.document"
+            "finos.creditnexus.document",
+            "finos.creditnexus.stockPrediction",
+            "finos.creditnexus.predictionMarket",
+            "finos.creditnexus.agentResult",
+            "finos.creditnexus.instrument"
           ]
         },
         "appChannels": [
@@ -151,6 +210,30 @@
             ],
             "listensFor": [
               "finos.creditnexus.portfolio"
+            ]
+          },
+          {
+            "name": "creditnexus.trading",
+            "description": "Channel for instrument, stock prediction, and order context (Alpaca, Chronos)",
+            "broadcasts": [
+              "fdc3.instrument",
+              "finos.creditnexus.instrument",
+              "finos.creditnexus.stockPrediction"
+            ],
+            "listensFor": [
+              "fdc3.instrument",
+              "finos.creditnexus.instrument",
+              "finos.creditnexus.stockPrediction"
+            ]
+          },
+          {
+            "name": "creditnexus.predictionMarket",
+            "description": "Channel for Polymarket-style SFP and prediction market context",
+            "broadcasts": [
+              "finos.creditnexus.predictionMarket"
+            ],
+            "listensFor": [
+              "finos.creditnexus.predictionMarket"
             ]
           }
         ]
@@ -392,6 +475,144 @@
               "required": [
                 "type"
               ]
+            }
+          },
+          "finos.creditnexus.loan": {
+            "description": "Loan/credit agreement data (deal, facilities, parties); CDM-aligned",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.loan" },
+                "id": { "type": "object", "properties": { "LIN": { "type": "string" }, "DealID": { "type": "string" } } },
+                "loan": { "type": "object" }
+              },
+              "required": ["type"]
+            }
+          },
+          "finos.creditnexus.workflow": {
+            "description": "Workflow link (verification, notarization, document_review)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.workflow" },
+                "id": { "type": "object", "properties": { "workflowId": { "type": "string" } }, "required": ["workflowId"] },
+                "workflowType": { "type": "string" },
+                "linkPayload": { "type": "string" },
+                "metadata": { "type": "object" }
+              },
+              "required": ["type", "workflowType", "linkPayload"]
+            }
+          },
+          "finos.creditnexus.generatedDocument": {
+            "description": "Generated document from LMA template and CDM data",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.generatedDocument" },
+                "id": { "type": "object" },
+                "template": { "type": "object" },
+                "sourceCdmData": { "type": "object" },
+                "generatedAt": { "type": "string" },
+                "filePath": { "type": "string" },
+                "status": { "type": "string" }
+              },
+              "required": ["type"]
+            }
+          },
+          "finos.creditnexus.instrument": {
+            "description": "Instrument/symbol for trading; extends fdc3.instrument for CDM and Alpaca",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.instrument" },
+                "id": { "type": "object", "properties": { "ticker": { "type": "string" }, "symbol": { "type": "string" } } },
+                "name": { "type": "string" },
+                "exchange": { "type": "string" },
+                "signal": { "type": "string", "enum": ["bullish", "bearish", "neutral"] }
+              },
+              "required": ["type"]
+            }
+          },
+          "finos.creditnexus.stockPrediction": {
+            "description": "Stock prediction result (Chronos/technical; symbol, timeframe, forecast, signal)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.stockPrediction" },
+                "symbol": { "type": "string" },
+                "timeframe": { "type": "string", "enum": ["daily", "hourly", "15min"] },
+                "strategy": { "type": "string" },
+                "forecast": { "type": "array", "items": { "type": "number" } },
+                "signal": { "type": "string", "enum": ["bullish", "bearish", "neutral"] },
+                "prediction_id": { "type": "number" },
+                "cached": { "type": "boolean" }
+              },
+              "required": ["type", "symbol"]
+            }
+          },
+          "finos.creditnexus.predictionMarket": {
+            "description": "Polymarket-style SFP / prediction market (market_id, question, outcomes, book)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.predictionMarket" },
+                "market_id": { "type": "string" },
+                "question": { "type": "string" },
+                "outcome_type": { "type": "string" },
+                "deal_id": { "type": "number" },
+                "sfp_id": { "type": "string" },
+                "resolved_at": { "type": ["string", "null"] },
+                "resolution_outcome": { "type": ["string", "null"] }
+              },
+              "required": ["type", "market_id"]
+            }
+          },
+          "finos.creditnexus.agentResult": {
+            "description": "LangAlpha/DeepResearch/PeopleHub analysis result; symbols and recommendations for cross-linking",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.agentResult" },
+                "analysis_id": { "type": "string" },
+                "agent_type": { "type": "string", "enum": ["langalpha", "deep_research", "peoplehub"] },
+                "query": { "type": "string" },
+                "summary": { "type": "string" },
+                "symbols": { "type": "array", "items": { "type": "string" } },
+                "recommendations": { "type": "array", "items": { "type": "string" } },
+                "deal_id": { "type": ["number", "null"] }
+              },
+              "required": ["type", "analysis_id", "agent_type"]
+            }
+          },
+          "finos.cdm.landUse": {
+            "description": "CDM-aligned land use from satellite verification",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.cdm.landUse" },
+                "id": { "type": "object", "properties": { "internalID": { "type": "string" } } },
+                "classification": { "type": "string" },
+                "complianceStatus": { "type": "string", "enum": ["COMPLIANT", "WARNING", "BREACH"] },
+                "lastInferenceConfidence": { "type": "number" },
+                "cloudCover": { "type": "number" }
+              },
+              "required": ["type"]
+            }
+          },
+          "finos.cdm.greenFinanceAssessment": {
+            "description": "CDM-aligned green finance assessment (location, AQI, sustainability, SDG)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.cdm.greenFinanceAssessment" },
+                "id": { "type": "object", "properties": { "transactionId": { "type": "string" } } },
+                "location": { "type": "object" },
+                "environmentalMetrics": { "type": "object" },
+                "sustainabilityScore": { "type": "number" },
+                "sdgAlignment": { "type": "object" },
+                "assessedAt": { "type": "string" }
+              },
+              "required": ["type"]
             }
           }
         }

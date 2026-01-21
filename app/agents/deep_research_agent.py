@@ -19,7 +19,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.prompts import MessagesPlaceholder
 
 from app.core.llm_client import get_chat_model
-from app.agents.deep_research_tools import get_all_research_tools
+from app.agents.deep_research_tools import get_all_research_tools, research_context_var
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +98,19 @@ async def research_query(
     # Create agent
     agent = create_deep_research_agent()
     
-    # Execute research - langgraph.prebuilt.create_react_agent expects {"messages": [message]}
-    question_with_context = f"{question}\n\nContext: {str(context)}" if context else question
-    message = HumanMessage(content=question_with_context)
-    result = await agent.ainvoke({"messages": [message]})
+    # Collector for visited_urls and searched_queries (tools append via research_context_var)
+    collector: dict = {"visited_urls": [], "searched_queries": []}
+    tok = research_context_var.set(collector)
+    try:
+        # Execute research - langgraph.prebuilt.create_react_agent expects {"messages": [message]}
+        question_with_context = f"{question}\n\nContext: {str(context)}" if context else question
+        message = HumanMessage(content=question_with_context)
+        result = await agent.ainvoke({"messages": [message]})
+    finally:
+        research_context_var.reset(tok)
+    
+    visited_urls = collector.get("visited_urls") or []
+    searched_queries = collector.get("searched_queries") or []
     
     # Extract answer from result - langgraph returns {"messages": [...]}
     response_messages = result.get("messages", [])
@@ -115,8 +124,8 @@ async def research_query(
             "query": question,
             "answer": answer,
             "knowledgeItems": [item.__dict__ for item in context.knowledge_items],
-            "visitedUrls": context.visited_urls,
-            "searchedQueries": context.searched_queries
+            "visitedUrls": visited_urls,
+            "searchedQueries": searched_queries
         },
         "meta": {
             "globalKey": str(uuid.uuid4()),
@@ -137,6 +146,7 @@ async def research_query(
     return {
         "answer": answer,
         "knowledge_items": [item.__dict__ for item in context.knowledge_items],
-        "visited_urls": context.visited_urls,
+        "visited_urls": visited_urls,
+        "searched_queries": searched_queries,
         "cdm_event": research_event
     }

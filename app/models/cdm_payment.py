@@ -40,6 +40,10 @@ class PaymentType(str, Enum):
     PENALTY_PAYMENT = "penalty_payment"
     PRINCIPAL_REPAYMENT = "principal_repayment"
     NOTARIZATION_FEE = "notarization_fee"
+    # Polymarket & subscription (Phase 2)
+    POLYMARKET_TRADE = "polymarket_trade"
+    MARKET_CREATION_FEE = "market_creation_fee"
+    SUBSCRIPTION_UPGRADE = "subscription_upgrade"
 
 
 class TradeIdentifier(BaseModel):

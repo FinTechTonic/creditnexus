@@ -18,36 +18,49 @@ CreditNexus is fully compliant with the **FDC3 2.0** (Financial Desktop Connecti
 CreditNexus broadcasts FDC3 contexts for seamless data sharing:
 
 ```typescript
-// Broadcast credit agreement context
-await broadcast({
-  type: 'fdc3.creditnexus.agreement',
-  agreement: creditAgreementData
-});
+// Credit/loan (Document Parser, Trade Blotter)
+await broadcast({ type: 'finos.creditnexus.agreement', id: { agreementId }, ... });
+
+// Stock prediction (StockPredictionTab after run)
+await broadcast(createStockPredictionContext(symbol, { timeframe, strategy, forecast, signal }));
+
+// Prediction market (MarketDashboard on selection)
+await broadcast(createPredictionMarketContext(market_id, { question, outcome_type }));
+
+// Agent result (LangAlphaResultView when loaded)
+await broadcast(createAgentResultContext(analysis_id, 'langalpha', { query, summary, symbols, recommendations }));
 ```
 
-**Code Reference**: `client/src/context/FDC3Context.tsx` (lines 320-333)
+**Code Reference**: `client/src/context/FDC3Context.tsx`, `createStockPredictionContext`, `createPredictionMarketContext`, `createAgentResultContext`
 
 ### Intent Handling
 
 CreditNexus listens for and raises FDC3 intents:
 
-**Supported Intents**:
-- `ViewLoan` - View loan details
-- `ViewDeal` - View deal information
-- `ExtractDocument` - Extract document data
-- `ExecuteTrade` - Execute trade
+**Supported Intents (listensFor)**:
+- `ViewLoanAgreement`, `ApproveLoanAgreement` – credit workflows
+- `ViewESGAnalytics`, `ExtractCreditAgreement`, `ViewPortfolio`, `GenerateLMATemplate`
+- `ShareWorkflowLink`, `ProcessWorkflowLink`
+- `ViewInstrument` – focus on instrument/symbol (fdc3.instrument, finos.creditnexus.instrument)
+- `ViewStockPrediction` – open stock prediction for symbol (Chronos/technical)
+- `ViewPredictionMarket` – focus Polymarket-style SFP market
+- `ViewAgentResult` – open LangAlpha/DeepResearch/PeopleHub result
 
-**Code Reference**: `openfin/fdc3-intents.json`, `client/src/context/FDC3Context.tsx` (lines 339-353)
+**Raises**: `ViewChart` (fdc3.timeRange), `ViewInstrument`, `ViewStockPrediction`, `ViewPredictionMarket`, `ViewAgentResult`
+
+**Code Reference**: `openfin/fdc3-intents.json`, `client/src/context/FDC3Context.tsx`
 
 ### App Channels
 
-CreditNexus uses custom app channels for workflow orchestration:
+CreditNexus uses custom app channels for workflow and data flow:
 
-- `creditnexus.workflow` - Workflow events
-- `creditnexus.extraction` - Document extraction events
-- `creditnexus.portfolio` - Portfolio updates
+- `creditnexus.workflow` – Workflow events and approvals
+- `creditnexus.extraction` – Document extraction
+- `creditnexus.portfolio` – Portfolio and ESG
+- `creditnexus.trading` – Instrument, stock prediction (Alpaca, Chronos)
+- `creditnexus.predictionMarket` – Polymarket-style SFP / prediction markets
 
-**Code Reference**: `client/src/context/FDC3Context.tsx` (lines 258-274)
+**Code Reference**: `client/src/context/FDC3Context.tsx`, `openfin/fdc3-intents.json`
 
 ---
 
@@ -55,34 +68,26 @@ CreditNexus uses custom app channels for workflow orchestration:
 
 CreditNexus defines custom context types in the `finos.creditnexus.*` namespace:
 
-### Credit Agreement Context
+### Credit and Loan
 
-```typescript
-{
-  type: 'fdc3.creditnexus.agreement',
-  agreement: {
-    dealId: string,
-    borrower: string,
-    amount: number,
-    // ... CDM-compliant data
-  }
-}
-```
+- `finos.creditnexus.agreement` – Agreement (id.agreementId, borrower, facilities, parties; CDM-aligned)
+- `finos.creditnexus.loan` – Loan/credit (id.DealID, id.LIN, loan: CDM-aligned)
 
-### Loan Context
+### Trading and Analytics
 
-```typescript
-{
-  type: 'fdc3.creditnexus.loan',
-  loan: {
-    loanId: string,
-    status: string,
-    // ... loan data
-  }
-}
-```
+- `fdc3.instrument` – Standard FDC3 instrument (id.ticker, id.RIC, etc.); maps to CDM Instrument
+- `finos.creditnexus.instrument` – Instrument with optional signal (bullish/bearish/neutral)
+- `finos.creditnexus.stockPrediction` – Chronos/technical result (symbol, timeframe, forecast, signal)
+- `finos.creditnexus.predictionMarket` – Polymarket-style SFP (market_id, question, outcomes)
+- `finos.creditnexus.agentResult` – LangAlpha/DeepResearch/PeopleHub (analysis_id, agent_type, symbols, recommendations)
 
-**Code Reference**: `client/src/context/FDC3Context.tsx` (context type definitions)
+### CDM and FDC3 Alignment
+
+- **fdc3.instrument** and **finos.creditnexus.instrument** align with FINOS CDM `Instrument` (ticker, identifiers).
+- **finos.creditnexus.loan** and **finos.creditnexus.agreement** carry CDM-compliant structures.
+- **Trade/order events** from `/api/trades/execute` and `/api/trades/orders` are CDM-aligned; FDC3 context is used for prefill and focus, not as the system of record.
+
+**Code Reference**: `client/src/context/FDC3Context.tsx`, `app/models/cdm.py`
 
 ---
 
@@ -90,13 +95,15 @@ CreditNexus defines custom context types in the `finos.creditnexus.*` namespace:
 
 The platform components work as a "Chain of Command" using FDC3:
 
-1. **Extract**: Document Parser broadcasts loan data
-2. **Trade**: Trade Blotter receives signal and pre-fills trade ticket
-3. **Analyze**: GreenLens picks up signal for ESG analysis
-4. **Verify**: Verification Demo broadcasts breach alerts
-5. **Surveil**: Risk War Room listens for alerts and highlights assets
+1. **Extract**: Document Parser broadcasts `finos.creditnexus.loan` / `finos.creditnexus.agreement`
+2. **Trade**: Trade Blotter receives loan context and pre-fills LMA trade ticket; Order Form and Stock Prediction prefill symbol from `fdc3.instrument`, `finos.creditnexus.stockPrediction`, `finos.creditnexus.agentResult`
+3. **Analyze**: GreenLens consumes loan/ESG; LangAlphaResultView broadcasts `finos.creditnexus.agentResult` so Trading can focus on symbols
+4. **Predict**: StockPredictionTab broadcasts `finos.creditnexus.stockPrediction` on run; Trading and Order Form prefill from it
+5. **Polymarket**: MarketDashboard broadcasts `finos.creditnexus.predictionMarket` on selection and listens to focus a market
+6. **Verify**: Verification Demo broadcasts `finos.cdm.landUse` / `finos.cdm.greenFinanceAssessment` and breach alerts
+7. **Surveil**: Risk War Room listens for alerts and highlights assets
 
-**Code Reference**: `README.md` (lines 507-517)
+**Code Reference**: `README.md`, `client/src/context/FDC3Context.tsx`, `client/src/components/trading/*`, `client/src/components/polymarket/MarketDashboard.tsx`, `client/src/components/agent-results/LangAlphaResultView.tsx`
 
 ---
 
@@ -114,26 +121,28 @@ CreditNexus integrates with OpenFin Runtime for FDC3 2.0 support:
 
 ## FDC3 App Directory
 
-CreditNexus is registered in the FDC3 app directory:
+CreditNexus is registered in the FDC3 app directory at `/api/fdc3/apps`:
 
 **App Metadata**:
 - App ID: `creditnexus`
 - Version: `1.0.0`
-- Categories: `["financial", "compliance", "verification"]`
+- Categories: `Analytics`, `Credit`, `Lending`, `AI`, `Document Processing`, `Trading`, `Prediction Markets`
+- Intents: ViewLoanAgreement, ViewInstrument, ViewStockPrediction, ViewPredictionMarket, ViewAgentResult, plus ExtractCreditAgreement, ViewPortfolio, ViewESGAnalytics, ShareWorkflowLink, ProcessWorkflowLink, ApproveLoanAgreement, GenerateLMATemplate
 
-**Code Reference**: `openfin/fdc3-intents.json`
+**Code Reference**: `openfin/fdc3-intents.json`, `app/api/fdc3_routes.py`
 
 ---
 
 ## Compliance Checklist
 
 - ✅ FDC3 2.0 API implementation
-- ✅ Context broadcasting
-- ✅ Intent handling (listen and raise)
-- ✅ App channels
-- ✅ Custom context types
+- ✅ Context broadcasting (loan, agreement, document, portfolio, workflow, approvalResult, esgData, generatedDocument, instrument, stockPrediction, predictionMarket, agentResult; fdc3.instrument; finos.cdm.landUse, finos.cdm.greenFinanceAssessment)
+- ✅ Intent handling (listen and raise): ViewInstrument, ViewStockPrediction, ViewPredictionMarket, ViewAgentResult plus credit/workflow intents
+- ✅ App channels: workflow, extraction, portfolio, trading, predictionMarket
+- ✅ Custom context types in `finos.creditnexus.*` and `finos.cdm.*`
+- ✅ CDM alignment for instrument, loan/agreement, and trade/order events
 - ✅ OpenFin integration
-- ✅ FDC3 app directory registration
+- ✅ FDC3 app directory at /api/fdc3/apps
 
 ---
 
@@ -148,9 +157,10 @@ CreditNexus is registered in the FDC3 app directory:
 
 ### Test Intent Handling
 
-1. Open Trade Blotter
-2. Verify it receives `ViewLoan` intents
-3. Test intent raising from other apps
+1. Open Trade Blotter and verify it receives `ViewLoanAgreement` and loan context
+2. In Trading: run a stock prediction, then open Order Form and confirm symbol prefills from `finos.creditnexus.stockPrediction`
+3. In Polymarket: select a market, then in another window receive `finos.creditnexus.predictionMarket` to focus it
+4. From another FDC3 app, raise `ViewInstrument` with `fdc3.instrument` (id.ticker) and confirm Order Form / Stock Prediction prefill
 
 ---
 

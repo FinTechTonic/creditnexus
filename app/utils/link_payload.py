@@ -34,21 +34,20 @@ class LinkPayloadGenerator:
 
     def _get_or_generate_key(self):
         """Get encryption key from settings or generate one."""
-        # Try to get from settings
-        key_obj = getattr(settings, "LINK_ENCRYPTION_KEY", None)
-
-        if key_obj:
-            try:
-                # Handle SecretStr type from pydantic-settings
-                if hasattr(key_obj, "get_secret_value"):
-                    key_str = key_obj.get_secret_value()
-                else:
-                    key_str = str(key_obj)
-
-                if key_str and key_str.strip():
-                    return Fernet(key_str.encode())
-            except Exception as e:
-                logger.warning(f"Invalid LINK_ENCRYPTION_KEY, generating new one: {e}")
+        # Try to get from settings (LINK_ENCRYPTION_KEY may be Pydantic SecretStr)
+        key_val = getattr(settings, "LINK_ENCRYPTION_KEY", None)
+        if key_val is not None:
+            raw = (
+                key_val.get_secret_value()
+                if hasattr(key_val, "get_secret_value")
+                else key_val
+            )
+            if raw:
+                try:
+                    key_bytes = raw.encode() if isinstance(raw, str) else raw
+                    return Fernet(key_bytes)
+                except Exception as e:
+                    logger.warning(f"Invalid LINK_ENCRYPTION_KEY, generating new one: {e}")
 
         # Generate new key
         key = Fernet.generate_key()

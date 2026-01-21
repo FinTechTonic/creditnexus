@@ -294,6 +294,26 @@ def generate_synthetic_bands(lat: float, lon: float) -> Tuple[np.ndarray, np.nda
     return (nir.astype(np.float32), red.astype(np.float32))
 
 
+async def suggest_outcome_from_ndvi(
+    lat: float,
+    lon: float,
+    threshold: float = 0.5,
+) -> Tuple[str, dict]:
+    """
+    Run NDVI verification and suggest a binary market outcome.
+
+    COMPLIANT or WARNING -> "yes", BREACH -> "no".
+
+    Returns:
+        Tuple of (outcome "yes"|"no", verification result dict).
+    """
+    result = await verify_asset_location(lat, lon, threshold=threshold, include_enhanced=False)
+    status = (result or {}).get("risk_status", "ERROR")
+    if status == "COMPLIANT" or status == "WARNING":
+        return ("yes", result or {})
+    return ("no", result or {})
+
+
 def determine_risk_status(ndvi_score: float, threshold: float = 0.8) -> str:
     """
     Determine risk status based on NDVI score and SPT threshold.

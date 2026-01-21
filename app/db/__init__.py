@@ -65,7 +65,6 @@ else:
 
 Base = declarative_base()
 
-
 def get_db():
     """Dependency for getting database sessions.
     
@@ -82,12 +81,14 @@ def get_db():
                 "hint": "For development, DATABASE_URL can be omitted to use SQLite automatically."
             }
         )
-    db = SessionLocal()
+    try:
+        db = SessionLocal()
+    except Exception as e:
+        raise
     try:
         yield db
     finally:
         db.close()
-
 
 def init_db():
     """Initialize the database tables."""

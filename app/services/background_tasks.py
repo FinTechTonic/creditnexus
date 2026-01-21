@@ -10,7 +10,7 @@ This module contains scheduled background tasks for:
 """
 
 import logging
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.agents.deadline_verifier import DeadlineVerifier
 from app.agents.signature_verifier import SignatureVerifier
 from app.agents.filing_verifier import FilingVerifier
 from app.services.loan_recovery_service import LoanRecoveryService
+from app.services.asset_amortization_service import AssetAmortizationService
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +291,48 @@ async def process_recovery_actions_task() -> Dict[str, Any]:
         db.close()
 
 
+async def monitor_asset_amortization() -> Dict[str, Any]:
+    """
+    Background task to monitor asset amortization and maturity (Trading Phase 3).
+    Creates in-app AssetAlerts for upcoming maturities and amortization payments.
+    """
+    logger.info("Starting asset amortization monitoring task")
+    try:
+        db = next(get_db())
+        svc = AssetAmortizationService(db)
+        items = svc.check_upcoming_payments(days_ahead=7, user_id=None)
+        created = 0
+        for x in items:
+            asset = x.get("asset")
+            if not asset:
+                continue
+            try:
+                d = None
+                if isinstance(x.get("due_date"), str):
+                    d = date.fromisoformat(x["due_date"])
+                msg = x.get("message") or "Payment due"
+                al = svc.create_maturity_alert(asset, d or date.today(), x.get("type") or "maturity", msg)
+                if al:
+                    created += 1
+            except Exception as e:
+                logger.warning("Asset alert create failed for asset %s: %s", getattr(asset, "id", None), e)
+        logger.info("Asset amortization monitoring: %s upcoming, %s alerts created", len(items), created)
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "upcoming_count": len(items),
+            "alerts_created": created,
+        }
+    except Exception as e:
+        logger.error("Error in asset amortization monitoring: %s", e, exc_info=True)
+        return {"status": "error", "timestamp": datetime.utcnow().isoformat(), "error": str(e)}
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
 # Task schedule configuration
 TASK_SCHEDULE = {
     "deadline_monitoring": {
@@ -318,6 +361,12 @@ TASK_SCHEDULE = {
     "recovery_action_processing": {
         "task": process_recovery_actions_task,
         "schedule": "hourly",
+        "enabled": True
+    },
+    "asset_amortization_monitoring": {
+        "task": monitor_asset_amortization,
+        "schedule": "daily",
+        "time": time(8, 0),  # 8 AM
         "enabled": True
     }
 }

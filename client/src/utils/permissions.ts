@@ -427,9 +427,11 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
 
 /**
  * Get permissions for a given role.
+ * Role lookup is case-insensitive (e.g. "ADMIN" and "admin" both map to admin).
  */
 export function getRolePermissions(role: string): string[] {
-  return ROLE_PERMISSIONS[role] || [];
+  const key = (role || '').toLowerCase();
+  return ROLE_PERMISSIONS[key] || [];
 }
 
 /**

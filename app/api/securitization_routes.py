@@ -17,6 +17,7 @@ from app.db.models import (
 )
 from app.auth.jwt_auth import get_current_user, require_auth
 from app.services.securitization_service import SecuritizationService
+from app.services.structured_product_pricing_service import StructuredProductPricingService
 from app.services.wallet_service import WalletService
 from app.services.blockchain_service import BlockchainService
 from app.services.x402_payment_service import X402PaymentService, get_x402_payment_service
@@ -53,6 +54,14 @@ class CreateSecuritizationPoolRequest(BaseModel):
     payment_waterfall_rules: Optional[List[Dict[str, Any]]] = Field(
         None,
         description="List of payment waterfall rules with priority, tranche_id, payment_type, percentage"
+    )
+    lock_period_days: Optional[int] = Field(
+        None,
+        description="Deterministic lock in days for equity bundles (default 30 when any asset is equity)",
+    )
+    auto_tranche: Optional[bool] = Field(
+        False,
+        description="If true, create a single Class A tranche with size=total pool value (for bundle builder)",
     )
 
 
@@ -139,24 +148,31 @@ async def create_securitization_pool(
                     except (ValueError, TypeError):
                         loan_asset_id = None
                 asset_dict["loan_asset_id"] = loan_asset_id
+            elif asset.get("asset_type") == "equity":
+                asset_dict["equity_symbol"] = asset.get("equity_symbol")
+            elif asset.get("asset_type") == "commodity":
+                asset_dict["commodity_code"] = asset.get("commodity_code")
             underlying_assets.append(asset_dict)
         
-        # Convert tranche data format
+        # Convert tranche data format; support auto_tranche for bundle builder
         tranches = []
-        for tranche in request.tranche_data:
-            tranche_dict = {
-                "tranche_name": tranche.get("name") or tranche.get("tranche_name"),
-                "tranche_class": tranche.get("class") or tranche.get("tranche_class"),
-                "size": {
-                    "amount": tranche.get("size") if isinstance(tranche.get("size"), (int, float, str)) else tranche.get("size", {}).get("amount", 0),
-                    "currency": tranche.get("currency") or tranche.get("size", {}).get("currency", "USD")
-                },
-                "interest_rate": tranche.get("interest_rate"),
-                "risk_rating": tranche.get("risk_rating"),
-                "payment_priority": tranche.get("priority") or tranche.get("payment_priority", 999)
-            }
-            tranches.append(tranche_dict)
-        
+        if request.auto_tranche:
+            tranches = [{"auto": True}]
+        else:
+            for tranche in request.tranche_data:
+                tranche_dict = {
+                    "tranche_name": tranche.get("name") or tranche.get("tranche_name"),
+                    "tranche_class": tranche.get("class") or tranche.get("tranche_class"),
+                    "size": {
+                        "amount": tranche.get("size") if isinstance(tranche.get("size"), (int, float, str)) else tranche.get("size", {}).get("amount", 0),
+                        "currency": tranche.get("currency") or tranche.get("size", {}).get("currency", "USD")
+                    },
+                    "interest_rate": tranche.get("interest_rate"),
+                    "risk_rating": tranche.get("risk_rating"),
+                    "payment_priority": tranche.get("priority") or tranche.get("payment_priority", 999)
+                }
+                tranches.append(tranche_dict)
+
         # Convert payment waterfall rules
         payment_waterfall = None
         if request.payment_waterfall_rules:
@@ -171,7 +187,8 @@ async def create_securitization_pool(
             trustee_id=request.trustee_user_id,
             underlying_assets=underlying_assets,
             tranches=tranches,
-            payment_waterfall=payment_waterfall
+            payment_waterfall=payment_waterfall,
+            lock_period_days=request.lock_period_days,
         )
         
         return {
@@ -222,6 +239,8 @@ async def list_securitization_pools(
                     "total_pool_value": str(pool.total_pool_value),
                     "currency": pool.currency,
                     "status": pool.status,
+                    "lock_period_days": getattr(pool, "lock_period_days", None),
+                    "lock_until": pool.lock_until.isoformat() if getattr(pool, "lock_until", None) else None,
                     "created_at": pool.created_at.isoformat()
                 }
                 for pool in pools
@@ -261,6 +280,40 @@ async def get_securitization_pool(
     except Exception as e:
         logger.error(f"Failed to get securitization pool: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get pool: {str(e)}")
+
+
+@router.get("/pools/{pool_id}/underlying-assets")
+async def get_pool_underlying_assets(
+    pool_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get underlying assets for a pool with verification linkage to LoanAssets, Deals, etc."""
+    pool = db.query(SecuritizationPool).filter(SecuritizationPool.id == pool_id).first()
+    if not pool:
+        raise HTTPException(status_code=404, detail="Securitization pool not found")
+    out = []
+    for a in pool.assets or []:
+        item = {
+            "id": a.id,
+            "asset_type": a.asset_type,
+            "asset_value": float(a.asset_value) if a.asset_value is not None else None,
+            "currency": a.currency,
+        }
+        if a.asset_type == "loan_asset" and a.loan_asset_id:
+            loan = db.query(LoanAsset).filter(LoanAsset.id == a.loan_asset_id).first()
+            item["loan_asset_id"] = a.loan_asset_id
+            item["loan_id"] = loan.loan_id if loan else None
+        elif a.asset_type == "deal" and a.deal_id:
+            deal = db.query(Deal).filter(Deal.id == a.deal_id).first()
+            item["deal_id"] = a.deal_id
+            item["deal_id_str"] = deal.deal_id if deal else None
+        elif a.asset_type == "equity":
+            item["equity_symbol"] = a.equity_symbol
+        elif a.asset_type == "commodity":
+            item["commodity_code"] = a.commodity_code
+        out.append(item)
+    return {"status": "success", "underlying_assets": out}
 
 
 # ============================================================================
@@ -342,6 +395,34 @@ async def get_available_loans(
     except Exception as e:
         logger.error(f"Failed to get available loans: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get loans: {str(e)}")
+
+
+@router.get("/loans/{loan_asset_id}/linked-pools")
+async def get_loan_linked_pools(
+    loan_asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get pools that reference this loan (verification linkage LoanAsset <-> pool/tranche)."""
+    loan = db.query(LoanAsset).filter(LoanAsset.id == loan_asset_id).first()
+    if not loan:
+        raise HTTPException(status_code=404, detail="Loan asset not found")
+    rows = (
+        db.query(SecuritizationPoolAsset, SecuritizationPool)
+        .join(SecuritizationPool, SecuritizationPoolAsset.pool_id == SecuritizationPool.id)
+        .filter(
+            SecuritizationPoolAsset.loan_asset_id == loan_asset_id,
+            SecuritizationPoolAsset.asset_type == "loan_asset",
+        )
+    ).all()
+    pools = []
+    seen = set()
+    for _pa, pool in rows:
+        if pool.id in seen:
+            continue
+        seen.add(pool.id)
+        pools.append({"pool_id": pool.id, "pool_id_str": pool.pool_id, "pool_name": pool.pool_name})
+    return {"status": "success", "loan_asset_id": loan_asset_id, "loan_id": loan.loan_id, "pools": pools}
 
 
 @router.get("/available-assets")
@@ -561,6 +642,62 @@ async def list_tranches(
     except Exception as e:
         logger.error(f"Failed to list tranches: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to list tranches: {str(e)}")
+
+
+# ============================================================================
+# Structured Product Pricing (Trading Phase 6)
+# ============================================================================
+
+@router.get("/pools/{pool_id}/pricing")
+async def get_pool_pricing(
+    pool_id: int,
+    benchmark_rate: Optional[float] = Query(None, description="Benchmark rate in percent (e.g. 5 for 5%)"),
+    as_of_date: Optional[date] = Query(None, description="Valuation date YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get pool-level and per-tranche pricing: fair value, yield, spread, duration (Trading Phase 6)."""
+    try:
+        svc = StructuredProductPricingService(db)
+        bench = Decimal(str(benchmark_rate / 100)) if benchmark_rate is not None else None
+        result = svc.price_pool(pool_id, benchmark_rate=bench, as_of_date=as_of_date)
+        return {"status": "success", "pricing": result}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get pool pricing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get pool pricing: {str(e)}")
+
+
+@router.get("/pools/{pool_id}/tranches/{tranche_id}/pricing")
+async def get_tranche_pricing(
+    pool_id: int,
+    tranche_id: int,
+    benchmark_rate: Optional[float] = Query(None, description="Benchmark rate in percent (e.g. 5 for 5%)"),
+    as_of_date: Optional[date] = Query(None, description="Valuation date YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get single-tranche pricing: fair value, YTM, spread, duration, convexity (Trading Phase 6)."""
+    try:
+        pool = db.query(SecuritizationPool).filter(SecuritizationPool.id == pool_id).first()
+        if not pool:
+            raise HTTPException(status_code=404, detail="Securitization pool not found")
+        tranche = db.query(SecuritizationTranche).filter(
+            SecuritizationTranche.pool_id == pool_id,
+            SecuritizationTranche.id == tranche_id,
+        ).first()
+        if not tranche:
+            raise HTTPException(status_code=404, detail="Tranche not found")
+        svc = StructuredProductPricingService(db)
+        bench = Decimal(str(benchmark_rate / 100)) if benchmark_rate is not None else None
+        result = svc.price_tranche(tranche, pool, benchmark_rate=bench, as_of_date=as_of_date)
+        return {"status": "success", "pricing": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get tranche pricing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get tranche pricing: {str(e)}")
 
 
 # ============================================================================
@@ -784,14 +921,35 @@ async def notarize_securitization_pool(
                         "payment_type": "notarization_fee"
                     }
                 )
-        
+
+        # On-chain: create notarization via SecuritizationNotarization (pool/tranche verification linkage)
+        on_chain = {"created": False}
+        try:
+            from app.services.blockchain_service import BlockchainService
+            bc = BlockchainService()
+            res = bc.create_pool_notarization_on_chain(
+                pool.pool_id, notarization_hash, signer_addresses
+            )
+            if res.get("success"):
+                on_chain = {
+                    "created": True,
+                    "transaction_hash": res.get("transaction_hash"),
+                    "block_number": res.get("block_number"),
+                }
+            else:
+                on_chain = {"created": False, "error": res.get("error", "unknown")}
+        except Exception as e:
+            logger.warning("create_pool_notarization_on_chain failed: %s", e)
+            on_chain = {"created": False, "error": str(e)}
+
         return {
             "status": "success",
             "notarization_id": notarization.id,
             "notarization_hash": notarization.notarization_hash,
             "required_signers": notarization.required_signers,
             "status": notarization.status,
-            "payment_status": notarization.payment_status
+            "payment_status": notarization.payment_status,
+            "on_chain": on_chain,
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

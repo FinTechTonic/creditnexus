@@ -283,7 +283,44 @@ class PolicyService:
             matched_rules=result.get("matched_rules", []),
             metadata={"trade_id": trade_id}
         )
-    
+
+    def evaluate_market_resolution(
+        self,
+        market_id: str,
+        resolution_outcome: str,
+        *,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> PolicyDecision:
+        """
+        Evaluate a prediction market resolution for policy compliance.
+
+        Args:
+            market_id: Market ID
+            resolution_outcome: Proposed outcome ("yes", "no", or category value)
+            context: Optional dict with market_id, deal_id, oracle_triggered, etc.
+
+        Returns:
+            PolicyDecision with ALLOW/BLOCK/FLAG
+        """
+        ctx = context or {}
+        tx = {
+            "transaction_id": f"market_resolution_{market_id}",
+            "transaction_type": "market_resolution",
+            "timestamp": datetime.utcnow().isoformat(),
+            "market_id": market_id,
+            "resolution_outcome": resolution_outcome,
+            **ctx,
+        }
+        result = self.engine.evaluate(tx)
+        return PolicyDecision(
+            decision=result["decision"],
+            rule_applied=result.get("rule"),
+            trace_id=f"market_res_{market_id}_{datetime.utcnow().isoformat()}",
+            trace=result.get("trace", []),
+            matched_rules=result.get("matched_rules", []),
+            metadata={"market_id": market_id, "resolution_outcome": resolution_outcome},
+        )
+
     def evaluate_filing_requirements(
         self,
         credit_agreement: CreditAgreement,

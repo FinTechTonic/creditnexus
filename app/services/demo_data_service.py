@@ -1322,51 +1322,9 @@ The document contains placeholder content representing a credit agreement.
                             template_id = template.id
                             # Store the CDM data used for generation
                             # Use model_dump_json() and parse to ensure dates are serialized as strings for JSONB storage
-                            # #region agent log
-                            log_data = {
-                                "sessionId": "debug-session",
-                                "runId": "fix-date-serialization",
-                                "hypothesisId": "A",
-                                "location": "demo_data_service.py:1376",
-                                "message": "Serializing CDM data for JSONB storage",
-                                "data": {
-                                    "has_model_dump_json": hasattr(cdm, 'model_dump_json'),
-                                    "has_model_dump": hasattr(cdm, 'model_dump'),
-                                    "has_dict": hasattr(cdm, 'dict'),
-                                    "cdm_type": type(cdm).__name__
-                                },
-                                "timestamp": int(datetime.now().timestamp() * 1000)
-                            }
-                            try:
-                                with open(r"get_debug_log_path()", "a") as f:
-                                    f.write(json.dumps(log_data) + "\n")
-                            except Exception:
-                                pass
-                            # #endregion
-                            
                             if hasattr(cdm, 'model_dump_json'):
                                 cdm_json = cdm.model_dump_json()
                                 source_cdm_data = json.loads(cdm_json)
-                                # #region agent log
-                                log_data = {
-                                    "sessionId": "debug-session",
-                                    "runId": "fix-date-serialization",
-                                    "hypothesisId": "A",
-                                    "location": "demo_data_service.py:1395",
-                                    "message": "Used model_dump_json() for serialization",
-                                    "data": {
-                                        "cdm_json_length": len(cdm_json),
-                                        "source_cdm_data_type": type(source_cdm_data).__name__,
-                                        "has_date_objects": any(isinstance(v, (date, datetime)) for v in self._flatten_dict(source_cdm_data).values()) if isinstance(source_cdm_data, dict) else False
-                                    },
-                                    "timestamp": int(datetime.now().timestamp() * 1000)
-                                }
-                                try:
-                                    with open(r"get_debug_log_path()", "a") as f:
-                                        f.write(json.dumps(log_data) + "\n")
-                                except Exception:
-                                    pass
-                                # #endregion
                             elif hasattr(cdm, 'model_dump'):
                                 source_cdm_data = cdm.model_dump(mode='json')
                             elif hasattr(cdm, 'dict'):
@@ -1382,33 +1340,6 @@ The document contains placeholder content representing a credit agreement.
                                 source_cdm_data = json.loads(json.dumps(source_cdm_data, default=json_serial))
                             else:
                                 source_cdm_data = None
-                            
-                            # #region agent log
-                            log_data = {
-                                "sessionId": "debug-session",
-                                "runId": "fix-date-serialization",
-                                "hypothesisId": "A",
-                                "location": "demo_data_service.py:1420",
-                                "message": "Final source_cdm_data check before DB insert",
-                                "data": {
-                                    "source_cdm_data_is_none": source_cdm_data is None,
-                                    "source_cdm_data_type": type(source_cdm_data).__name__ if source_cdm_data is not None else None,
-                                    "can_serialize_to_json": False
-                                },
-                                "timestamp": int(datetime.now().timestamp() * 1000)
-                            }
-                            if source_cdm_data is not None:
-                                try:
-                                    json.dumps(source_cdm_data)  # Test if it's JSON serializable
-                                    log_data["data"]["can_serialize_to_json"] = True
-                                except TypeError as e:
-                                    log_data["data"]["serialization_error"] = str(e)
-                            try:
-                                with open(r"get_debug_log_path()", "a") as f:
-                                    f.write(json.dumps(log_data) + "\n")
-                            except Exception:
-                                pass
-                            # #endregion
                     
                     document = Document(
                         title=title,

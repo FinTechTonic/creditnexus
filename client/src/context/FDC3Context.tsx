@@ -195,6 +195,58 @@ export interface WorkflowLinkContext extends Context {
   };
 }
 
+/** Standard FDC3 instrument (inbound from other apps). */
+export interface Fdc3InstrumentContext extends Context {
+  type: 'fdc3.instrument';
+  id?: { ticker?: string; RIC?: string; ISIN?: string; CUSIP?: string; BBG?: string };
+  name?: string;
+}
+
+/** Instrument/symbol for trading; CDM- and fdc3.instrument-aligned. */
+export interface InstrumentContext extends Context {
+  type: 'finos.creditnexus.instrument';
+  id?: { ticker?: string; symbol?: string };
+  name?: string;
+  exchange?: string;
+  signal?: 'bullish' | 'bearish' | 'neutral';
+}
+
+/** Stock prediction (Chronos/technical): symbol, timeframe, forecast, signal. */
+export interface StockPredictionContext extends Context {
+  type: 'finos.creditnexus.stockPrediction';
+  symbol: string;
+  timeframe?: 'daily' | 'hourly' | '15min';
+  strategy?: string;
+  forecast?: number[];
+  signal?: 'bullish' | 'bearish' | 'neutral';
+  prediction_id?: number;
+  cached?: boolean;
+}
+
+/** Polymarket-style SFP / prediction market. */
+export interface PredictionMarketContext extends Context {
+  type: 'finos.creditnexus.predictionMarket';
+  market_id: string;
+  question?: string;
+  outcome_type?: string;
+  deal_id?: number;
+  sfp_id?: string | null;
+  resolved_at?: string | null;
+  resolution_outcome?: string | null;
+}
+
+/** LangAlpha/DeepResearch/PeopleHub result; symbols and recommendations for cross-linking. */
+export interface AgentResultContext extends Context {
+  type: 'finos.creditnexus.agentResult';
+  analysis_id: string;
+  agent_type: 'langalpha' | 'deep_research' | 'peoplehub';
+  query?: string;
+  summary?: string;
+  symbols?: string[];
+  recommendations?: string[];
+  deal_id?: number | null;
+}
+
 export type CreditNexusContext =
   | CreditNexusLoanContext
   | AgreementContext
@@ -205,7 +257,12 @@ export type CreditNexusContext =
   | LandUseContext
   | GreenFinanceAssessmentContext
   | WorkflowLinkContext
-  | GeneratedDocumentContext;
+  | GeneratedDocumentContext
+  | Fdc3InstrumentContext
+  | InstrumentContext
+  | StockPredictionContext
+  | PredictionMarketContext
+  | AgentResultContext;
 
 export type IntentName =
   | 'ViewLoanAgreement'
@@ -215,7 +272,11 @@ export type IntentName =
   | 'ViewPortfolio'
   | 'GenerateLMATemplate'
   | 'ShareWorkflowLink'
-  | 'ProcessWorkflowLink';
+  | 'ProcessWorkflowLink'
+  | 'ViewInstrument'
+  | 'ViewStockPrediction'
+  | 'ViewPredictionMarket'
+  | 'ViewAgentResult';
 
 export type IntentHandler = FDC3IntentHandler;
 
@@ -223,6 +284,8 @@ interface AppChannels {
   workflow: Channel | null;
   extraction: Channel | null;
   portfolio: Channel | null;
+  trading: Channel | null;
+  predictionMarket: Channel | null;
 }
 
 interface FDC3ContextValue {
@@ -250,6 +313,8 @@ export function FDC3Provider({ children }: { children: ReactNode }) {
     workflow: null,
     extraction: null,
     portfolio: null,
+    trading: null,
+    predictionMarket: null,
   });
   const [pendingIntent, setPendingIntent] = useState<{ intent: IntentName; context: Context } | null>(null);
   const [intentCallback, setIntentCallback] = useState<((intent: IntentName, context: Context) => void) | null>(null);
@@ -267,11 +332,15 @@ export function FDC3Provider({ children }: { children: ReactNode }) {
           const workflowChannel = await fdc3.getOrCreateChannel('creditnexus.workflow');
           const extractionChannel = await fdc3.getOrCreateChannel('creditnexus.extraction');
           const portfolioChannel = await fdc3.getOrCreateChannel('creditnexus.portfolio');
+          const tradingChannel = await fdc3.getOrCreateChannel('creditnexus.trading');
+          const predictionMarketChannel = await fdc3.getOrCreateChannel('creditnexus.predictionMarket');
 
           setAppChannels({
             workflow: workflowChannel,
             extraction: extractionChannel,
             portfolio: portfolioChannel,
+            trading: tradingChannel,
+            predictionMarket: predictionMarketChannel,
           });
 
           console.log('[FDC3] App channels initialized');
@@ -306,6 +375,31 @@ export function FDC3Provider({ children }: { children: ReactNode }) {
             setContext(ctx as WorkflowLinkContext);
           });
           subscriptions.push(workflowLinkListener);
+
+          const fdc3InstrumentListener = await fdc3.addContextListener('fdc3.instrument', (ctx: Context) => {
+            setContext(ctx as Fdc3InstrumentContext);
+          });
+          subscriptions.push(fdc3InstrumentListener);
+
+          const instrumentListener = await fdc3.addContextListener('finos.creditnexus.instrument', (ctx: Context) => {
+            setContext(ctx as InstrumentContext);
+          });
+          subscriptions.push(instrumentListener);
+
+          const stockPredictionListener = await fdc3.addContextListener('finos.creditnexus.stockPrediction', (ctx: Context) => {
+            setContext(ctx as StockPredictionContext);
+          });
+          subscriptions.push(stockPredictionListener);
+
+          const predictionMarketListener = await fdc3.addContextListener('finos.creditnexus.predictionMarket', (ctx: Context) => {
+            setContext(ctx as PredictionMarketContext);
+          });
+          subscriptions.push(predictionMarketListener);
+
+          const agentResultListener = await fdc3.addContextListener('finos.creditnexus.agentResult', (ctx: Context) => {
+            setContext(ctx as AgentResultContext);
+          });
+          subscriptions.push(agentResultListener);
 
           console.log('[FDC3] Context listeners registered');
         } catch (error) {
@@ -342,8 +436,13 @@ export function FDC3Provider({ children }: { children: ReactNode }) {
       'finos.creditnexus.esgData',
       'finos.creditnexus.workflow',
       'finos.creditnexus.generatedDocument',
+      'finos.creditnexus.instrument',
+      'finos.creditnexus.stockPrediction',
+      'finos.creditnexus.predictionMarket',
+      'finos.creditnexus.agentResult',
       'finos.cdm.landUse',
       'finos.cdm.greenFinanceAssessment',
+      'fdc3.instrument',
     ];
     
     if (!validTypes.includes(loanContext.type)) {
@@ -491,6 +590,10 @@ export function FDC3Provider({ children }: { children: ReactNode }) {
         'GenerateLMATemplate',
         'ShareWorkflowLink',
         'ProcessWorkflowLink',
+        'ViewInstrument',
+        'ViewStockPrediction',
+        'ViewPredictionMarket',
+        'ViewAgentResult',
       ];
 
       for (const intent of intents) {
@@ -639,5 +742,64 @@ export function createWorkflowLinkContext(
     workflowType,
     linkPayload,
     metadata,
+  };
+}
+
+export function createInstrumentContext(symbol: string, data?: Partial<InstrumentContext>): InstrumentContext {
+  return {
+    type: 'finos.creditnexus.instrument',
+    id: { ticker: symbol, symbol },
+    name: data?.name ?? symbol,
+    exchange: data?.exchange,
+    signal: data?.signal,
+  };
+}
+
+export function createStockPredictionContext(
+  symbol: string,
+  data: Partial<StockPredictionContext>
+): StockPredictionContext {
+  return {
+    type: 'finos.creditnexus.stockPrediction',
+    symbol,
+    timeframe: data.timeframe,
+    strategy: data.strategy,
+    forecast: data.forecast,
+    signal: data.signal,
+    prediction_id: data.prediction_id,
+    cached: data.cached,
+  };
+}
+
+export function createPredictionMarketContext(
+  marketId: string,
+  data: Partial<PredictionMarketContext>
+): PredictionMarketContext {
+  return {
+    type: 'finos.creditnexus.predictionMarket',
+    market_id: marketId,
+    question: data.question,
+    outcome_type: data.outcome_type,
+    deal_id: data.deal_id,
+    sfp_id: data.sfp_id ?? null,
+    resolved_at: data.resolved_at ?? null,
+    resolution_outcome: data.resolution_outcome ?? null,
+  };
+}
+
+export function createAgentResultContext(
+  analysisId: string,
+  agentType: AgentResultContext['agent_type'],
+  data: Partial<AgentResultContext>
+): AgentResultContext {
+  return {
+    type: 'finos.creditnexus.agentResult',
+    analysis_id: analysisId,
+    agent_type: agentType,
+    query: data.query,
+    summary: data.summary,
+    symbols: data.symbols,
+    recommendations: data.recommendations,
+    deal_id: data.deal_id ?? null,
   };
 }

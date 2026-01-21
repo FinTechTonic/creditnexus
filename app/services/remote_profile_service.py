@@ -32,7 +32,7 @@ class RemoteProfileService:
         allowed_ips: Optional[List[str]] = None,
         permissions: Optional[dict] = None,
         api_key: Optional[str] = None,
-    ) -> RemoteAppProfile:
+    ) -> tuple[RemoteAppProfile, str]:
         """Create a new remote app profile.
 
         Args:
