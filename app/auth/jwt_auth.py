@@ -36,7 +36,6 @@ from app.db.models import (
 )
 from app.core.config import settings
 from app.utils import get_debug_log_path
-from app.utils import get_debug_log_path
 
 logger = logging.getLogger(__name__)
 
@@ -102,10 +101,12 @@ MIN_PASSWORD_LENGTH = 12
 
 class PasswordStrengthError(Exception):
     """Raised when password doesn't meet security requirements."""
+
     pass
 
 class UserRegister(BaseModel):
     """Registration request schema."""
+
     email: EmailStr
     password: str
     display_name: str
@@ -116,10 +117,10 @@ class UserRegister(BaseModel):
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets bank-grade security requirements."""
         errors = []
-        
+
         if len(v) < MIN_PASSWORD_LENGTH:
             errors.append(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
-        
+
         if not re.search(r"[A-Z]", v):
             errors.append("Password must contain at least one uppercase letter")
 
@@ -187,6 +188,7 @@ class TokenResponse(BaseModel):
 class RefreshTokenRequest(BaseModel):
     """Refresh token request schema."""
 
+
     refresh_token: str
 
 class UserSignupStep1(BaseModel):
@@ -205,12 +207,12 @@ class UserSignupStep1(BaseModel):
         """Validate password meets bank-grade security requirements (only if provided)."""
         if v is None:
             return v
-
+        
         errors = []
-
+        
         if len(v) < MIN_PASSWORD_LENGTH:
             errors.append(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
-
+        
         if not re.search(r"[A-Z]", v):
             errors.append("Password must contain at least one uppercase letter")
 
@@ -290,7 +292,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """Create a JWT access token."""
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "access"})
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "access"
+    })
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 def create_refresh_token(data: dict, db: Session, expires_delta: Optional[timedelta] = None) -> str:
@@ -499,13 +505,9 @@ def _hydrate_user_context(user: User, db: Session) -> Dict[str, Any]:
 
 
 @jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(
-    request: Request,
-    user_data: UserRegister,
-    db: Session = Depends(get_db)
-):
+async def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
     """Register a new user account.
-    
+
     Password requirements:
     - Minimum 12 characters
     - At least one uppercase letter
@@ -599,10 +601,9 @@ async def signup_step1(
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
-    
+
     # Create user with selected role
     user = User(
         email=user_data.email,
@@ -829,13 +830,9 @@ async def signup_step2(
     )
 
 @jwt_router.post("/login", response_model=TokenResponse)
-async def login(
-    request: Request,
-    credentials: UserLogin,
-    db: Session = Depends(get_db)
-):
+async def login(request: Request, credentials: UserLogin, db: Session = Depends(get_db)):
     """Authenticate user and return JWT tokens.
-    
+
     Account will be locked after 5 failed attempts for 30 minutes.
     Rate limited via slowapi default_limits (60/minute) with additional
     account lockout protection (5 failed attempts = 30 min lockout).
@@ -877,6 +874,7 @@ async def login(
     if not user:
         logger.warning("Login failed: user not found", extra={"email": credentials.email})
         raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
     
