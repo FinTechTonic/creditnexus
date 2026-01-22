@@ -36,6 +36,26 @@ async def list_available_implementations(
     }
 
 
+@router.get("/signup-choices")
+async def signup_implementation_choices(
+    db: Session = Depends(get_db)
+):
+    """List implementation id, name, display_name, and category for signup selection. No auth required."""
+    implementations = db.query(VerifiedImplementation).filter(
+        VerifiedImplementation.is_active == True
+    ).all()
+    
+    return [
+        {
+            "id": impl.id,
+            "name": impl.name,
+            "display_name": impl.display_name,
+            "category": impl.category
+        }
+        for impl in implementations
+    ]
+
+
 @router.post("/{impl_id}/connect")
 async def connect_implementation(
     impl_id: int,

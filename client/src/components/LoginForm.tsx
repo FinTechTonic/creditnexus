@@ -20,7 +20,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const navigate = useNavigate();
-  const { login, register, authError, clearError, user } = useAuth();
+  const { login, register, authError, clearError, user, organization, implementations } = useAuth();
 
   // Navigate to dashboard when user is authenticated (only when modal is open)
   // CRITICAL: Only run this when isOpen is true to prevent redirect loops
@@ -253,6 +253,29 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
               </p>
             )}
           </div>
+
+          {user && organization && (
+            <div className="mt-4 p-3 bg-slate-900 rounded-lg">
+              <p className="text-xs text-slate-400 mb-1">Organization</p>
+              <p className="text-sm text-slate-200">{organization.name}</p>
+            </div>
+          )}
+
+          {user && implementations && implementations.length > 0 && (
+            <div className="mt-2 p-3 bg-slate-900 rounded-lg">
+              <p className="text-xs text-slate-400 mb-1">Connected Services</p>
+              <div className="flex flex-wrap gap-2">
+                {implementations.map((impl) => (
+                  <span
+                    key={impl.id}
+                    className="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded"
+                  >
+                    {impl.display_name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 pt-6 border-t border-slate-700">
             <p className="text-xs text-center text-slate-500">

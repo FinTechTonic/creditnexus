@@ -287,7 +287,7 @@ async def lifespan(app: FastAPI):
                 # Check if templates exist and seed missing ones from metadata
                 try:
                     from app.templates.registry import TemplateRegistry
-                    from scripts.seed_templates import seed_templates, load_template_metadata
+                    from scripts.dev.seed_templates import seed_templates, load_template_metadata
                     from pathlib import Path
                     
                     db = SessionLocal()
@@ -330,7 +330,7 @@ async def lifespan(app: FastAPI):
                             
                             # Generate template files if they don't exist
                             try:
-                                from scripts.create_template_files import main as create_templates
+                                from scripts.dev.create_template_files import main as create_templates
                                 logger.info("Generating template Word files...")
                                 create_templates(use_metadata=True, force_regenerate=False)
                             except Exception as e:
@@ -384,7 +384,7 @@ async def lifespan(app: FastAPI):
                 # Check if policy templates exist and seed missing ones
                 try:
                     from app.db.models import PolicyTemplate, User
-                    from scripts.seed_policy_templates import seed_policy_templates
+                    from scripts.dev.seed_policy_templates import seed_policy_templates
                     
                     db = SessionLocal()
                     try:
@@ -417,7 +417,7 @@ async def lifespan(app: FastAPI):
                 try:
                     from app.db.models import Policy, User
                     from app.db import SessionLocal
-                    from scripts.seed_policies import seed_policies_from_yaml
+                    from scripts.dev.seed_policies import seed_policies_from_yaml
                     
                     db = SessionLocal()
                     try:

@@ -366,7 +366,7 @@ The document contains placeholder content representing a credit agreement.
         
         try:
             # Import seed function
-            from scripts.seed_templates import seed_templates
+            from scripts.dev.seed_templates import seed_templates
             import json
             from pathlib import Path
             
@@ -430,7 +430,7 @@ The document contains placeholder content representing a credit agreement.
         
         try:
             # Import seed function
-            from scripts.seed_policies import seed_policies_from_yaml
+            from scripts.dev.seed_policies import seed_policies_from_yaml
             from app.db.models import User
             from pathlib import Path
             
@@ -490,7 +490,7 @@ The document contains placeholder content representing a credit agreement.
         try:
             # Import seed function (if exists)
             try:
-                from scripts.seed_policy_templates import seed_policy_templates
+                from scripts.dev.seed_policy_templates import seed_policy_templates
                 count = seed_policy_templates(self.db)
             except ImportError:
                 logger.warning("seed_policy_templates not available, skipping")

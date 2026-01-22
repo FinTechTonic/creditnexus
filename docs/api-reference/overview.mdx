@@ -28,17 +28,31 @@ Authorization: Bearer <jwt_token>
 
 ## API Route Files
 
-CreditNexus includes 15+ API route files covering all functionality:
+CreditNexus includes 32+ API route files covering all functionality:
 
 ### Core Routes
 
-- **`routes.py`**: Main API routes (documents, extraction, health checks)
+- **`routes.py`**: Main API routes (documents, extraction, health checks, chatbot)
 - **`config_routes.py`**: Configuration management
-- **`websocket_routes.py`**: WebSocket connections
+- **`websocket_routes.py`**: WebSocket connections for real-time updates
 
-### Feature-Specific Routes
+### Trading & Market Data Routes
+
+- **`trading_routes.py`**: Trade execution, orders, portfolio management
+- **`stock_prediction_routes.py`**: Stock prediction (daily/hourly/15min), backtesting, market status
+- **`portfolio_routes.py`**: Portfolio management and analytics
+- **`banking_routes.py`**: Banking operations and account management
+
+### Financial Product Routes
 
 - **`securitization_routes.py`**: Securitization workflow endpoints
+- **`polymarket_routes.py`**: Polymarket-style prediction markets for SFPs
+- **`polymarket_surveillance_routes.py`**: Market surveillance and alerts
+- **`cross_chain_routes.py`**: Cross-chain bridging and outcome token minting
+- **`asset_routes.py`**: Asset management
+
+### Compliance & Risk Routes
+
 - **`recovery_routes.py`**: Loan recovery and default management
 - **`auditor_routes.py`**: Audit report generation and CDM event exploration
 - **`gdpr_routes.py`**: GDPR compliance endpoints (data export, deletion)
@@ -47,12 +61,37 @@ CreditNexus includes 15+ API route files covering all functionality:
 - **`policy_editor_routes.py`**: Policy rule management
 - **`policy_template_routes.py`**: Policy template management
 
+### Organization & User Management Routes
+
+- **`organization_routes.py`**: Organization management
+- **`subscription_routes.py`**: Subscription and entitlement management
+- **`whitelist_routes.py`**: Whitelist profile management
+- **`remote_profile_routes.py`**: Remote profile management
+
+### Workflow & Sharing Routes
+
+- **`workflow_delegation_routes.py`**: Workflow delegation and sharing
+- **`nexus_routes.py`**: .nexus file format operations
+- **`p2p_routes.py`**: Peer-to-peer file sharing
+- **`remote_routes.py`**: Remote API for verification links
+
 ### Integration Routes
 
 - **`twilio_routes.py`**: Twilio SMS and voice webhooks
-- **`remote_routes.py`**: Remote API for verification links
-- **`workflow_delegation_routes.py`**: Workflow delegation and sharing
+- **`fdc3_routes.py`**: FDC3 app directory and interoperability
 - **`layer_routes.py`**: Geospatial layer management
+- **`implementation_routes.py`**: Implementation management
+- **`review_routes.py`**: Review and approval workflows
+
+### Analytics & Metrics Routes
+
+- **`analytics_routes.py`**: Analytics and reporting (via routes.py)
+- **`metrics_routes.py`**: System metrics and monitoring
+
+### Specialized Routes
+
+- **`challenge_coin_routes.py`**: Challenge coin NFT operations
+- **`bridge_builder_routes.py`**: Bridge builder functionality
 
 ---
 

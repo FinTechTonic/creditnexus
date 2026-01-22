@@ -44,11 +44,21 @@ def get_policy_metadata(file_path: Path, yaml_content: dict) -> dict:
     rules = yaml_content if isinstance(yaml_content, list) else []
     rule_names = [rule.get('name', '') for rule in rules if isinstance(rule, dict) and 'name' in rule]
     
+    # Compute relative path from project root (go up 2 levels from scripts/dev/ to project root)
+    project_root = Path(__file__).parent.parent.parent
+    policies_dir = project_root / 'app' / 'policies'
+    
+    try:
+        source_file = str(file_path.relative_to(policies_dir))
+    except ValueError:
+        # If relative path computation fails, use the filename as fallback
+        source_file = file_path.name
+    
     return {
         'category': category,
         'rules_count': len(rules),
         'rule_names': rule_names,
-        'source_file': str(file_path.relative_to(Path(__file__).parent.parent / 'app' / 'policies')),
+        'source_file': source_file,
         'is_system_policy': True
     }
 

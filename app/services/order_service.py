@@ -190,10 +190,10 @@ class OrderService:
         log_audit_action(
             db=self.db,
             action=AuditAction.CREATE,
-            resource_type="order",
-            resource_id=order.id,
+            target_type="order",
+            target_id=order.id,
             user_id=user_id,
-            details={"order_id": order_id, "symbol": symbol, "side": side, "order_type": order_type}
+            metadata={"order_id": order_id, "symbol": symbol, "side": side, "order_type": order_type}
         )
         
         logger.info(f"Created order {order_id} for user {user_id}: {side} {quantity} {symbol}")
@@ -270,10 +270,10 @@ class OrderService:
             log_audit_action(
                 db=self.db,
                 action=AuditAction.CREATE,
-                resource_type="order",
-                resource_id=order.id,
+                target_type="order",
+                target_id=order.id,
                 user_id=order.user_id,
-                details={
+                metadata={
                     "order_id": order.order_id,
                     "trading_api_order_id": order.trading_api_order_id,
                     "status": order.status,
@@ -377,10 +377,10 @@ class OrderService:
             log_audit_action(
                 db=self.db,
                 action=AuditAction.DELETE,
-                resource_type="order",
-                resource_id=order.id,
+                target_type="order",
+                target_id=order.id,
                 user_id=order.user_id,
-                details={"order_id": order.order_id, "action": "cancelled"}
+                metadata={"order_id": order.order_id, "action": "cancelled"}
             )
             
             logger.info(f"Cancelled order {order_id}")

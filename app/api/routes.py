@@ -11307,9 +11307,20 @@ async def list_pending_signups(
         offset = (page - 1) * limit
         users = query.order_by(User.signup_submitted_at.desc()).offset(offset).limit(limit).all()
         
+        # Include organization info for each user
+        from app.db.models import Organization
+        user_data = []
+        for user in users:
+            user_dict = user.to_dict()
+            if user.organization_id:
+                org = db.query(Organization).filter(Organization.id == user.organization_id).first()
+                if org:
+                    user_dict["organization"] = org.to_dict()
+            user_data.append(user_dict)
+        
         return {
             "status": "success",
-            "data": [user.to_dict() for user in users],
+            "data": user_data,
             "pagination": {
                 "page": page,
                 "limit": limit,
