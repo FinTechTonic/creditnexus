@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Loader2, Search } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { useFDC3 } from '@/context/FDC3Context';
 import { resolveApiUrl } from '@/utils/apiBase';
 
 interface Order {
@@ -29,6 +30,7 @@ interface Order {
 }
 
 export function OrderHistory() {
+  const { context } = useFDC3();
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,40 +38,51 @@ export function OrderHistory() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sideFilter, setSideFilter] = useState<string>('all');
 
+  // Listen for FDC3 context updates (e.g., new order placed or instrument selected)
   useEffect(() => {
-    const loadOrderHistory = async () => {
-      setIsLoading(true);
-      setError(null);
+    if (
+      context?.type === 'fdc3.instrument' ||
+      context?.type === 'finos.creditnexus.instrument' ||
+      context?.type === 'finos.creditnexus.stockPrediction'
+    ) {
+      // Instrument or prediction context received - refresh history to show new orders
+      loadOrderHistory();
+    }
+  }, [context]);
 
-      try {
-        const apiUrl = resolveApiUrl('/api/trades/orders/history');
-        const response = await fetchWithAuth(apiUrl, {
-          method: 'GET',
-        });
+  const loadOrderHistory = async () => {
+    setIsLoading(true);
+    setError(null);
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: 'Failed to load order history' }));
-          throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: Failed to load order history`);
-        }
+    try {
+      const apiUrl = resolveApiUrl('/api/trades/orders/history');
+      const response = await fetchWithAuth(apiUrl, {
+        method: 'GET',
+      });
 
-        const raw: unknown[] = await response.json();
-        // Map trading API (order_id, order_type, average_fill_price) to UI shape (id, type, average_price)
-        const data: Order[] = raw.map((o: any) => ({
-          ...o,
-          id: String(o?.order_id ?? o?.id ?? ''),
-          type: o?.order_type ?? o?.type ?? 'market',
-          average_price: o?.average_fill_price ?? o?.average_price,
-        }));
-        setOrders(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load order history');
-        // Set mock data for development
-        setOrders([]);
-      } finally {
-        setIsLoading(false);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to load order history' }));
+        throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: Failed to load order history`);
       }
-    };
 
+      const raw: unknown[] = await response.json();
+      // Map trading API (order_id, order_type, average_fill_price) to UI shape (id, type, average_price)
+      const data: Order[] = raw.map((o: any) => ({
+        ...o,
+        id: String(o?.order_id ?? o?.id ?? ''),
+        type: o?.order_type ?? o?.type ?? 'market',
+        average_price: o?.average_fill_price ?? o?.average_price,
+      }));
+      setOrders(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load order history');
+      setOrders([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadOrderHistory();
   }, []);
 

@@ -1,12 +1,19 @@
 """Modal App for CreditNexus stock prediction (Chronos inference, market, training)."""
 
 import os
+import importlib.util
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List
 
 import modal
 
-from modal.image import chronos_image
+# Load image.py explicitly to avoid import conflicts with modal package
+_image_path = Path(__file__).parent / "image.py"
+_spec = importlib.util.spec_from_file_location("modal_image", _image_path)
+_image_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_image_module)
+chronos_image = _image_module.chronos_image
 
 # Config from env: MODAL_USE_GPU (1/true/yes) and CHRONOS_DEVICE (cpu, cuda, cuda:0).
 # Set when running: modal run modal/app.py or modal deploy, e.g. MODAL_USE_GPU=1 modal deploy

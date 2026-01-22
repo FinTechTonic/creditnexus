@@ -7192,9 +7192,8 @@ def get_trade_execution(trade_id: str, db: Session) -> Optional[Dict[str, Any]]:
     """
     Get trade execution event by trade ID.
     
-    This helper function retrieves trade execution events. In a production system,
-    trades would be stored in a database. For now, we'll check if the trade
-    was recently executed and stored in the vector store or generate it on-demand.
+    This helper function retrieves trade execution events from the database first,
+    then falls back to vector store if not found in database.
     
     Args:
         trade_id: Trade identifier
@@ -7203,7 +7202,20 @@ def get_trade_execution(trade_id: str, db: Session) -> Optional[Dict[str, Any]]:
     Returns:
         Trade execution CDM event dictionary or None if not found
     """
-    # Check vector store for trade events
+    # Step 1: Check database first (most reliable)
+    try:
+        from app.db.models import TradeExecution
+        trade_exec = db.query(TradeExecution).filter(
+            TradeExecution.trade_id == trade_id
+        ).first()
+        
+        if trade_exec and trade_exec.cdm_event:
+            logger.debug(f"Found trade {trade_id} in database")
+            return trade_exec.cdm_event
+    except Exception as e:
+        logger.warning(f"Error querying database for trade {trade_id}: {e}")
+    
+    # Step 2: Fallback to vector store for legacy trades
     try:
         # Search vector store for trade events
         results = GLOBAL_VECTOR_STORE.semantic_search(trade_id)
@@ -7216,11 +7228,13 @@ def get_trade_execution(trade_id: str, db: Session) -> Optional[Dict[str, Any]]:
                 if assigned_ids:
                     event_trade_id = assigned_ids[0].get("identifier", {}).get("value", "")
                     if event_trade_id == trade_id:
+                        logger.debug(f"Found trade {trade_id} in vector store")
                         return event
     except Exception as e:
         logger.warning(f"Error searching vector store for trade {trade_id}: {e}")
     
-    # If not found, return None (caller should handle)
+    # If not found in either location, return None (caller should handle)
+    logger.warning(f"Trade {trade_id} not found in database or vector store")
     return None
 
 
@@ -7281,6 +7295,36 @@ def get_party_by_id(party_id: str, db: Session, credit_agreement = None):
 
 
 def update_trade_status(trade_id: str, status: str, db: Session) -> None:
+    """
+    Update trade status in database.
+    
+    Args:
+        trade_id: Trade identifier
+        status: New status (e.g., "settled", "cancelled")
+        db: Database session
+    """
+    try:
+        from app.db.models import TradeExecution
+        from datetime import datetime
+        
+        trade_exec = db.query(TradeExecution).filter(
+            TradeExecution.trade_id == trade_id
+        ).first()
+        
+        if trade_exec:
+            trade_exec.status = status
+            if status == "settled":
+                trade_exec.settled_at = datetime.utcnow()
+            trade_exec.updated_at = datetime.utcnow()
+            db.commit()
+            logger.info(f"Updated trade {trade_id} status to {status} in database")
+        else:
+            logger.warning(f"Trade {trade_id} not found in database for status update")
+    except Exception as e:
+        logger.error(f"Failed to update trade status in database: {e}", exc_info=True)
+        db.rollback()
+
+def update_trade_status_legacy(trade_id: str, status: str, db: Session) -> None:
     """
     Update trade status in database or tracking system.
     
@@ -8513,7 +8557,51 @@ async def execute_trade(
                 logger.error(f"Policy evaluation failed for trade {trade_request.trade_id}: {e}", exc_info=True)
                 # Continue with trade execution even if policy evaluation fails
         
-        # Step 4: Store trade event in vector store for later retrieval
+        # Step 4: Store trade event in database for reliable lookup
+        try:
+            from app.db.models import TradeExecution
+            from datetime import date as date_type
+            
+            # Extract settlement date from trade event if available
+            settlement_date = None
+            if trade_event.get("trade", {}).get("settlementDate"):
+                settlement_date_str = trade_event["trade"]["settlementDate"]
+                try:
+                    settlement_date = date_type.fromisoformat(settlement_date_str.split("T")[0])
+                except (ValueError, AttributeError):
+                    pass
+            
+            # Extract trade price and amount from trade event
+            trade_price = None
+            trade_amount = None
+            if trade_event.get("trade", {}).get("economicTerms", {}).get("notional", {}).get("amount", {}).get("value"):
+                trade_amount = Decimal(str(trade_event["trade"]["economicTerms"]["notional"]["amount"]["value"]))
+            if trade_event.get("trade", {}).get("economicTerms", {}).get("price", {}).get("value"):
+                trade_price = Decimal(str(trade_event["trade"]["economicTerms"]["price"]["value"]))
+            
+            # Store in database
+            trade_execution = TradeExecution(
+                trade_id=trade_request.trade_id,
+                user_id=current_user.id if current_user else None,
+                credit_agreement_id=trade_request.credit_agreement_id,
+                facility_id=trade_request.facility_id,
+                trade_price=trade_price,
+                trade_amount=trade_amount,
+                settlement_date=settlement_date,
+                status="executed",
+                cdm_event=trade_event,
+                policy_decision=policy_decision
+            )
+            db.add(trade_execution)
+            db.commit()
+            db.refresh(trade_execution)
+            logger.info(f"Stored trade execution {trade_request.trade_id} in database")
+        except Exception as e:
+            logger.error(f"Failed to store trade execution in database: {e}", exc_info=True)
+            db.rollback()
+            # Continue even if database storage fails
+        
+        # Step 4b: Store trade event in vector store for semantic search (optional)
         try:
             GLOBAL_VECTOR_STORE.add_trade_event(trade_event)
             if policy_evaluation_event:
@@ -11716,7 +11804,18 @@ class DemoSeedRequest(BaseModel):
     generate_deals: bool = False
     deal_count: int = 12
     dry_run: bool = False
+    force: bool = False  # If True, delete existing demo deals and recreate from scratch
     complete_partial_data: bool = False  # Whether to complete partially filled data after seeding
+    # Configuration flags for demo data generation
+    jurisdiction_distribution: Optional[Dict[str, float]] = None
+    deal_type_distribution: Optional[Dict[str, float]] = None
+    generate_timeline_events: bool = True
+    generate_document_filings: bool = True
+    assign_users_to_deals: bool = True
+    min_notes_per_deal: int = 2
+    max_notes_per_deal: int = 5
+    timeline_events_per_deal: int = 5
+    preset: Optional[str] = None  # Preset configuration name (us_focused, eu_focused, etc.)
 
 
 class DemoSeedResponse(BaseModel):
@@ -11798,13 +11897,69 @@ async def seed_demo_data(
                         results["users"]["updated"] += user_result.get("updated", 0)
                 
                 logger.info(f"Generating {request.deal_count} demo deals... (found {applicant_count} applicant users)")
-                deals = service.create_demo_deals(count=request.deal_count, seed_securitization=request.seed_securitization)
+                
+                # Get existing demo deal count before generation
+                existing_demo_count = db.query(Deal).filter(Deal.is_demo == True).count()
+                
+                # Create DemoDataConfig from request
+                from app.services.demo_data_service import DemoDataConfig, get_demo_config_preset
+                
+                # Get preset config if specified, otherwise use request values
+                if request.preset:
+                    config = get_demo_config_preset(request.preset)
+                    if config is None:
+                        # Custom preset - use request values
+                        config = DemoDataConfig(
+                            jurisdiction_distribution=request.jurisdiction_distribution,
+                            deal_type_distribution=request.deal_type_distribution,
+                            generate_timeline_events=request.generate_timeline_events,
+                            generate_document_filings=request.generate_document_filings,
+                            assign_users_to_deals=request.assign_users_to_deals,
+                            min_notes_per_deal=request.min_notes_per_deal,
+                            max_notes_per_deal=request.max_notes_per_deal,
+                            timeline_events_per_deal=request.timeline_events_per_deal
+                        )
+                    else:
+                        # Merge preset with request overrides
+                        if request.jurisdiction_distribution:
+                            config.jurisdiction_distribution = request.jurisdiction_distribution
+                        if request.deal_type_distribution:
+                            config.deal_type_distribution = request.deal_type_distribution
+                        config.generate_timeline_events = request.generate_timeline_events
+                        config.generate_document_filings = request.generate_document_filings
+                        config.assign_users_to_deals = request.assign_users_to_deals
+                        config.min_notes_per_deal = request.min_notes_per_deal
+                        config.max_notes_per_deal = request.max_notes_per_deal
+                        config.timeline_events_per_deal = request.timeline_events_per_deal
+                else:
+                    # Use request values directly
+                    config = DemoDataConfig(
+                        jurisdiction_distribution=request.jurisdiction_distribution,
+                        deal_type_distribution=request.deal_type_distribution,
+                        generate_timeline_events=request.generate_timeline_events,
+                        generate_document_filings=request.generate_document_filings,
+                        assign_users_to_deals=request.assign_users_to_deals,
+                        min_notes_per_deal=request.min_notes_per_deal,
+                        max_notes_per_deal=request.max_notes_per_deal,
+                        timeline_events_per_deal=request.timeline_events_per_deal
+                    )
+                
+                deals = service.create_demo_deals(
+                    count=request.deal_count, 
+                    seed_securitization=request.seed_securitization,
+                    config=config,
+                    force=request.force
+                )
                 results["deals"] = {
                     "created": len(deals),
                     "updated": 0,
+                    "deleted": existing_demo_count if request.force else 0,
                     "errors": []
                 }
-                logger.info(f"Successfully generated {len(deals)} demo deals")
+                if request.force and len(deals) > 0:
+                    logger.info(f"Successfully regenerated {len(deals)} demo deals (deleted {existing_demo_count} existing)")
+                else:
+                    logger.info(f"Successfully generated {len(deals)} demo deals")
             except Exception as e:
                 logger.error(f"Error generating demo deals: {e}", exc_info=True)
                 results["deals"] = {

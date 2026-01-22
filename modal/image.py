@@ -7,7 +7,7 @@ chronos_image = (
     .apt_install("git")
     .pip_install(
         "torch>=2.0.0",
-        "chronos-bolt>=0.1.0",
+        "chronos-forecasting>=2.2.2",
         "alpaca-py>=0.15.0",
         "pandas>=2.0.0",
         "numpy>=1.24.0",

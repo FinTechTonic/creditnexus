@@ -15,7 +15,10 @@ import { OrderHistory } from './OrderHistory';
 import { StockPredictionTab } from './StockPredictionTab';
 import { BacktestTab } from './BacktestTab';
 import { StructuredProductsTab } from './StructuredProductsTab';
-import { TrendingUp, Wallet, BarChart3, History, LineChart, BarChart2, Layers } from 'lucide-react';
+import { Watchlists } from './Watchlists';
+import { PriceAlerts } from './PriceAlerts';
+import { PerformanceAnalytics } from './PerformanceAnalytics';
+import { TrendingUp, Wallet, BarChart3, History, LineChart, BarChart2, Layers, Eye, Bell } from 'lucide-react';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 
@@ -48,7 +51,7 @@ export function TradingDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-7">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-9">
             <TabsTrigger value="orders" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               <span className="hidden sm:inline">Orders</span>
@@ -60,6 +63,14 @@ export function TradingDashboard() {
             <TabsTrigger value="market" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               <span className="hidden sm:inline">Market</span>
+            </TabsTrigger>
+            <TabsTrigger value="watchlists" className="flex items-center gap-2">
+              <Eye className="h-4 w-4" />
+              <span className="hidden sm:inline">Watchlists</span>
+            </TabsTrigger>
+            <TabsTrigger value="alerts" className="flex items-center gap-2">
+              <Bell className="h-4 w-4" />
+              <span className="hidden sm:inline">Alerts</span>
             </TabsTrigger>
             <TabsTrigger value="predictions" className="flex items-center gap-2">
               <LineChart className="h-4 w-4" />
@@ -84,11 +95,22 @@ export function TradingDashboard() {
           </TabsContent>
 
           <TabsContent value="portfolio" className="space-y-4 mt-6">
-            <PortfolioView />
+            <div className="space-y-6">
+              <PortfolioView />
+              <PerformanceAnalytics />
+            </div>
           </TabsContent>
 
           <TabsContent value="market" className="space-y-4 mt-6">
             <MarketData />
+          </TabsContent>
+
+          <TabsContent value="watchlists" className="space-y-4 mt-6">
+            <Watchlists />
+          </TabsContent>
+
+          <TabsContent value="alerts" className="space-y-4 mt-6">
+            <PriceAlerts />
           </TabsContent>
 
           <TabsContent value="predictions" className="space-y-4 mt-6">

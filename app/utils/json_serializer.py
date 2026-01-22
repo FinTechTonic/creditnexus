@@ -1,11 +1,12 @@
 """
 JSON serialization utilities for CDM data.
 
-Handles serialization of Pydantic models containing Decimal, datetime, and other
+Handles serialization of Pydantic models containing Decimal, datetime, UUID, and other
 non-JSON-serializable types for database storage (JSONB columns).
 """
 
 import json
+import uuid
 from decimal import Decimal
 from datetime import date, datetime
 from typing import Any, Dict
@@ -20,6 +21,7 @@ def serialize_cdm_data(data: Any) -> Dict[str, Any]:
     - Decimal -> float
     - datetime -> ISO format string
     - date -> ISO format string
+    - UUID -> string
     - Enum -> value
     - Pydantic models -> dict (recursively)
     
@@ -31,12 +33,14 @@ def serialize_cdm_data(data: Any) -> Dict[str, Any]:
     """
     if isinstance(data, dict):
         return {key: serialize_cdm_data(value) for key, value in data.items()}
-    elif isinstance(data, list):
+    elif isinstance(data, (list, tuple)):
         return [serialize_cdm_data(item) for item in data]
     elif isinstance(data, Decimal):
         return float(data)
     elif isinstance(data, (date, datetime)):
         return data.isoformat()
+    elif isinstance(data, uuid.UUID):
+        return str(data)
     elif isinstance(data, Enum):
         return data.value
     elif hasattr(data, 'model_dump'):
@@ -49,8 +53,12 @@ def serialize_cdm_data(data: Any) -> Dict[str, Any]:
         # Regular object with __dict__
         return serialize_cdm_data(data.__dict__)
     else:
-        # Primitive types (str, int, float, bool, None)
-        return data
+        # Try to serialize - if it fails, convert to string
+        try:
+            json.dumps(data)
+            return data
+        except (TypeError, ValueError):
+            return str(data)
 
 
 def json_dumps_cdm(data: Any) -> str:

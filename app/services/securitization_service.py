@@ -100,23 +100,54 @@ class SecuritizationService:
             allocation_percentage = Decimal(str(asset_data.get("allocation_percentage", 0)))
             
             if asset_type == "deal" and deal_id:
-                deal = self.db.query(Deal).filter(Deal.id == deal_id).first()
+                # deal_id is a string (deal_id field), not integer (id field)
+                # Ensure deal_id is a string for comparison
+                deal_id_str = str(deal_id) if deal_id is not None else None
+                deal = self.db.query(Deal).filter(Deal.deal_id == deal_id_str).first()
                 if not deal:
-                    raise ValueError(f"Deal {deal_id} not found")
+                    raise ValueError(f"Deal {deal_id_str} not found")
                 
-                # Extract value from deal
-                if deal.deal_data and isinstance(deal.deal_data, dict):
-                    commitment = deal.deal_data.get("total_commitment")
-                    if commitment:
-                        asset_value = Decimal(str(commitment))
-                        total_pool_value += asset_value
-                        if not currency and deal.deal_data.get("currency"):
-                            currency = Currency(deal.deal_data["currency"])
+                # Initialize asset_value from request value if provided, otherwise 0
+                asset_value = Decimal("0")
+                request_value = asset_data.get("value")
+                # Check if value is explicitly provided (not None, even if "0" or 0)
+                if request_value is not None and request_value != "":
+                    try:
+                        asset_value = Decimal(str(request_value))
+                    except (ValueError, TypeError):
+                        asset_value = Decimal("0")
+                
+                # Extract value from deal if not provided in request or is 0
+                if asset_value <= 0:
+                    if deal.deal_data and isinstance(deal.deal_data, dict):
+                        commitment = deal.deal_data.get("total_commitment")
+                        if commitment:
+                            asset_value = Decimal(str(commitment))
+                            if not currency and deal.deal_data.get("currency"):
+                                currency = Currency(deal.deal_data["currency"])
+                    
+                    # Also try to get from deal's to_dict() method which extracts total_commitment
+                    if asset_value <= 0:
+                        deal_dict = deal.to_dict()
+                        if deal_dict.get("total_commitment"):
+                            asset_value = Decimal(str(deal_dict["total_commitment"]))
+                
+                # If still no value, raise error
+                if asset_value <= 0:
+                    raise ValueError(
+                        f"Could not determine value for deal {deal_id}. "
+                        f"Please provide 'value' in the asset data, or ensure the deal has total_commitment in deal_data."
+                    )
+                
+                total_pool_value += asset_value
+                if not currency and deal.deal_data and isinstance(deal.deal_data, dict) and deal.deal_data.get("currency"):
+                    currency = Currency(deal.deal_data["currency"])
                 
                 validated_assets.append({
-                    "asset_id": f"deal_{deal_id}",
+                    "asset_id": f"deal_{deal_id_str}",
                     "asset_type": "deal",
-                    "deal_id": str(deal_id),
+                    "deal_id": deal_id_str,  # String deal_id for CDM
+                    "deal_db_id": deal.id,  # Integer id for database foreign key
                     "asset_value": asset_value,
                     "allocation_percentage": allocation_percentage
                 })
@@ -132,75 +163,84 @@ class SecuritizationService:
                 if not loan:
                     raise ValueError(f"Loan asset {loan_asset_id} not found")
                 
-                # Extract value from loan - try multiple sources
+                # Initialize asset_value from request value if provided, otherwise 0
                 asset_value = Decimal("0")
+                request_value = asset_data.get("value")
+                # Check if value is explicitly provided (not None, even if "0" or 0)
+                if request_value is not None and request_value != "":
+                    try:
+                        asset_value = Decimal(str(request_value))
+                    except (ValueError, TypeError):
+                        asset_value = Decimal("0")
                 
-                # 1. Try to get from loan asset metadata
-                if loan.asset_metadata and isinstance(loan.asset_metadata, dict):
-                    principal = loan.asset_metadata.get("principal_amount") or loan.asset_metadata.get("principal")
-                    if principal:
-                        asset_value = Decimal(str(principal))
-                
-                # 2. Try to get from SPT data
-                if asset_value <= 0 and loan.spt_data and isinstance(loan.spt_data, dict):
-                    principal = loan.spt_data.get("principal_amount") or loan.spt_data.get("principal")
-                    if principal:
-                        asset_value = Decimal(str(principal))
-                
-                # 3. Try to find related document via loan_id and get total_commitment
-                if asset_value <= 0 and loan.loan_id:
-                    from app.db.models import Document, DocumentVersion
-                    from app.models.cdm import CreditAgreement
+                # Extract value from loan - try multiple sources (only if not provided in request or is 0)
+                if asset_value <= 0:
+                    # 1. Try to get from loan asset metadata
+                    if loan.asset_metadata and isinstance(loan.asset_metadata, dict):
+                        principal = loan.asset_metadata.get("principal_amount") or loan.asset_metadata.get("principal")
+                        if principal:
+                            asset_value = Decimal(str(principal))
                     
-                    # Search documents for credit agreement matching loan_id
-                    documents = self.db.query(Document).filter(
-                        Document.current_version_id.isnot(None)
-                    ).all()
+                    # 2. Try to get from SPT data
+                    if asset_value <= 0 and loan.spt_data and isinstance(loan.spt_data, dict):
+                        principal = loan.spt_data.get("principal_amount") or loan.spt_data.get("principal")
+                        if principal:
+                            asset_value = Decimal(str(principal))
                     
-                    for doc in documents:
-                        if doc.current_version_id:
-                            version = self.db.query(DocumentVersion).filter(
-                                DocumentVersion.id == doc.current_version_id
-                            ).first()
-                            if version and version.extracted_data:
-                                try:
-                                    agreement = CreditAgreement(**version.extracted_data)
-                                    # Check if loan_id matches deal_id or loan_identification_number
-                                    if (agreement.deal_id == loan.loan_id or 
-                                        agreement.loan_identification_number == loan.loan_id):
-                                        # Get total commitment from document or facilities
-                                        if doc.total_commitment:
-                                            asset_value = Decimal(str(doc.total_commitment))
-                                        elif agreement.facilities:
-                                            for facility in agreement.facilities:
-                                                if facility.commitment_amount:
-                                                    asset_value += facility.commitment_amount.amount
-                                        break
-                                except Exception:
-                                    continue
-                    
-                    # 4. If still not found, try to get from deal via document
-                    if asset_value <= 0:
+                    # 3. Try to find related document via loan_id and get total_commitment
+                    if asset_value <= 0 and loan.loan_id:
+                        from app.db.models import Document, DocumentVersion
+                        from app.models.cdm import CreditAgreement
+                        
+                        # Search documents for credit agreement matching loan_id
+                        documents = self.db.query(Document).filter(
+                            Document.current_version_id.isnot(None)
+                        ).all()
+                        
                         for doc in documents:
-                            if doc.deal_id:
-                                from app.db.models import Deal
-                                deal = self.db.query(Deal).filter(Deal.id == doc.deal_id).first()
-                                if deal and deal.deal_data and isinstance(deal.deal_data, dict):
-                                    # Check if loan_id matches in deal_data
-                                    if deal.deal_data.get("loan_id") == loan.loan_id:
-                                        commitment = deal.deal_data.get("total_commitment")
-                                        if commitment:
-                                            asset_value = Decimal(str(commitment))
-                                        elif doc.total_commitment:
-                                            asset_value = Decimal(str(doc.total_commitment))
-                                        break
+                            if doc.current_version_id:
+                                version = self.db.query(DocumentVersion).filter(
+                                    DocumentVersion.id == doc.current_version_id
+                                ).first()
+                                if version and version.extracted_data:
+                                    try:
+                                        agreement = CreditAgreement(**version.extracted_data)
+                                        # Check if loan_id matches deal_id or loan_identification_number
+                                        if (agreement.deal_id == loan.loan_id or 
+                                            agreement.loan_identification_number == loan.loan_id):
+                                            # Get total commitment from document or facilities
+                                            if doc.total_commitment:
+                                                asset_value = Decimal(str(doc.total_commitment))
+                                            elif agreement.facilities:
+                                                for facility in agreement.facilities:
+                                                    if facility.commitment_amount:
+                                                        asset_value += facility.commitment_amount.amount
+                                            break
+                                    except Exception:
+                                        continue
+                        
+                        # 4. If still not found, try to get from deal via document
+                        if asset_value <= 0:
+                            for doc in documents:
+                                if doc.deal_id:
+                                    # Deal is already imported at module level
+                                    deal = self.db.query(Deal).filter(Deal.id == doc.deal_id).first()
+                                    if deal and deal.deal_data and isinstance(deal.deal_data, dict):
+                                        # Check if loan_id matches in deal_data
+                                        if deal.deal_data.get("loan_id") == loan.loan_id:
+                                            commitment = deal.deal_data.get("total_commitment")
+                                            if commitment:
+                                                asset_value = Decimal(str(commitment))
+                                            elif doc.total_commitment:
+                                                asset_value = Decimal(str(doc.total_commitment))
+                                            break
                 
                 if asset_value > 0:
                     total_pool_value += asset_value
                 else:
                     raise ValueError(
                         f"Could not determine principal amount for loan asset {loan_asset_id} (loan_id: {loan.loan_id}). "
-                        f"Please ensure the loan is associated with a document or deal with a total_commitment, "
+                        f"Please provide 'value' in the asset data, or ensure the loan is associated with a document or deal with a total_commitment, "
                         f"or provide principal_amount in asset_metadata or spt_data."
                     )
                 
@@ -208,7 +248,8 @@ class SecuritizationService:
                     "asset_id": f"loan_{loan_asset_id}",
                     "asset_type": "loan_asset",
                     "deal_id": None,
-                    "loan_asset_id": str(loan_asset_id),
+                    "loan_asset_id": str(loan.loan_id),  # String loan_id for CDM
+                    "loan_db_id": loan.id,  # Integer id for database foreign key
                     "equity_symbol": None,
                     "commodity_code": None,
                     "asset_value": asset_value,
@@ -300,12 +341,14 @@ class SecuritizationService:
         originator_party = Party(
             id=f"originator_{originator_id}",
             name=originator.display_name,
+            role="Originator",
             lei=None
         )
         
         trustee_party = Party(
             id=f"trustee_{trustee_id}",
             name=trustee.display_name,
+            role="Trustee",
             lei=None
         )
         
@@ -314,8 +357,8 @@ class SecuritizationService:
             UnderlyingAsset(
                 asset_id=asset["asset_id"],
                 asset_type=asset["asset_type"],
-                deal_id=asset.get("deal_id"),
-                loan_asset_id=asset.get("loan_asset_id"),
+                deal_id=str(asset.get("deal_id")) if asset.get("deal_id") is not None else None,
+                loan_asset_id=str(asset.get("loan_asset_id")) if asset.get("loan_asset_id") is not None else None,
                 equity_symbol=asset.get("equity_symbol"),
                 commodity_code=asset.get("commodity_code"),
                 asset_value=Money(amount=asset["asset_value"], currency=currency),
@@ -395,6 +438,7 @@ class SecuritizationService:
             lock_until_val = datetime.utcnow() + timedelta(days=ld)
 
         # Create database record
+        # Use mode='json' to convert Decimal to float for JSON serialization
         pool = SecuritizationPool(
             pool_id=pool_id,
             pool_name=pool_name,
@@ -403,7 +447,7 @@ class SecuritizationService:
             trustee_id=trustee_id,
             total_pool_value=total_pool_value,
             currency=currency.value,
-            cdm_payload=cdm_pool.model_dump(),
+            cdm_payload=cdm_pool.model_dump(mode='json'),
             status="draft",
             lock_period_days=lock_period_days_val,
             lock_until=lock_until_val,
@@ -416,10 +460,15 @@ class SecuritizationService:
         # Add underlying assets to pool
         _currency = getattr(currency, "value", str(currency))
         for asset_data in validated_assets:
+            # deal_id in SecuritizationPoolAsset is Integer (foreign key to deals.id)
+            # loan_asset_id is also Integer (foreign key to loan_assets.id)
+            deal_db_id = asset_data.get("deal_db_id")  # Integer id from Deal table
+            loan_db_id = asset_data.get("loan_db_id")  # Integer id from LoanAsset table
+            
             pool_asset = SecuritizationPoolAsset(
                 pool_id=pool.id,
-                deal_id=int(asset_data["deal_id"]) if asset_data.get("deal_id") else None,
-                loan_asset_id=int(asset_data["loan_asset_id"]) if asset_data.get("loan_asset_id") else None,
+                deal_id=deal_db_id,  # Integer id from Deal table
+                loan_asset_id=loan_db_id,  # Integer id from LoanAsset table
                 asset_type=asset_data["asset_type"],
                 asset_id=asset_data.get("asset_id"),
                 asset_value=asset_data.get("asset_value"),
@@ -435,13 +484,17 @@ class SecuritizationService:
         for cdm_tranche in cdm_tranches:
             tranche = SecuritizationTranche(
                 pool_id=pool.id,
+                tranche_id=cdm_tranche.tranche_id,
                 tranche_name=cdm_tranche.tranche_name,
                 tranche_class=cdm_tranche.tranche_class,
-                tranche_size=cdm_tranche.size.amount,
+                size=cdm_tranche.size.amount,
+                currency=cdm_tranche.size.currency.value,
                 interest_rate=cdm_tranche.interest_rate,
                 risk_rating=cdm_tranche.risk_rating,
                 payment_priority=cdm_tranche.payment_priority,
-                cdm_tranche_data=cdm_tranche.model_dump(mode='json')
+                principal_remaining=cdm_tranche.size.amount,  # Initially equals size
+                interest_accrued=Decimal("0"),
+                cdm_data=cdm_tranche.model_dump(mode='json')
             )
             self.db.add(tranche)
         
@@ -458,8 +511,9 @@ class SecuritizationService:
             self.db.commit()
         
         # Generate CDM SecuritizationCreation event
-        underlying_assets_data = [asset.model_dump() for asset in cdm_underlying_assets]
-        tranches_data = [t.model_dump() for t in cdm_tranches]
+        # Use mode='json' to convert Decimal to float for JSON serialization
+        underlying_assets_data = [asset.model_dump(mode='json') for asset in cdm_underlying_assets]
+        tranches_data = [t.model_dump(mode='json') for t in cdm_tranches]
         
         cdm_event = generate_cdm_securitization_creation(
             pool_id=pool_id,
@@ -594,13 +648,17 @@ class SecuritizationService:
         for cdm_tranche in cdm_tranches:
             tranche = SecuritizationTranche(
                 pool_id=pool.id,
+                tranche_id=cdm_tranche.tranche_id,
                 tranche_name=cdm_tranche.tranche_name,
                 tranche_class=cdm_tranche.tranche_class,
-                tranche_size=cdm_tranche.size.amount,
+                size=cdm_tranche.size.amount,
+                currency=cdm_tranche.size.currency.value,
                 interest_rate=cdm_tranche.interest_rate,
                 risk_rating=cdm_tranche.risk_rating,
                 payment_priority=cdm_tranche.payment_priority,
-                cdm_tranche_data=cdm_tranche.model_dump(mode='json')
+                principal_remaining=cdm_tranche.size.amount,  # Initially equals size
+                interest_accrued=Decimal("0"),
+                cdm_data=cdm_tranche.model_dump(mode='json')
             )
             self.db.add(tranche)
             created_tranches.append(tranche)
@@ -743,12 +801,14 @@ class SecuritizationService:
             payer = Party(
                 id=f"buyer_{buyer_id}",
                 name=buyer.display_name,
+                role="Buyer",
                 lei=None
             )
             
             receiver = Party(
                 id=f"pool_{pool_id}",
                 name=pool.pool_name,
+                role="Securitization Pool",
                 lei=None
             )
             
@@ -945,12 +1005,14 @@ class SecuritizationService:
                         payer = Party(
                             id=f"pool_{pool_id}",
                             name=pool.pool_name,
+                            role="Securitization Pool",
                             lei=None
                         )
                         
                         receiver = Party(
                             id=holder["wallet_address"],
                             name=f"Tranche Holder {holder['wallet_address'][:8]}",
+                            role="Tranche Holder",
                             lei=None
                         )
                         

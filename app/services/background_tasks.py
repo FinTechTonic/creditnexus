@@ -333,6 +333,120 @@ async def monitor_asset_amortization() -> Dict[str, Any]:
             pass
 
 
+async def check_price_alerts() -> Dict[str, Any]:
+    """
+    Background task to check price alerts and trigger notifications.
+    
+    Runs hourly to check active price alerts against current market prices.
+    
+    Returns:
+        Task execution result with triggered alerts count
+    """
+    logger.info("Starting price alerts monitoring task")
+    
+    try:
+        from app.db.models import PriceAlert
+        from app.api.trading_routes import get_trading_api_service
+        from app.services.trading_api_service import TradingAPIService
+        from decimal import Decimal
+        
+        db = next(get_db())
+        
+        # Get all active alerts
+        active_alerts = db.query(PriceAlert).filter(
+            PriceAlert.is_active == True,
+            PriceAlert.triggered_at.is_(None)  # Only check untriggered alerts
+        ).all()
+        
+        if not active_alerts:
+            logger.debug("No active price alerts to check")
+            return {
+                "status": "success",
+                "timestamp": datetime.utcnow().isoformat(),
+                "checked": 0,
+                "triggered": 0,
+            }
+        
+        # Get trading API service for market data
+        trading_service: TradingAPIService = get_trading_api_service()
+        
+        triggered_count = 0
+        symbols_to_check = list(set([alert.symbol for alert in active_alerts]))
+        
+        # Get current prices for all symbols
+        symbol_prices: Dict[str, float] = {}
+        for symbol in symbols_to_check:
+            try:
+                market_data = trading_service.get_market_data(symbol, db=db)
+                # Calculate mid price from bid/ask
+                bid = float(market_data.get("bid_price") or 0)
+                ask = float(market_data.get("ask_price") or 0)
+                if bid and ask:
+                    symbol_prices[symbol] = (bid + ask) / 2
+                elif bid:
+                    symbol_prices[symbol] = bid
+                elif ask:
+                    symbol_prices[symbol] = ask
+            except Exception as e:
+                logger.warning(f"Failed to get market data for {symbol}: {e}")
+                continue
+        
+        # Check each alert
+        for alert in active_alerts:
+            current_price = symbol_prices.get(alert.symbol)
+            if not current_price:
+                continue
+            
+            should_trigger = False
+            
+            if alert.alert_type == "above" and alert.target_price:
+                should_trigger = current_price >= float(alert.target_price)
+            elif alert.alert_type == "below" and alert.target_price:
+                should_trigger = current_price <= float(alert.target_price)
+            elif alert.alert_type == "change_percent" and alert.change_percent:
+                # For change_percent, we'd need previous price - simplified for now
+                # In production, would track price history
+                pass
+            
+            if should_trigger:
+                alert.is_active = False
+                alert.triggered_at = datetime.utcnow()
+                alert.triggered_price = Decimal(str(current_price))
+                db.commit()
+                triggered_count += 1
+                
+                logger.info(
+                    f"Price alert triggered: {alert.symbol} {alert.alert_type} "
+                    f"{alert.target_price} at {current_price}"
+                )
+                
+                # TODO: Send notifications (email, in-app) based on alert.notify_email and alert.notify_in_app
+        
+        logger.info(
+            f"Price alerts monitoring completed: {len(active_alerts)} checked, "
+            f"{triggered_count} triggered"
+        )
+        
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "checked": len(active_alerts),
+            "triggered": triggered_count,
+        }
+    except Exception as e:
+        logger.error(f"Error in price alerts monitoring task: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
 # Task schedule configuration
 TASK_SCHEDULE = {
     "deadline_monitoring": {
@@ -367,6 +481,11 @@ TASK_SCHEDULE = {
         "task": monitor_asset_amortization,
         "schedule": "daily",
         "time": time(8, 0),  # 8 AM
+        "enabled": True
+    },
+    "price_alerts_monitoring": {
+        "task": check_price_alerts,
+        "schedule": "hourly",
         "enabled": True
     }
 }

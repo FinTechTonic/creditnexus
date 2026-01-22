@@ -119,7 +119,9 @@ def seed_policy_templates(db: Session, admin_user_id: int = 1):
         admin_user_id: User ID to assign as creator (default: 1 for admin)
     """
     # Find all YAML files in policies directory
-    policies_dir = Path(__file__).parent.parent / 'app' / 'policies'
+    # Go up 3 levels from scripts/dev/seed_policy_templates.py to project root
+    project_root = Path(__file__).parent.parent.parent
+    policies_dir = project_root / 'app' / 'policies'
     
     if not policies_dir.exists():
         print(f"Policies directory not found: {policies_dir}")
