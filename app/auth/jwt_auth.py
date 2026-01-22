@@ -36,6 +36,7 @@ from app.db.models import (
 )
 from app.core.config import settings
 from app.utils import get_debug_log_path
+from app.utils import get_debug_log_path
 
 logger = logging.getLogger(__name__)
 
@@ -101,28 +102,24 @@ MIN_PASSWORD_LENGTH = 12
 
 class PasswordStrengthError(Exception):
     """Raised when password doesn't meet security requirements."""
-
     pass
 
 class UserRegister(BaseModel):
-    """Registration request schema with organization and implementation selection."""
-
+    """Registration request schema."""
     email: EmailStr
     password: str
     display_name: str
     organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
-    organization_id: Optional[int] = None  # FK to organizations.id
-    implementation_ids: Optional[List[int]] = None  # Implementation selection (multi-select)
     
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """Validate password meets bank-grade security requirements."""
         errors = []
-
+        
         if len(v) < MIN_PASSWORD_LENGTH:
             errors.append(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
-
+        
         if not re.search(r"[A-Z]", v):
             errors.append("Password must contain at least one uppercase letter")
 
@@ -502,9 +499,13 @@ def _hydrate_user_context(user: User, db: Session) -> Dict[str, Any]:
 
 
 @jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
-    """Register a new user account with organization and implementations.
-
+async def register(
+    request: Request,
+    user_data: UserRegister,
+    db: Session = Depends(get_db)
+):
+    """Register a new user account.
+    
     Password requirements:
     - Minimum 12 characters
     - At least one uppercase letter
@@ -587,7 +588,7 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
 async def signup_step1(
     request: Request,
     user_data: UserSignupStep1,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
     """Step 1: Create user account with role, organization, and implementation selection.
 
@@ -598,34 +599,11 @@ async def signup_step1(
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
         )
-
-    # Validate organization if provided
-    if user_data.organization_id:
-        org = db.query(Organization).filter(
-            Organization.id == user_data.organization_id,
-            Organization.is_active == True
-        ).first()
-        if not org:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or inactive organization"
-            )
-
-    # Validate implementations if provided
-    if user_data.implementation_ids:
-        impls = db.query(VerifiedImplementation).filter(
-            VerifiedImplementation.id.in_(user_data.implementation_ids),
-            VerifiedImplementation.is_active == True
-        ).all()
-        if len(impls) != len(user_data.implementation_ids):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="One or more implementations are invalid or inactive"
-            )
-
-    # Create user with selected role and organization
+    
+    # Create user with selected role
     user = User(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
@@ -851,47 +829,22 @@ async def signup_step2(
     )
 
 @jwt_router.post("/login", response_model=TokenResponse)
-async def login(request: Request, credentials: UserLogin, db: Session = Depends(get_db)):
-    """Authenticate user and return JWT tokens with organization and implementations.
-
+async def login(
+    request: Request,
+    credentials: UserLogin,
+    db: Session = Depends(get_db)
+):
+    """Authenticate user and return JWT tokens.
+    
     Account will be locked after 5 failed attempts for 30 minutes.
     Rate limited via slowapi default_limits (60/minute) with additional
     account lockout protection (5 failed attempts = 30 min lockout).
     """
-    # #region agent log
-    import json
-
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "login-attempt",
-        "hypothesisId": "A",
-        "location": "jwt_auth.py:login:entry",
-        "message": "Login endpoint called",
-        "data": {"email": credentials.email, "has_password": bool(credentials.password)},
-        "timestamp": int(datetime.utcnow().timestamp() * 1000),
-    }
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     # Rate limiting is handled by slowapi's default_limits (60/minute)
     # Additional protection via account lockout mechanism (5 failed attempts)
     logger.debug("Login attempt", extra={"email": credentials.email})
-
-    # #region agent log
-    log_data["hypothesisId"] = "A"
-    log_data["location"] = "jwt_auth.py:login:before_query"
-    log_data["message"] = "Before database query"
-    try:
-        with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
+    
     # Fix for encrypted email query: The EncryptedString type encrypts to bytes via process_bind_param,
     # but the database column is VARCHAR, causing a type mismatch error (character varying = bytea).
     # Workaround: Query all users and filter in Python by decrypting emails.

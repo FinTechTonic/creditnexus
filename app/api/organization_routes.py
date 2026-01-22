@@ -46,6 +46,7 @@ async def signup_organization_choices(
     return [{"id": o["id"], "name": o["name"]} for o in rows]
 
 
+<<<<<<< HEAD
 @router.get("/pending", response_model=List[Dict[str, Any]])
 async def list_pending_organizations(
     db: Session = Depends(get_db),
@@ -61,6 +62,8 @@ async def list_pending_organizations(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+=======
+>>>>>>> origin/dev
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_organizations(
     is_active: Optional[bool] = Query(None),
@@ -107,6 +110,7 @@ async def create_organization(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+<<<<<<< HEAD
 @router.post("/signup", response_model=Dict[str, Any], status_code=201)
 async def create_organization_signup(
     body: CreateOrganizationRequest,
@@ -173,6 +177,8 @@ async def reject_organization(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+=======
+>>>>>>> origin/dev
 @router.patch("/{org_id}", response_model=Dict[str, Any])
 async def update_organization(
     org_id: int,
