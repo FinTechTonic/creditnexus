@@ -33,7 +33,6 @@ _jwks_client: Optional[PyJWKClient] = None
 _jwks_cache_time: float = 0
 JWKS_CACHE_DURATION = 3600
 
-
 def get_jwks_client() -> PyJWKClient:
     """Get or create a cached JWKS client for token verification."""
     global _jwks_client, _jwks_cache_time
@@ -44,7 +43,6 @@ def get_jwks_client() -> PyJWKClient:
         _jwks_cache_time = current_time
     
     return _jwks_client
-
 
 def verify_id_token(id_token: str, client_id: str) -> Dict[str, Any]:
     """Verify and decode the ID token using Replit's JWKS.
@@ -108,7 +106,6 @@ def verify_id_token(id_token: str, client_id: str) -> Dict[str, Any]:
             detail="Failed to verify authentication"
         )
 
-
 def generate_pkce_pair():
     """Generate PKCE code verifier and challenge."""
     code_verifier = secrets.token_urlsafe(64)
@@ -117,13 +114,11 @@ def generate_pkce_pair():
     ).decode().rstrip("=")
     return code_verifier, code_challenge
 
-
 def get_redirect_uri(request: Request) -> str:
     """Build the OAuth callback URL."""
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
     host = request.headers.get("x-forwarded-host", request.url.netloc)
     return f"{scheme}://{host}/api/auth/callback"
-
 
 @auth_router.get("/login")
 async def login(request: Request, next_url: Optional[str] = None):
@@ -156,7 +151,6 @@ async def login(request: Request, next_url: Optional[str] = None):
     
     auth_url = f"{REPLIT_ISSUER_URL}/auth?{urlencode(params)}"
     return RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
-
 
 @auth_router.get("/callback")
 async def callback(
@@ -318,7 +312,6 @@ async def callback(
     
     return RedirectResponse(url=next_url, status_code=status.HTTP_302_FOUND)
 
-
 @auth_router.get("/logout")
 async def logout(request: Request, db: Session = Depends(get_db)):
     """Log out the current user."""
@@ -357,185 +350,43 @@ async def logout(request: Request, db: Session = Depends(get_db)):
     
     return RedirectResponse(url=logout_url, status_code=status.HTTP_302_FOUND)
 
-
 @auth_router.get("/me")
 async def get_current_user_info(request: Request, db: Session = Depends(get_db)):
     """Get the current authenticated user's information.
     
     Supports both session-based auth (Replit OAuth) and JWT Bearer token auth.
     """
-    # #region agent log
-    import json
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "login-debug",
-        "hypothesisId": "C",
-        "location": "routes.py:352",
-        "message": "/api/auth/me endpoint called",
-        "data": {},
-        "timestamp": int(time.time() * 1000)
-    }
-    try:
-        with open(r"get_debug_log_path()", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except:
-        pass
-    # #endregion
     
     user = None
     
     auth_header = request.headers.get("Authorization", "")
     
-    # #region agent log
-    log_data = {
-        "sessionId": "debug-session",
-        "runId": "login-debug",
-        "hypothesisId": "C",
-        "location": "routes.py:360",
-        "message": "Checking auth header",
-        "data": {"has_auth_header": bool(auth_header), "is_bearer": auth_header.startswith("Bearer ")},
-        "timestamp": int(time.time() * 1000)
-    }
-    try:
-        with open(r"get_debug_log_path()", "a") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except:
-        pass
-    # #endregion
-    
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
         from app.auth.jwt_auth import decode_access_token
         
-        # #region agent log
-        log_data = {
-            "sessionId": "debug-session",
-            "runId": "login-debug",
-            "hypothesisId": "C",
-            "location": "routes.py:363",
-            "message": "Before decode_access_token",
-            "data": {},
-            "timestamp": int(time.time() * 1000)
-        }
-        try:
-            with open(r"get_debug_log_path()", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except:
-            pass
-        # #endregion
-        
         payload = decode_access_token(token)
-        
-        # #region agent log
-        log_data = {
-            "sessionId": "debug-session",
-            "runId": "login-debug",
-            "hypothesisId": "C",
-            "location": "routes.py:364",
-            "message": "After decode_access_token",
-            "data": {"payload_valid": payload is not None, "user_id": payload.get("sub") if payload else None},
-            "timestamp": int(time.time() * 1000)
-        }
-        try:
-            with open(r"get_debug_log_path()", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except:
-            pass
-        # #endregion
         
         if payload:
             user_id = payload.get("sub")
             if user_id:
-                # #region agent log
-                log_data = {
-                    "sessionId": "debug-session",
-                    "runId": "login-debug",
-                    "hypothesisId": "C",
-                    "location": "routes.py:367",
-                    "message": "Before user query",
-                    "data": {"user_id": user_id},
-                    "timestamp": int(time.time() * 1000)
-                }
-                try:
-                    with open(r"get_debug_log_path()", "a") as f:
-                        f.write(json.dumps(log_data) + "\n")
-                except:
-                    pass
-                # #endregion
                 
                 user = db.query(User).filter(User.id == int(user_id)).first()
                 
-                # #region agent log
-                log_data = {
-                    "sessionId": "debug-session",
-                    "runId": "login-debug",
-                    "hypothesisId": "C",
-                    "location": "routes.py:368",
-                    "message": "After user query",
-                    "data": {"user_found": user is not None, "is_active": user.is_active if user else None},
-                    "timestamp": int(time.time() * 1000)
-                }
-                try:
-                    with open(r"get_debug_log_path()", "a") as f:
-                        f.write(json.dumps(log_data) + "\n")
-                except:
-                    pass
-                # #endregion
-                
                 if user and user.is_active:
-                    # #region agent log
-                    log_data = {
-                        "sessionId": "debug-session",
-                        "runId": "login-debug",
-                        "hypothesisId": "C",
-                        "location": "routes.py:371",
-                        "message": "Before user.to_dict()",
-                        "data": {},
-                        "timestamp": int(time.time() * 1000)
-                    }
                     try:
-                        with open(r"get_debug_log_path()", "a") as f:
-                            f.write(json.dumps(log_data) + "\n")
-                    except:
-                        pass
-                    # #endregion
-                    
-                    user_dict = user.to_dict()
-                    
-                    # #region agent log
-                    log_data = {
-                        "sessionId": "debug-session",
-                        "runId": "login-debug",
-                        "hypothesisId": "C",
-                        "location": "routes.py:372",
-                        "message": "After user.to_dict(), returning response",
-                        "data": {"user_dict_keys": list(user_dict.keys()) if user_dict else []},
-                        "timestamp": int(time.time() * 1000)
-                    }
-                    try:
-                        with open(r"get_debug_log_path()", "a") as f:
-                            f.write(json.dumps(log_data) + "\n")
-                    except:
-                        pass
-                    # #endregion
-                    
-                    # #region agent log
-                    log_data = {
-                        "sessionId": "debug-session",
-                        "runId": "login-debug",
-                        "hypothesisId": "C",
-                        "location": "routes.py:510",
-                        "message": "Returning JSONResponse",
-                        "data": {},
-                        "timestamp": int(time.time() * 1000)
-                    }
-                    try:
-                        with open(r"get_debug_log_path()", "a") as f:
-                            f.write(json.dumps(log_data) + "\n")
-                    except:
-                        pass
-                    # #endregion
-                    
+                        user_dict = user.to_dict()
+                    except Exception as e:
+                        logger.warning("user.to_dict() failed (e.g. decrypt), returning minimal user: %s", e)
+                        user_dict = {
+                            "id": user.id,
+                            "email": "",
+                            "display_name": "",
+                            "profile_image": getattr(user, "profile_image", None),
+                            "role": user.role or "viewer",
+                            "is_active": user.is_active,
+                            "last_login": None,
+                        }
                     return JSONResponse({
                         "authenticated": True,
                         "user": user_dict
@@ -551,8 +402,21 @@ async def get_current_user_info(request: Request, db: Session = Depends(get_db))
     if not user or not user.is_active:
         request.session.clear()
         return JSONResponse({"authenticated": False, "user": None})
-    
+
+    try:
+        user_dict = user.to_dict()
+    except Exception as e:
+        logger.warning("user.to_dict() failed (e.g. decrypt), returning minimal user: %s", e)
+        user_dict = {
+            "id": user.id,
+            "email": "",
+            "display_name": "",
+            "profile_image": getattr(user, "profile_image", None),
+            "role": user.role or "viewer",
+            "is_active": user.is_active,
+            "last_login": None,
+        }
     return JSONResponse({
         "authenticated": True,
-        "user": user.to_dict()
+        "user": user_dict
     })

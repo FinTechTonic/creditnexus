@@ -1,0 +1,154 @@
+﻿
+src/apps/document-generator/FieldEditorModal.tsx(42,3): error TS6133: 'missingFields' is declared but its value is 
+never read.
+src/apps/document-generator/ImageUploader.tsx(9,85): error TS6133: 'Trash2' is declared but its value is never read.
+src/apps/document-generator/PreGenerationStats.tsx(175,9): error TS6133: 'getCompletenessBgColor' is declared but its 
+value is never read.
+src/apps/document-generator/TemplateSelector.tsx(7,20): error TS6133: 'useEffect' is declared but its value is never 
+read.
+src/apps/green-lens/GreenLens.tsx(7,141): error TS6133: 'Building2' is declared but its value is never read.
+src/apps/policy-editor/ApprovalHistory.tsx(20,3): error TS6133: 'Filter' is declared but its value is never read.
+src/apps/policy-editor/ApprovalHistory.tsx(152,35): error TS6133: 'index' is declared but its value is never read.
+src/apps/policy-editor/PolicyApprovalQueue.tsx(27,29): error TS6133: 'CardDescription' is declared but its value is 
+never read.
+src/apps/policy-editor/PolicyApprovalQueue.tsx(27,46): error TS6133: 'CardHeader' is declared but its value is never 
+read.
+src/apps/policy-editor/PolicyApprovalQueue.tsx(27,58): error TS6133: 'CardTitle' is declared but its value is never 
+read.
+src/apps/policy-editor/PolicyEditor.tsx(14,1): error TS6133: 'RuleBuilder' is declared but its value is never read.
+src/apps/policy-editor/PolicyEditor.tsx(23,3): error TS6133: 'Play' is declared but its value is never read.
+src/apps/policy-editor/PolicyEditor.tsx(24,3): error TS6133: 'Eye' is declared but its value is never read.
+src/apps/policy-editor/PolicyEditor.tsx(38,1): error TS6192: All imports in import declaration are unused.
+src/apps/policy-editor/PolicyEditor.tsx(79,28): error TS6133: 'user' is declared but its value is never read.
+src/apps/policy-editor/PolicyEditor.tsx(82,10): error TS6133: 'policy' is declared but its value is never read.
+src/apps/policy-editor/PolicyEditor.tsx(91,10): error TS6133: 'activeTab' is declared but its value is never read.
+src/apps/policy-editor/PolicyEditor.tsx(91,21): error TS6133: 'setActiveTab' is declared but its value is never read.
+src/apps/policy-editor/PolicyEditor.tsx(229,29): error TS6133: 'yaml' is declared but its value is never read.
+src/apps/policy-editor/PolicyTemplateLibrary.tsx(22,3): error TS6133: 'Building2' is declared but its value is never 
+read.
+src/apps/policy-editor/PolicyTemplateLibrary.tsx(27,29): error TS6133: 'CardDescription' is declared but its value is 
+never read.
+src/apps/policy-editor/PolicyTemplateSelector.tsx(11,31): error TS6133: 'useCallback' is declared but its value is 
+never read.
+src/apps/policy-editor/PolicyTester.tsx(12,20): error TS6133: 'useEffect' is declared but its value is never read.
+src/apps/policy-editor/PolicyTester.tsx(12,31): error TS6133: 'useCallback' is declared but its value is never read.
+src/apps/policy-editor/PolicyTester.tsx(22,3): error TS6133: 'Code' is declared but its value is never read.
+src/apps/policy-editor/PolicyTester.tsx(23,3): error TS6133: 'List' is declared but its value is never read.
+src/apps/policy-editor/PolicyTester.tsx(24,3): error TS6133: 'ArrowRight' is declared but its value is never read.
+src/apps/policy-editor/PolicyValidator.tsx(11,31): error TS6133: 'useCallback' is declared but its value is never read.
+src/apps/policy-editor/PolicyValidator.tsx(25,1): error TS6192: All imports in import declaration are unused.
+src/apps/policy-editor/PolicyVersionHistory.tsx(11,31): error TS6133: 'useCallback' is declared but its value is never 
+read.
+src/apps/policy-editor/PolicyVersionHistory.tsx(21,3): error TS6133: 'CheckCircle2' is declared but its value is never 
+read.
+src/apps/policy-editor/PolicyVersionHistory.tsx(261,34): error TS6133: 'index' is declared but its value is never read.
+src/apps/policy-editor/RuleBuilder.tsx(13,20): error TS6133: 'useCallback' is declared but its value is never read.
+src/apps/policy-editor/RuleBuilder.tsx(202,33): error TS6133: 'i' is declared but its value is never read.
+src/apps/policy-editor/RuleBuilder.tsx(220,33): error TS6133: 'i' is declared but its value is never read.
+src/apps/policy-editor/RuleBuilder.tsx(242,11): error TS6133: 'hasChildren' is declared but its value is never read.
+src/apps/policy-editor/TemplateCreator.tsx(19,3): error TS6133: 'X' is declared but its value is never read.
+src/apps/policy-editor/TemplateCreator.tsx(25,1): error TS6192: All imports in import declaration are unused.
+src/apps/policy-editor/TemplatePreview.tsx(14,3): error TS6133: 'X' is declared but its value is never read.
+src/apps/policy-editor/TemplatePreview.tsx(17,3): error TS6133: 'Building2' is declared but its value is never read.
+src/apps/policy-editor/TemplatePreview.tsx(19,3): error TS6133: 'User' is declared but its value is never read.
+src/apps/policy-editor/TestTransactionBuilder.tsx(10,31): error TS6133: 'useCallback' is declared but its value is 
+never read.
+src/apps/policy-editor/TestTransactionBuilder.tsx(17,3): error TS6133: 'Building2' is declared but its value is never 
+read.
+src/apps/policy-editor/TestTransactionBuilder.tsx(18,3): error TS6133: 'Loader2' is declared but its value is never 
+read.
+src/apps/policy-editor/TestTransactionBuilder.tsx(19,3): error TS6133: 'Plus' is declared but its value is never read.
+src/apps/policy-editor/TestTransactionBuilder.tsx(78,10): error TS6133: 'saving' is declared but its value is never 
+read.
+src/apps/policy-editor/TestTransactionBuilder.tsx(78,18): error TS6133: 'setSaving' is declared but its value is never 
+read.
+src/apps/policy-editor/TestTransactionBuilder.tsx(79,10): error TS6133: 'loading' is declared but its value is never 
+read.
+src/apps/trade-blotter/TradeBlotter.tsx(9,36): error TS6133: 'PERMISSION_TRADE_VIEW' is declared but its value is 
+never read.
+src/apps/trade-blotter/TradeBlotter.tsx(263,13): error TS6133: 'result' is declared but its value is never read.
+src/apps/trade-blotter/TradeBlotter.tsx(317,13): error TS6133: 'result' is declared but its value is never read.
+src/apps/workflow/WorkflowLinkCreator.tsx(13,10): error TS6133: 'Copy' is declared but its value is never read.
+src/apps/workflow/WorkflowLinkCreator.tsx(13,16): error TS6133: 'Check' is declared but its value is never read.
+src/apps/workflow/WorkflowLinkCreator.tsx(13,60): error TS6133: 'User' is declared but its value is never read.
+src/apps/workflow/WorkflowLinkCreator.tsx(13,66): error TS6133: 'Mail' is declared but its value is never read.
+src/apps/workflow/WorkflowLinkCreator.tsx(60,3): error TS6133: 'verificationId' is declared but its value is never 
+read.
+src/apps/workflow/WorkflowLinkCreator.tsx(84,26): error TS6133: 'setReceiverUserId' is declared but its value is never 
+read.
+src/components/AdminSignupDashboard.tsx(7,3): error TS6133: 'Filter' is declared but its value is never read.
+src/components/agent-results/AgentResultCard.tsx(44,3): error TS6133: 'id' is declared but its value is never read.
+src/components/agent-results/DeepResearchResultView.tsx(69,3): error TS6133: 'dealId' is declared but its value is 
+never read.
+src/components/agent-results/LangAlphaResultView.tsx(16,3): error TS6133: 'TrendingDown' is declared but its value is 
+never read.
+src/components/agent-results/LangAlphaResultView.tsx(17,3): error TS6133: 'CheckCircle2' is declared but its value is 
+never read.
+src/components/agent-results/LangAlphaResultView.tsx(24,3): error TS6133: 'Shield' is declared but its value is never 
+read.
+src/components/agent-results/LangAlphaResultView.tsx(71,3): error TS6133: 'dealId' is declared but its value is never 
+read.
+src/components/agent-results/PeopleHubResultView.tsx(15,3): error TS6133: 'Building2' is declared but its value is 
+never read.
+src/components/agent-results/PeopleHubResultView.tsx(20,3): error TS6133: 'CheckCircle2' is declared but its value is 
+never read.
+src/components/agent-results/PeopleHubResultView.tsx(27,3): error TS6133: 'TrendingUp' is declared but its value is 
+never read.
+src/components/agent-results/PeopleHubResultView.tsx(28,3): error TS6133: 'TrendingDown' is declared but its value is 
+never read.
+src/components/agent-results/PeopleHubResultView.tsx(76,3): error TS6133: 'dealId' is declared but its value is never 
+read.
+src/components/AiCdmOperations.tsx(115,13): error TS6133: 'fusionResult' is declared but its value is never read.
+src/components/ApplicationDashboard.tsx(8,3): error TS6133: 'ChevronRight' is declared but its value is never read.
+src/components/ApplicationDashboard.tsx(18,3): error TS6133: 'Calendar' is declared but its value is never read.
+src/components/ApplicationDashboard.tsx(23,3): error TS6133: 'Download' is declared but its value is never read.
+src/components/ApplicationStatusTracker.tsx(165,9): error TS6133: 'user' is declared but its value is never read.
+src/components/ApplicationStatusTracker.tsx(258,21): error TS6133: 'isLast' is declared but its value is never read.
+src/components/AssetVerificationCard.tsx(18,3): error TS6133: 'TrendingDown' is declared but its value is never read.
+src/components/audit/AuditTimeline.tsx(84,35): error TS6133: 'index' is declared but its value is never read.
+src/components/BorrowerContactManager.tsx(9,29): error TS6133: 'CardHeader' is declared but its value is never read.
+src/components/BorrowerContactManager.tsx(9,41): error TS6133: 'CardTitle' is declared but its value is never read.
+src/components/BorrowerContactManager.tsx(29,3): error TS6133: 'CheckCircle' is declared but its value is never read.
+src/components/BorrowerContactManager.tsx(30,3): error TS6133: 'XCircle' is declared but its value is never read.
+src/components/BorrowerContactManager.tsx(31,3): error TS6133: 'AlertCircle' is declared but its value is never read.
+src/components/CdmAccordionEditor.tsx(16,1): error TS6192: All imports in import declaration are unused.
+src/components/CdmFieldEditor.tsx(8,31): error TS6133: 'useCallback' is declared but its value is never read.
+src/components/CdmFieldEditor.tsx(26,1): error TS6192: All imports in import declaration are unused.
+src/components/CdmFieldEditor.tsx(36,11): error TS6196: 'EditableField' is declared but never used.
+src/components/ClauseEditor.tsx(19,3): error TS6133: 'CheckCircle2' is declared but its value is never read.
+src/components/ClauseEditor.tsx(20,3): error TS6133: 'X' is declared but its value is never read.
+src/components/ClauseEditor.tsx(23,3): error TS6133: 'ExternalLink' is declared but its value is never read.
+src/components/ClauseEditor.tsx(64,29): error TS6133: 'setSelectedFieldName' is declared but its value is never read.
+src/components/Dashboard.tsx(26,3): error TS6133: 'Target' is declared but its value is never read.
+src/components/Dashboard.tsx(28,3): error TS6133: 'Mail' is declared but its value is never read.
+src/components/Dashboard.tsx(29,3): error TS6133: 'Bell' is declared but its value is never read.
+src/components/Dashboard.tsx(30,3): error TS6133: 'User' is declared but its value is never read.
+src/components/Dashboard.tsx(31,3): error TS6133: 'ArrowRightCircle' is declared but its value is never read.
+src/components/Dashboard.tsx(34,29): error TS6133: 'EmptyState' is declared but its value is never read.
+src/components/Dashboard.tsx(40,3): error TS6133: 'PERMISSION_FINANCIAL_VIEW' is declared but its value is never read.
+src/components/Dashboard.tsx(263,10): error TS6133: 'applications' is declared but its value is never read.
+src/components/Dashboard.tsx(264,10): error TS6133: 'inquiries' is declared but its value is never read.
+src/components/Dashboard.tsx(265,10): error TS6133: 'meetings' is declared but its value is never read.
+src/components/DashboardChatbotPanel.tsx(18,3): error TS6133: 'X' is declared but its value is never read.
+src/components/DashboardChatbotPanel.tsx(19,3): error TS6133: 'Sparkles' is declared but its value is never read.
+src/components/DashboardChatbotPanel.tsx(20,3): error TS6133: 'Workflow' is declared but its value is never read.
+src/components/DashboardChatbotPanel.tsx(24,3): error TS6133: 'CheckCircle2' is declared but its value is never read.
+src/components/DashboardChatbotPanel.tsx(25,3): error TS6133: 'AlertCircle' is declared but its value is never read.
+src/components/DashboardChatbotPanel.tsx(65,10): error TS6133: 'workflowLaunching' is declared but its value is never 
+read.
+src/components/DealDashboard.tsx(8,3): error TS6133: 'ChevronRight' is declared but its value is never read.
+src/components/DealDashboard.tsx(9,3): error TS6133: 'Loader2' is declared but its value is never read.
+src/components/DealDashboard.tsx(43,9): error TS6133: 'user' is declared but its value is never read.
+src/components/DealDetail.tsx(219,9): error TS6133: 'formatEventType' is declared but its value is never read.
+src/components/DealDetail.tsx(300,38): error TS6133: 'notarizationId' is declared but its value is never read.
+src/components/DealTimeline.tsx(98,9): error TS6133: 'data' is declared but its value is never read.
+src/components/DemoDealCard.tsx(38,3): error TS6133: 'onEdit' is declared but its value is never read.
+src/components/DesktopAppLayout.tsx(246,9): error TS6133: '_componentInstanceRef' is declared but its value is never 
+read.
+src/components/DesktopAppLayout.tsx(247,9): error TS6133: '_mountCountRef' is declared but its value is never read.
+src/components/FilingStatusDashboard.tsx(86,17): error TS6133: '_filingId' is declared but its value is never read.
+src/components/green-finance/SustainabilityScoreCard.tsx(31,9): error TS6133: '_getScoreBgColor' is declared but its 
+value is never read.
+src/components/InquiryForm.tsx(61,13): error TS6133: '_data' is declared but its value is never read.
+
+

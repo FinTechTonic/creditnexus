@@ -34,12 +34,12 @@ const IconBadge = React.forwardRef<HTMLDivElement, IconBadgeProps>(
           className
         )}
       >
-        {React.isValidElement(icon) && React.cloneElement(icon, {
+        {React.isValidElement(icon) && React.cloneElement(icon as React.ReactElement<any>, {
           className: cn(
             size === "sm" && "h-4 w-4",
             size === "md" && "h-5 w-5",
             size === "lg" && "h-6 w-6",
-            (icon.props as any).className
+            (icon.props as any)?.className
           )
         })}
       </div>

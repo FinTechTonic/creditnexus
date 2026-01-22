@@ -4,7 +4,7 @@ import { LocationTypeBadge } from './LocationTypeBadge';
 import { AirQualityIndicator } from './AirQualityIndicator';
 import { SustainabilityScoreCard } from './SustainabilityScoreCard';
 import { SDGAlignmentPanel } from './SDGAlignmentPanel';
-import { Building2, MapPin, Trees } from 'lucide-react';
+import { MapPin, Trees } from 'lucide-react';
 
 interface GreenFinanceMetricsCardProps {
   metrics?: GreenFinanceMetrics;

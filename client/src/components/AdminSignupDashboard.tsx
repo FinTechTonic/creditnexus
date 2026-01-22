@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { 
   User, 
   Search, 
-  Filter, 
+  // Filter removed - unused 
   CheckCircle, 
   XCircle, 
   Clock,
@@ -19,6 +19,15 @@ import {
 import { fetchWithAuth, useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 
+interface Organization {
+  id: number;
+  name: string;
+  slug: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 interface SignupUser {
   id: number;
   email: string;
@@ -30,6 +39,8 @@ interface SignupUser {
   signup_reviewed_by: number | null;
   signup_rejection_reason: string | null;
   profile_data: Record<string, any> | null;
+  organization_id: number | null;
+  organization: Organization | null;
   created_at: string;
 }
 
@@ -411,6 +422,17 @@ export function AdminSignupDashboard() {
                         <User className="h-4 w-4" />
                         {signup.role.replace('_', ' ')}
                       </span>
+                      {signup.organization && (
+                        <span className={`flex items-center gap-1 px-2 py-1 rounded ${
+                          signup.organization.is_active
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          <Building2 className="h-4 w-4" />
+                          {signup.organization.name}
+                          {!signup.organization.is_active && ' (Pending Approval)'}
+                        </span>
+                      )}
                       {signup.signup_submitted_at && (
                         <span className="flex items-center gap-1">
                           <Calendar className="h-4 w-4" />
@@ -455,6 +477,31 @@ export function AdminSignupDashboard() {
                     </Button>
                     {signup.signup_status === 'pending' && (
                       <>
+                        {signup.organization && !signup.organization.is_active && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              try {
+                                const response = await fetchWithAuth(`/api/organizations/${signup.organization!.id}/approve`, {
+                                  method: 'POST',
+                                });
+                                if (response.ok) {
+                                  await fetchSignups();
+                                } else {
+                                  const error = await response.json().catch(() => ({}));
+                                  setError(error.detail || 'Failed to approve organization');
+                                }
+                              } catch (err) {
+                                setError('Failed to approve organization');
+                              }
+                            }}
+                            className="border-yellow-500 text-yellow-400 hover:bg-yellow-500/20"
+                          >
+                            <Building2 className="h-4 w-4 mr-2" />
+                            Approve Org
+                          </Button>
+                        )}
                         {hasPermission('USER_APPROVE') && (
                           <Button
                             size="sm"
@@ -688,6 +735,45 @@ export function AdminSignupDashboard() {
                     <p className="text-slate-100 font-medium">
                       {new Date(selectedSignup.signup_reviewed_at).toLocaleString()}
                     </p>
+                  </div>
+                )}
+                {selectedSignup.organization && (
+                  <div className="col-span-2">
+                    <label className="text-xs text-slate-400 mb-1 block">Organization</label>
+                    <div className="flex items-center gap-2">
+                      <p className="text-slate-100 font-medium">{selectedSignup.organization.name}</p>
+                      {!selectedSignup.organization.is_active && (
+                        <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded text-xs">
+                          Pending Approval
+                        </span>
+                      )}
+                      {!selectedSignup.organization.is_active && (
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              const response = await fetchWithAuth(`/api/organizations/${selectedSignup.organization!.id}/approve`, {
+                                method: 'POST',
+                              });
+                              if (response.ok) {
+                                await fetchSignups();
+                                setSelectedSignup(null);
+                                setShowViewModal(false);
+                              } else {
+                                const error = await response.json().catch(() => ({}));
+                                setError(error.detail || 'Failed to approve organization');
+                              }
+                            } catch (err) {
+                              setError('Failed to approve organization');
+                            }
+                          }}
+                          className="bg-yellow-600 hover:bg-yellow-500"
+                        >
+                          <Building2 className="h-4 w-4 mr-2" />
+                          Approve Organization
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

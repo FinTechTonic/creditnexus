@@ -37,4 +37,4 @@ export function Timeline({ items, className }: TimelineProps) {
   )
 }
 
-export { Timeline }
+// Timeline already exported above

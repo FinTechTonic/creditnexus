@@ -9,7 +9,7 @@
  * - Token usage statistics
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Search,
   ExternalLink,
@@ -66,7 +66,7 @@ interface DeepResearchResultViewProps {
 export function DeepResearchResultView({
   researchId,
   onClose,
-  dealId
+  dealId: _dealId // Prefix with _ - unused
 }: DeepResearchResultViewProps) {
   const [result, setResult] = useState<DeepResearchResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,7 +91,8 @@ export function DeepResearchResultView({
         }
         
         const data = await response.json();
-        setResult(data);
+        // API returns { status, result }; use inner result so research_id, created_at, etc. are available
+        setResult(data.result ?? data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load research result');
         addToast({
@@ -253,7 +254,7 @@ export function DeepResearchResultView({
                 <label className="text-sm font-medium text-slate-300 mb-1 block">Created</label>
                 <div className="flex items-center gap-2 text-slate-400">
                   <Clock className="h-4 w-4" />
-                  <span>{new Date(result.created_at).toLocaleString()}</span>
+                  <span>{result.created_at ? new Date(result.created_at).toLocaleString() : '—'}</span>
                 </div>
               </div>
               {result.completed_at && (
@@ -339,37 +340,43 @@ export function DeepResearchResultView({
             <CardContent>
               {result.knowledge_items && result.knowledge_items.length > 0 ? (
                 <div className="space-y-4">
-                  {result.knowledge_items.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="p-4 bg-slate-900/50 rounded-lg border border-slate-700"
-                    >
-                      {item.title && (
-                        <h4 className="font-medium text-slate-100 mb-2">{item.title}</h4>
-                      )}
-                      {item.content && (
-                        <p className="text-slate-300 text-sm mb-2">{item.content}</p>
-                      )}
-                      {item.url && (
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 text-sm"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                          {item.url}
-                        </a>
-                      )}
-                      {item.relevance_score !== undefined && (
-                        <div className="mt-2">
-                          <Badge variant="outline" className="text-xs">
-                            Relevance: {(item.relevance_score * 100).toFixed(1)}%
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {result.knowledge_items.map((item: Record<string, unknown>, idx: number) => {
+                    const title = (item.title as string) || (item.question as string);
+                    const content = (item.content as string) || (item.answer as string);
+                    const url = (item.url as string) || (Array.isArray(item.references) && (item.references[0] as string)) || null;
+                    const relevance = item.relevance_score as number | undefined;
+                    return (
+                      <div
+                        key={idx}
+                        className="p-4 bg-slate-900/50 rounded-lg border border-slate-700"
+                      >
+                        {title && (
+                          <h4 className="font-medium text-slate-100 mb-2">{title}</h4>
+                        )}
+                        {content && (
+                          <p className="text-slate-300 text-sm mb-2">{content}</p>
+                        )}
+                        {url && (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 text-sm"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            {url}
+                          </a>
+                        )}
+                        {relevance !== undefined && relevance != null && (
+                          <div className="mt-2">
+                            <Badge variant="outline" className="text-xs">
+                              Relevance: {(Number(relevance) * 100).toFixed(1)}%
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-8 text-slate-400">

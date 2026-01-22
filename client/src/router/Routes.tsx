@@ -1,10 +1,10 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, createHashRouter, Navigate, Link } from 'react-router-dom';
 import { DesktopAppLayout } from '@/components/DesktopAppLayout';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupFlow } from '@/components/SignupFlow';
 import { useAuth } from '@/context/AuthContext';
 
-import { BusinessApplicationForm } from '@/apps/application/BusinessApplicationForm';
+// BusinessApplicationForm removed - unused
 import { BusinessApplicationFlow } from '@/sites/businesses/BusinessApplicationFlow';
 
 import { IndividualLanding } from '@/sites/individuals/IndividualLanding';
@@ -57,9 +57,12 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Router configuration
-export const router = createBrowserRouter(
-  [
+// Use HashRouter when loaded via file:// (Electron loadFile) so /dashboard doesn't become file:///C:/dashboard
+const createAppRouter = typeof window !== 'undefined' && window.location.protocol === 'file:'
+  ? createHashRouter
+  : createBrowserRouter;
+
+export const router = createAppRouter([
     // Public routes
   {
     path: '/',
@@ -81,12 +84,12 @@ export const router = createBrowserRouter(
       <div className="p-8">
         <h1 className="text-2xl font-bold mb-4">Apply</h1>
         <div className="space-y-4">
-          <a href="/apply/individual" className="block p-4 border rounded hover:bg-gray-100">
+          <Link to="/apply/individual" className="block p-4 border rounded hover:bg-gray-100">
             Individual Application
-          </a>
-          <a href="/apply/business" className="block p-4 border rounded hover:bg-gray-100">
+          </Link>
+          <Link to="/apply/business" className="block p-4 border rounded hover:bg-gray-100">
             Business Application
-          </a>
+          </Link>
         </div>
       </div>
     ),
@@ -119,6 +122,30 @@ export const router = createBrowserRouter(
   },
   {
     path: '/app/trade-blotter',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/link-accounts',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/asset-alerts',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/portfolio-risk',
     element: (
       <ProtectedRoute>
         <DesktopAppLayout />
@@ -179,6 +206,14 @@ export const router = createBrowserRouter(
       <AdminRoute>
         <DesktopAppLayout />
       </AdminRoute>
+    ),
+  },
+  {
+    path: '/app/whitelisting-dashboard',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
     ),
   },
   {
@@ -473,9 +508,8 @@ export const router = createBrowserRouter(
     element: (
       <div className="p-8">
         <h1 className="text-2xl font-bold">404 - Page Not Found</h1>
-        <a href="/dashboard" className="text-blue-600 hover:underline">Go to Dashboard</a>
+        <Link to="/dashboard" className="text-blue-600 hover:underline">Go to Dashboard</Link>
       </div>
     ),
   },
-  ]
-);
+]);

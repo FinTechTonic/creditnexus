@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
   FileText, 
   Search, 
   Clock, 
-  ChevronRight, 
+  // ChevronRight removed - unused 
   Loader2, 
   Plus,
   Filter,
@@ -15,12 +15,12 @@ import {
   X,
   XCircle,
   AlertCircle,
-  Calendar,
+  // Calendar removed - unused
   Building2,
   User,
   Trash2,
   Eye,
-  Download,
+  // Download removed - unused
   ArrowRightCircle
 } from 'lucide-react';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';

@@ -2,7 +2,7 @@
 
 import logging
 from decimal import Decimal
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -52,7 +52,8 @@ class SecuritizationService:
         trustee_id: int,
         underlying_assets: List[Dict[str, Any]],
         tranches: List[Dict[str, Any]],
-        payment_waterfall: Optional[Dict[str, Any]] = None
+        payment_waterfall: Optional[Dict[str, Any]] = None,
+        lock_period_days: Optional[int] = None,
     ) -> SecuritizationPool:
         """
         Create a new securitization pool.
@@ -62,9 +63,11 @@ class SecuritizationService:
             pool_type: Type of pool (ABS, CLO, MBS, etc.)
             originator_id: User ID of originator
             trustee_id: User ID of trustee
-            underlying_assets: List of asset dictionaries with asset_id, asset_type, deal_id/loan_asset_id
+            underlying_assets: List of asset dicts with asset_id, asset_type; for deal: deal_id; for loan_asset: loan_asset_id;
+                for equity: equity_symbol, value or (quantity, unit_price); for commodity: commodity_code, value or (quantity, unit_price)
             tranches: List of tranche dictionaries with tranche_name, tranche_class, size, interest_rate, etc.
             payment_waterfall: Optional payment waterfall rules
+            lock_period_days: For equity bundles, deterministic lock in days (default 30 when any asset is equity)
             
         Returns:
             Created SecuritizationPool instance
@@ -204,25 +207,94 @@ class SecuritizationService:
                 validated_assets.append({
                     "asset_id": f"loan_{loan_asset_id}",
                     "asset_type": "loan_asset",
+                    "deal_id": None,
                     "loan_asset_id": str(loan_asset_id),
+                    "equity_symbol": None,
+                    "commodity_code": None,
                     "asset_value": asset_value,
                     "allocation_percentage": allocation_percentage
                 })
+
+            elif asset_type == "equity":
+                equity_symbol = asset_data.get("equity_symbol") or (asset_data.get("asset_id") if asset_data.get("asset_id", "").startswith("equity_") else None)
+                if not equity_symbol and isinstance(asset_data.get("asset_id"), str) and asset_data["asset_id"].startswith("equity_"):
+                    equity_symbol = asset_data["asset_id"].replace("equity_", "", 1)
+                if not equity_symbol:
+                    raise ValueError("equity_symbol required for asset_type=equity")
+                val = asset_data.get("value")
+                if val is None:
+                    q, up = asset_data.get("quantity"), asset_data.get("unit_price")
+                    val = (Decimal(str(q or 0)) * Decimal(str(up or 0))) if (q is not None and up is not None) else None
+                if val is None or Decimal(str(val)) <= 0:
+                    raise ValueError(f"equity {equity_symbol}: provide value or (quantity and unit_price)")
+                asset_value = Decimal(str(val))
+                total_pool_value += asset_value
+                validated_assets.append({
+                    "asset_id": f"equity_{equity_symbol}",
+                    "asset_type": "equity",
+                    "deal_id": None,
+                    "loan_asset_id": None,
+                    "equity_symbol": equity_symbol,
+                    "commodity_code": None,
+                    "asset_value": asset_value,
+                    "allocation_percentage": allocation_percentage,
+                })
+
+            elif asset_type == "commodity":
+                commodity_code = asset_data.get("commodity_code") or (asset_data.get("asset_id") if isinstance(asset_data.get("asset_id"), str) and "commodity" in str(asset_data.get("asset_id", "")).lower() else None)
+                if not commodity_code:
+                    raise ValueError("commodity_code required for asset_type=commodity")
+                val = asset_data.get("value")
+                if val is None:
+                    q, up = asset_data.get("quantity"), asset_data.get("unit_price")
+                    val = (Decimal(str(q or 0)) * Decimal(str(up or 0))) if (q is not None and up is not None) else None
+                if val is None or Decimal(str(val)) <= 0:
+                    raise ValueError(f"commodity {commodity_code}: provide value or (quantity and unit_price)")
+                asset_value = Decimal(str(val))
+                total_pool_value += asset_value
+                validated_assets.append({
+                    "asset_id": f"commodity_{commodity_code}",
+                    "asset_type": "commodity",
+                    "deal_id": None,
+                    "loan_asset_id": None,
+                    "equity_symbol": None,
+                    "commodity_code": commodity_code,
+                    "asset_value": asset_value,
+                    "allocation_percentage": allocation_percentage,
+                })
+
+            else:
+                raise ValueError(f"Unsupported asset_type: {asset_type}. Use deal, loan_asset, equity, or commodity.")
         
         if total_pool_value <= 0:
             raise ValueError("Total pool value must be greater than zero")
-        
-        # Validate tranche structure
-        tranche_sum = Decimal("0")
-        for tranche_data in tranches:
-            tranche_size = Decimal(str(tranche_data.get("size", {}).get("amount", 0)))
-            tranche_sum += tranche_size
-        
-        if abs(tranche_sum - total_pool_value) > Decimal("0.01"):
-            raise ValueError(f"Tranche sizes ({tranche_sum}) must sum to total pool value ({total_pool_value})")
-        
-        # Generate pool ID
+
+        # Generate pool ID (needed for auto_tranche)
         pool_id = f"POOL-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+
+        # Auto-tranche: single Class A with size=total (bundle builder)
+        if tranches and len(tranches) == 1 and tranches[0].get("auto"):
+            cdm_tranches = [
+                Tranche(
+                    tranche_id=f"{pool_id}_class_a",
+                    tranche_name="Class A",
+                    tranche_class="Senior",
+                    size=Money(amount=total_pool_value, currency=currency),
+                    interest_rate=Decimal(0),
+                    risk_rating=None,
+                    payment_priority=1,
+                    cdm_tranche_data={},
+                )
+            ]
+        else:
+            # Validate tranche structure
+            tranche_sum = Decimal("0")
+            for tranche_data in tranches:
+                tranche_size = Decimal(str(tranche_data.get("size", {}).get("amount", 0)))
+                tranche_sum += tranche_size
+
+            if abs(tranche_sum - total_pool_value) > Decimal("0.01"):
+                raise ValueError(f"Tranche sizes ({tranche_sum}) must sum to total pool value ({total_pool_value})")
         
         # Create CDM SecuritizationPool object
         originator_party = Party(
@@ -244,30 +316,33 @@ class SecuritizationService:
                 asset_type=asset["asset_type"],
                 deal_id=asset.get("deal_id"),
                 loan_asset_id=asset.get("loan_asset_id"),
+                equity_symbol=asset.get("equity_symbol"),
+                commodity_code=asset.get("commodity_code"),
                 asset_value=Money(amount=asset["asset_value"], currency=currency),
                 allocation_percentage=asset["allocation_percentage"]
             )
             for asset in validated_assets
         ]
         
-        # Build CDM tranches
-        cdm_tranches = []
-        for tranche_data in tranches:
-            tranche_size = Decimal(str(tranche_data.get("size", {}).get("amount", 0)))
-            tranche_currency = Currency(tranche_data.get("size", {}).get("currency", "USD"))
-            
-            cdm_tranche = Tranche(
-                tranche_id=f"{pool_id}_{tranche_data.get('tranche_name', '').lower().replace(' ', '_')}",
-                tranche_name=tranche_data.get("tranche_name", ""),
-                tranche_class=tranche_data.get("tranche_class", ""),
-                size=Money(amount=tranche_size, currency=tranche_currency),
-                interest_rate=Decimal(str(tranche_data.get("interest_rate", 0))),
-                risk_rating=tranche_data.get("risk_rating"),
-                payment_priority=tranche_data.get("payment_priority", 999),
-                cdm_tranche_data=tranche_data.get("cdm_tranche_data", {})
-            )
-            cdm_tranches.append(cdm_tranche)
-        
+        # Build CDM tranches (when not auto_tranche; auto path already set cdm_tranches above)
+        if not (tranches and len(tranches) == 1 and tranches[0].get("auto")):
+            cdm_tranches = []
+            for tranche_data in tranches:
+                tranche_size = Decimal(str(tranche_data.get("size", {}).get("amount", 0)))
+                tranche_currency = Currency(tranche_data.get("size", {}).get("currency", "USD"))
+
+                cdm_tranche = Tranche(
+                    tranche_id=f"{pool_id}_{tranche_data.get('tranche_name', '').lower().replace(' ', '_')}",
+                    tranche_name=tranche_data.get("tranche_name", ""),
+                    tranche_class=tranche_data.get("tranche_class", ""),
+                    size=Money(amount=tranche_size, currency=tranche_currency),
+                    interest_rate=Decimal(str(tranche_data.get("interest_rate", 0))),
+                    risk_rating=tranche_data.get("risk_rating"),
+                    payment_priority=tranche_data.get("payment_priority", 999),
+                    cdm_tranche_data=tranche_data.get("cdm_tranche_data", {}),
+                )
+                cdm_tranches.append(cdm_tranche)
+
         # Build payment waterfall
         if payment_waterfall:
             waterfall_rules = [
@@ -310,6 +385,15 @@ class SecuritizationService:
             maturity_date=None
         )
         
+        # Deterministic lock for equity bundles
+        has_equity = any(a.get("asset_type") == "equity" for a in validated_assets)
+        lock_period_days_val: Optional[int] = None
+        lock_until_val: Optional[datetime] = None
+        if has_equity:
+            ld = lock_period_days if lock_period_days is not None else 30
+            lock_period_days_val = ld
+            lock_until_val = datetime.utcnow() + timedelta(days=ld)
+
         # Create database record
         pool = SecuritizationPool(
             pool_id=pool_id,
@@ -320,7 +404,9 @@ class SecuritizationService:
             total_pool_value=total_pool_value,
             currency=currency.value,
             cdm_payload=cdm_pool.model_dump(),
-            status="draft"
+            status="draft",
+            lock_period_days=lock_period_days_val,
+            lock_until=lock_until_val,
         )
         
         self.db.add(pool)
@@ -328,14 +414,20 @@ class SecuritizationService:
         self.db.refresh(pool)
         
         # Add underlying assets to pool
+        _currency = getattr(currency, "value", str(currency))
         for asset_data in validated_assets:
             pool_asset = SecuritizationPoolAsset(
                 pool_id=pool.id,
                 deal_id=int(asset_data["deal_id"]) if asset_data.get("deal_id") else None,
                 loan_asset_id=int(asset_data["loan_asset_id"]) if asset_data.get("loan_asset_id") else None,
                 asset_type=asset_data["asset_type"],
+                asset_id=asset_data.get("asset_id"),
+                asset_value=asset_data.get("asset_value"),
+                currency=_currency,
+                equity_symbol=asset_data.get("equity_symbol"),
+                commodity_code=asset_data.get("commodity_code"),
                 allocation_percentage=asset_data["allocation_percentage"],
-                allocation_amount=asset_data["asset_value"]
+                allocation_amount=asset_data["asset_value"],
             )
             self.db.add(pool_asset)
         

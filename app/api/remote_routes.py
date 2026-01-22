@@ -3,7 +3,7 @@
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Header, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -209,6 +209,8 @@ async def generate_verification_link(
     request: GenerateVerificationLinkRequest,
     profile: RemoteAppProfile = Depends(get_remote_profile),
     db: Session = Depends(get_db),
+    auto_hydrate: bool = Query(False, description="Embed documents and data in payload"),
+    max_document_size_mb: int = Query(10, description="Max document size to embed (MB)"),
 ):
     """Generate self-contained verification link with file references."""
     from app.utils.link_payload import LinkPayloadGenerator
@@ -293,22 +295,32 @@ async def generate_verification_link(
                         })
 
     # Generate encrypted link payload
-    payload_generator = LinkPayloadGenerator()
-    encrypted_payload = payload_generator.generate_verification_link_payload(
-        verification_id=verification.verification_id,
-        deal_id=deal.id,
-        deal_data=deal.deal_data or {},
-        cdm_payload=get_deal_cdm_payload(db, deal) if deal else {},
-        file_references=file_references if file_references else None,
-        expires_in_hours=request.expires_in_hours,
+    from app.services.verification_service import VerificationService
+    
+    verification_service = VerificationService(db)
+    
+    # Generate link with optional auto-hydration
+    link = verification_service.generate_verification_link(
+        verification=verification,
+        base_url=request.base_url if hasattr(request, 'base_url') else None,
+        include_files=request.include_files,
+        file_categories=request.file_categories,
+        file_document_ids=request.file_document_ids,
+        auto_hydrate=auto_hydrate,
+        max_document_size_mb=max_document_size_mb,
     )
+    
+    # Extract payload from full URL
+    encrypted_payload = link.split('/verify/')[-1] if '/verify/' in link else link
 
     return {
         "status": "success",
-        "link": encrypted_payload,
+        "link": link,
+        "payload": encrypted_payload,
         "verification_id": verification_id,
         "expires_at": verification.expires_at.isoformat() if verification.expires_at else None,
         "files_included": len(file_references),
+        "hydrated": auto_hydrate,
         "instructions": "Share this link via email, Slack, Teams, or any other channel",
     }
 
@@ -320,8 +332,13 @@ async def generate_verification_link(
 
 @remote_router.get("/verify/{payload}")
 async def verify_link_payload(payload: str, db: Session = Depends(get_db)):
-    """Validate and parse verification link payload (self-contained)."""
+    """Validate and parse verification link payload (self-contained).
+    
+    Supports both regular payloads (v2.0) and hydrated payloads (v2.1) with embedded documents.
+    If payload is hydrated, automatically extracts embedded documents and data.
+    """
     from app.utils.link_payload import LinkPayloadGenerator
+    from app.services.verification_hydration_service import VerificationHydrationService
 
     payload_generator = LinkPayloadGenerator()
     link_data = payload_generator.parse_verification_link_payload(payload)
@@ -329,16 +346,111 @@ async def verify_link_payload(payload: str, db: Session = Depends(get_db)):
     if not link_data:
         raise HTTPException(status_code=400, detail="Invalid or expired verification link")
 
-    return {
+    # Check if payload is hydrated
+    is_hydrated = link_data.get("hydrated", False)
+    
+    # Extract embedded documents if hydrated
+    embedded_documents = []
+    if is_hydrated:
+        hydration_service = VerificationHydrationService(db)
+        extracted = hydration_service.dehydrate_link_payload(link_data)
+        embedded_documents = extracted.get("documents", [])
+        
+        # Log access for audit
+        verification_id = link_data.get("verification_id")
+        if verification_id:
+            logger.info(f"Accessed hydrated verification link: {verification_id}")
+    
+    response = {
         "status": "valid",
         "verification_id": link_data["verification_id"],
         "deal_id": link_data["deal_id"],
         "deal_data": link_data["deal_data"],
         "cdm_payload": link_data["cdm_payload"],
-        "verifier_info": link_data["verifier_info"],
+        "verifier_info": link_data.get("verifier_info", {}),
         "file_references": link_data.get("file_references", []),
         "expires_at": link_data["expires_at"],
+        "hydrated": is_hydrated,
     }
+    
+    # Include embedded documents if hydrated
+    if is_hydrated:
+        response["embedded_documents"] = [
+            {
+                "document_id": doc.get("document_id"),
+                "filename": doc.get("filename"),
+                "content_type": doc.get("content_type"),
+                "size": doc.get("size"),
+                "embedded": True,
+            }
+            for doc in embedded_documents
+        ]
+    
+    return response
+
+
+@remote_router.get("/verify/{payload}/document/{document_id}")
+async def get_embedded_document(
+    payload: str,
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    """Download embedded document from hydrated verification link.
+    
+    Args:
+        payload: Encrypted verification link payload
+        document_id: Document ID to retrieve
+        db: Database session
+        
+    Returns:
+        Document file content with appropriate headers
+    """
+    from app.utils.link_payload import LinkPayloadGenerator
+    from app.services.verification_hydration_service import VerificationHydrationService
+    from fastapi.responses import Response
+    
+    payload_generator = LinkPayloadGenerator()
+    link_data = payload_generator.parse_verification_link_payload(payload)
+
+    if not link_data:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+    
+    # Check if payload is hydrated
+    is_hydrated = link_data.get("hydrated", False)
+    if not is_hydrated:
+        raise HTTPException(
+            status_code=400,
+            detail="Link is not hydrated. Use auto_hydrate=true when generating link."
+        )
+    
+    # Extract embedded documents
+    hydration_service = VerificationHydrationService(db)
+    extracted = hydration_service.dehydrate_link_payload(link_data)
+    embedded_documents = extracted.get("documents", [])
+    
+    # Find requested document
+    document = None
+    for doc in embedded_documents:
+        if doc.get("document_id") == document_id:
+            document = doc
+            break
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found in embedded payload")
+    
+    # Return document content
+    content = document.get("content")
+    filename = document.get("filename", f"document_{document_id}")
+    content_type = document.get("content_type", "application/octet-stream")
+    
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(content)),
+        }
+    )
 
 
 @remote_router.post("/verify/{payload}/process")

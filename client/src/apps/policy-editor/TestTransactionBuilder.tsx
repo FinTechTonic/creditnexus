@@ -7,16 +7,14 @@
  * - Save test cases for regression testing
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { 
   Save, 
   Download, 
   Upload, 
   FileText, 
-  Building2,
-  Loader2,
-  Plus,
+  // Building2, Loader2, Plus removed - unused
   X,
   CheckCircle2
 } from 'lucide-react';
@@ -75,8 +73,8 @@ export function TestTransactionBuilder({
 }: TestTransactionBuilderProps) {
   const [transaction, setTransaction] = useState<TestTransaction>({});
   const [testCases, setTestCases] = useState<TestCase[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [_saving, _setSaving] = useState(false); // Prefix with _ - unused
+  const [_loading, setLoading] = useState(false); // Prefix with _ - setter is used
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);

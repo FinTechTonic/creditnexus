@@ -6,9 +6,8 @@
 #
 # Environment Variables:
 #   BACKEND_URL - Backend server URL (default: http://localhost:8000)
-#   FRONTEND_URL - Frontend dev server URL (default: http://localhost:5173)
-#   OPENFIN_MANIFEST_URL - Full manifest URL (default: ${BACKEND_URL}/openfin/app.json)
-#   DEBUG - Set to "true" to enable debug logging
+#   FRONTEND_URL - Frontend dev server URL (default: http://localhost:5000, matches Vite in client)
+#   OPENFIN_MANIFEST_URL - Full manifest URL (default: ${BACKEND_URL}/openfin/app.json). Use app-dev.json for dev (view at Vite).
 
 Write-Host "CreditNexus OpenFin Launcher" -ForegroundColor Cyan
 Write-Host "=============================" -ForegroundColor Cyan
@@ -18,24 +17,8 @@ $projectRoot = if ($PSScriptRoot) { Split-Path $PSScriptRoot -Parent } else { Ge
 
 # Load configuration from environment or use defaults
 $BACKEND_URL = if ($env:BACKEND_URL) { $env:BACKEND_URL } else { "http://localhost:8000" }
-$FRONTEND_URL = if ($env:FRONTEND_URL) { $env:FRONTEND_URL } else { "http://localhost:5173" }
+$FRONTEND_URL = if ($env:FRONTEND_URL) { $env:FRONTEND_URL } else { "http://localhost:5000" }
 $MANIFEST_URL = if ($env:OPENFIN_MANIFEST_URL) { $env:OPENFIN_MANIFEST_URL } else { "$BACKEND_URL/openfin/app.json" }
-
-# Optional debug logging (only if DEBUG environment variable is set)
-if ($env:DEBUG -eq "true") {
-    $logData = @{
-        sessionId = "openfin-launch"
-        timestamp = (Get-Date).ToUniversalTime().ToString("o")
-        data = @{
-            projectRoot = $projectRoot
-            backendUrl = $BACKEND_URL
-            frontendUrl = $FRONTEND_URL
-            manifestUrl = $MANIFEST_URL
-        }
-    }
-    $logJson = $logData | ConvertTo-Json -Compress -Depth 10
-    Add-Content -Path "$projectRoot\.cursor\debug.log" -Value $logJson -ErrorAction SilentlyContinue
-}
 
 # Function to check if a service is ready
 function Test-ServiceReady {

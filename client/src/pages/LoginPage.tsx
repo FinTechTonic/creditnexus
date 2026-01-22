@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 
 export function LoginPage() {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, _setIsOpen] = useState(true); // Prefix setter with _ - getter is used
   const navigate = useNavigate();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading: _isLoading } = useAuth(); // isLoading unused - prefix with _
 
   // Redirect to dashboard if already logged in
   useEffect(() => {

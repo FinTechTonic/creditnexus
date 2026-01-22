@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '@/context/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { 
@@ -9,7 +9,6 @@ import {
   CheckCircle, 
   XCircle, 
   AlertTriangle, 
-  ChevronRight, 
   Clock,
   ExternalLink,
   Code
@@ -30,7 +29,6 @@ interface PolicyDecision {
 export function PolicyDecisionsExplorer() {
   const [decisions, setDecisions] = useState<PolicyDecision[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDecision, setSelectedDecision] = useState<PolicyDecision | null>(null);
 
@@ -46,7 +44,7 @@ export function PolicyDecisionsExplorer() {
         const data = await response.json();
         setDecisions(data.decisions || []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
+        console.error('Failed to fetch policy decisions:', err);
       } finally {
         setLoading(false);
       }

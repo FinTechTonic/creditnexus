@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth, fetchWithAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext'; // useAuth removed - unused
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   CheckCircle, 
@@ -162,7 +162,7 @@ interface ApplicationStatusTrackerProps {
 }
 
 export function ApplicationStatusTracker({ applicationId, className = '' }: ApplicationStatusTrackerProps) {
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user removed - unused
   const [application, setApplication] = useState<Application | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -253,9 +253,9 @@ export function ApplicationStatusTracker({ applicationId, className = '' }: Appl
         <div className="relative">
           <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-slate-700" />
           <div className="space-y-6">
-            {timeline.map((item, index) => {
+            {timeline.map((item) => { // index removed - unused
               const Icon = item.icon;
-              const isLast = index === timeline.length - 1;
+              // const isLast = index === timeline.length - 1; // Commented out - unused
               const isActive = item.status === application.status;
               
               return (

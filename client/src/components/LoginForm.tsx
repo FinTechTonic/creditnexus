@@ -15,11 +15,12 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [organizationIdentifier, setOrganizationIdentifier] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const navigate = useNavigate();
-  const { login, register, authError, clearError, user } = useAuth();
+  const { login, register, authError, clearError, user, organization, implementations } = useAuth();
 
   // Navigate to dashboard when user is authenticated (only when modal is open)
   // CRITICAL: Only run this when isOpen is true to prevent redirect loops
@@ -48,7 +49,12 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
       if (mode === 'login') {
         success = await login({ email, password });
       } else {
-        success = await register({ email, password, display_name: displayName });
+        success = await register({ 
+          email, 
+          password, 
+          display_name: displayName,
+          organization_identifier: organizationIdentifier || undefined
+        });
       }
       
       if (success) {
@@ -56,6 +62,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
         setEmail('');
         setPassword('');
         setDisplayName('');
+        setOrganizationIdentifier('');
       }
     } finally {
       setIsSubmitting(false);
@@ -124,6 +131,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
             </div>
 
             {mode === 'register' && (
+              <>
               <div>
                 <label htmlFor="displayName" className="block text-sm font-medium text-slate-300 mb-2">
                   Display Name
@@ -138,6 +146,23 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
                   placeholder="John Smith"
                 />
               </div>
+                <div>
+                  <label htmlFor="organizationIdentifier" className="block text-sm font-medium text-slate-300 mb-2">
+                    Organization Identifier <span className="text-slate-500 text-xs">(Optional)</span>
+                  </label>
+                  <input
+                    id="organizationIdentifier"
+                    type="text"
+                    value={organizationIdentifier}
+                    onChange={(e) => setOrganizationIdentifier(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                    placeholder="org-alias, 0x1234..., or org-key"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Enter your organization alias, blockchain address, or organization key to connect to your organization
+                  </p>
+                </div>
+              </>
             )}
 
             <div>
@@ -228,6 +253,29 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
               </p>
             )}
           </div>
+
+          {user && organization && (
+            <div className="mt-4 p-3 bg-slate-900 rounded-lg">
+              <p className="text-xs text-slate-400 mb-1">Organization</p>
+              <p className="text-sm text-slate-200">{organization.name}</p>
+            </div>
+          )}
+
+          {user && implementations && implementations.length > 0 && (
+            <div className="mt-2 p-3 bg-slate-900 rounded-lg">
+              <p className="text-xs text-slate-400 mb-1">Connected Services</p>
+              <div className="flex flex-wrap gap-2">
+                {implementations.map((impl) => (
+                  <span
+                    key={impl.id}
+                    className="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded"
+                  >
+                    {impl.display_name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 pt-6 border-t border-slate-700">
             <p className="text-xs text-center text-slate-500">

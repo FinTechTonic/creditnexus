@@ -2,17 +2,25 @@
   "name": "workspace",
   "version": "1.0.0",
   "description": "A production-grade financial AI agent that extracts structured data from credit agreements using OpenAI's GPT-4o, LangChain, and the FINOS Common Domain Model (CDM). Built as a full-stack application with a React frontend and Python backend.",
-  "main": "index.js",
-  "directories": {
-    "test": "tests"
-  },
+  "main": "electron/main.js",
   "scripts": {
     "dev": "powershell -ExecutionPolicy Bypass -File run_openfin.ps1",
     "dev:unix": "bash run_openfin.sh",
     "backend": "python scripts/run_dev.py",
     "frontend": "cd client && npm run dev",
+    "dev:pm2": "node -e \"require('fs').mkdirSync('logs/pm2',{recursive:true})\" && npx pm2 start ecosystem.config.cjs",
+    "dev:pm2:stop": "npx pm2 delete backend-dev frontend-dev openfin-dev api-dev || exit 0",
+    "dev:pm2:restart": "npx pm2 restart ecosystem.config.cjs",
+    "dev:pm2:openfin": "npx pm2 start ecosystem.config.cjs --only openfin-dev",
+    "dev:pm2:logs": "npx pm2 logs",
+    "dev:pm2:status": "npx pm2 status",
     "client:build": "cd client && npm run build",
     "openfin:launch": "powershell -ExecutionPolicy Bypass -File scripts/launch_openfin.ps1",
+    "electron:dev": "concurrently \"npm run frontend\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "npm run client:build && npx electron-builder",
+    "electron:build:win": "npx electron-builder --win",
+    "electron:build:mac": "npx electron-builder --mac",
+    "electron:build:linux": "npx electron-builder --linux",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -27,5 +35,13 @@
     "react-big-calendar": "^1.19.4",
     "react-router-dom": "^7.12.0",
     "recharts": "^3.5.1"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^2.2.0",
+    "concurrently": "^8.2.2",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "pm2": "^5.4.3",
+    "wait-on": "^7.2.0"
   }
 }

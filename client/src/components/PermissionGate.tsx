@@ -15,7 +15,7 @@
  * ```
  */
 
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface PermissionGateProps {
@@ -44,7 +44,7 @@ export function PermissionGate({
   children,
   fallback = null,
 }: PermissionGateProps): ReactNode {
-  const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
+  const { hasPermission: _hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions(); // Prefix hasPermission with _ - unused
 
   // Validate props
   if (!permission && !permissions) {

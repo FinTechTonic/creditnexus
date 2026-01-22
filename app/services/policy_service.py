@@ -8,6 +8,7 @@ the vendor-agnostic policy engine interface.
 
 from __future__ import annotations
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -25,6 +26,17 @@ from app.services.credit_risk_service import CreditRiskService
 from app.services.credit_risk_mapper import CreditRiskMapper
 
 logger = logging.getLogger(__name__)
+
+# Import metrics (optional - only if metrics are enabled)
+try:
+    from app.core.metrics import (
+        policy_decisions_total,
+        policy_decision_duration_seconds
+    )
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    logger.debug("Metrics not available for policy tracking")
 
 
 @dataclass
@@ -115,23 +127,56 @@ class PolicyService:
         Returns:
             PolicyDecision with ALLOW/BLOCK/FLAG
         """
-        # Convert CDM to policy transaction
-        tx = self._cdm_to_policy_transaction(
-            credit_agreement=credit_agreement,
-            transaction_type="facility_creation"
-        )
+        start_time = time.time()
         
-        # Evaluate
-        result = self.engine.evaluate(tx)
-        
-        return PolicyDecision(
-            decision=result["decision"],
-            rule_applied=result.get("rule"),
-            trace_id=f"facility_{document_id}_{datetime.utcnow().isoformat()}" if document_id else f"facility_{datetime.utcnow().isoformat()}",
-            trace=result.get("trace", []),
-            matched_rules=result.get("matched_rules", []),
-            metadata={"document_id": document_id}
-        )
+        try:
+            # Convert CDM to policy transaction
+            tx = self._cdm_to_policy_transaction(
+                credit_agreement=credit_agreement,
+                transaction_type="facility_creation"
+            )
+            
+            # Evaluate
+            result = self.engine.evaluate(tx)
+            
+            decision = result["decision"]
+            rule_applied = result.get("rule", "default")
+            duration = time.time() - start_time
+            
+            # Record metrics
+            if METRICS_AVAILABLE:
+                policy_decisions_total.labels(
+                    decision=decision,
+                    rule_applied=rule_applied
+                ).inc()
+                
+                policy_decision_duration_seconds.labels(
+                    decision=decision
+                ).observe(duration)
+            
+            return PolicyDecision(
+                decision=decision,
+                rule_applied=rule_applied,
+                trace_id=f"facility_{document_id}_{datetime.utcnow().isoformat()}" if document_id else f"facility_{datetime.utcnow().isoformat()}",
+                trace=result.get("trace", []),
+                matched_rules=result.get("matched_rules", []),
+                metadata={"document_id": document_id}
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                policy_decisions_total.labels(
+                    decision="ERROR",
+                    rule_applied="error"
+                ).inc()
+                
+                policy_decision_duration_seconds.labels(
+                    decision="ERROR"
+                ).observe(duration)
+            
+            raise
     
     def evaluate_trade_execution(
         self,
@@ -238,7 +283,44 @@ class PolicyService:
             matched_rules=result.get("matched_rules", []),
             metadata={"trade_id": trade_id}
         )
-    
+
+    def evaluate_market_resolution(
+        self,
+        market_id: str,
+        resolution_outcome: str,
+        *,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> PolicyDecision:
+        """
+        Evaluate a prediction market resolution for policy compliance.
+
+        Args:
+            market_id: Market ID
+            resolution_outcome: Proposed outcome ("yes", "no", or category value)
+            context: Optional dict with market_id, deal_id, oracle_triggered, etc.
+
+        Returns:
+            PolicyDecision with ALLOW/BLOCK/FLAG
+        """
+        ctx = context or {}
+        tx = {
+            "transaction_id": f"market_resolution_{market_id}",
+            "transaction_type": "market_resolution",
+            "timestamp": datetime.utcnow().isoformat(),
+            "market_id": market_id,
+            "resolution_outcome": resolution_outcome,
+            **ctx,
+        }
+        result = self.engine.evaluate(tx)
+        return PolicyDecision(
+            decision=result["decision"],
+            rule_applied=result.get("rule"),
+            trace_id=f"market_res_{market_id}_{datetime.utcnow().isoformat()}",
+            trace=result.get("trace", []),
+            matched_rules=result.get("matched_rules", []),
+            metadata={"market_id": market_id, "resolution_outcome": resolution_outcome},
+        )
+
     def evaluate_filing_requirements(
         self,
         credit_agreement: CreditAgreement,
@@ -959,6 +1041,8 @@ class PolicyService:
         Raises:
             ValueError: If CDM event structure is invalid
         """
+        start_time = time.time()
+        
         # STEP 1: VALIDATION (CDM principle)
         self._validate_cdm_event(cdm_event)
         
@@ -967,7 +1051,37 @@ class PolicyService:
         policy_transaction = self._cdm_trade_event_to_policy_transaction(cdm_event, credit_agreement)
         
         # Evaluate using policy engine
-        evaluation_result = self.engine.evaluate(policy_transaction)
+        try:
+            evaluation_result = self.engine.evaluate(policy_transaction)
+            decision = evaluation_result.get("decision", "ALLOW")
+            rule_applied = evaluation_result.get("rule", "default")
+            duration = time.time() - start_time
+            
+            # Record metrics
+            if METRICS_AVAILABLE:
+                policy_decisions_total.labels(
+                    decision=decision,
+                    rule_applied=rule_applied
+                ).inc()
+                
+                policy_decision_duration_seconds.labels(
+                    decision=decision
+                ).observe(duration)
+        except Exception as e:
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                policy_decisions_total.labels(
+                    decision="ERROR",
+                    rule_applied="error"
+                ).inc()
+                
+                policy_decision_duration_seconds.labels(
+                    decision="ERROR"
+                ).observe(duration)
+            
+            raise
         
         # STEP 3: EVENT CREATION (CDM event model)
         # Extract transaction identifier from CDM event

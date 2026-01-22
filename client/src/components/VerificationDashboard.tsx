@@ -2,24 +2,23 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useFDC3 } from '@/context/FDC3Context';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
 import { DropZone } from './DropZone';
 import { AgentTerminal } from './AgentTerminal';
 import { MapView } from './MapView';
 import { RealTimeMapView } from './RealTimeMapView';
 import { LayerBrowser } from './LayerBrowser';
-import { VerificationProgress } from './VerificationProgress';
+// VerificationProgress removed - unused
 import { LayerAnimationController } from './LayerAnimationController';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
-import { ShieldCheck, Activity, Code, Map as MapIcon, Globe, FileText, Building2, Loader2, Search, Leaf, Layers } from 'lucide-react';
+import { ShieldCheck, Activity, Code, Map as MapIcon, Globe, FileText, Building2, Loader2, Leaf, Layers } from 'lucide-react';
 import { GreenFinanceMetricsCard } from './green-finance/GreenFinanceMetricsCard';
-import { LocationTypeBadge } from './green-finance/LocationTypeBadge';
-import { AirQualityIndicator } from './green-finance/AirQualityIndicator';
-import { SustainabilityScoreCard } from './green-finance/SustainabilityScoreCard';
+// LocationTypeBadge, AirQualityIndicator, SustainabilityScoreCard removed - unused
 import { SDGAlignmentPanel } from './green-finance/SDGAlignmentPanel';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { DashboardChatbotPanel } from './DashboardChatbotPanel';
+// DashboardChatbotPanel removed - unused
 
 // Mock asset for demo visualization (Napa Valley) - Aligned with LoanAsset interface
 const DEMO_ASSET = {
@@ -51,7 +50,7 @@ export default function VerificationDashboard() {
     const [classification, setClassification] = useState<any>(null);
     const [extractedText, setExtractedText] = useState<string>('');
     const [loanAssetId, setLoanAssetId] = useState<number | null>(null);
-    const [verificationProgress, setVerificationProgress] = useState<any>(null);
+    const [_verificationProgress, setVerificationProgress] = useState<any>(null); // Prefix with _ - setter is used
     
     // Document and loan selectors
     const [showDocumentSelector, setShowDocumentSelector] = useState(false);
@@ -60,7 +59,7 @@ export default function VerificationDashboard() {
     const [availableLoans, setAvailableLoans] = useState<any[]>([]);
     const [loadingDocuments, setLoadingDocuments] = useState(false);
     const [loadingLoans, setLoadingLoans] = useState(false);
-    const [selectedLoan, setSelectedLoan] = useState<any>(null);
+    const [_selectedLoan, setSelectedLoan] = useState<any>(null); // Prefix with _ - setter is used
     const [loanAsset, setLoanAsset] = useState<any>(null);
 
     const addLog = (message: string, level: LogEntry['level'] = 'INFO') => {
@@ -328,7 +327,7 @@ export default function VerificationDashboard() {
             setTimeout(async () => {
                 // We'll keep this mock or connect to real event endpoint if time permits, 
                 // but for now the audit workflow is the key.
-                const cdmRes = await fetch('/api/cdm/events/LOAN-2024-KILLSHOT');
+                const cdmRes = await fetch(resolveApiUrl('/api/cdm/events/LOAN-2024-KILLSHOT'));
                 const cdmData = await cdmRes.json();
                 setCdmEvents(cdmData);
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -13,11 +14,21 @@ import {
   Scale,
   DollarSign,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Edit,
+  Save,
+  X,
+  MessageSquare,
+  GitCompare,
+  UserPlus
 } from 'lucide-react';
 import { useFDC3 } from '@/hooks/useFDC3';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_DOCUMENT_REVIEW, PERMISSION_DOCUMENT_APPROVE } from '@/utils/permissions';
+import { ReviewCommentPanel } from '@/components/ReviewCommentPanel';
+import { ReviewAssignmentPanel } from '@/components/ReviewAssignmentPanel';
+import { DiffView } from '@/components/DiffView';
+import { fetchWithAuth } from '@/context/AuthContext';
 
 interface CreditAgreement {
   agreement_date: string;
@@ -32,6 +43,7 @@ interface CreditAgreement {
 }
 
 interface ReviewInterfaceProps {
+  documentId?: number;
   documentText?: string;
   extractedData?: CreditAgreement;
   warningMessage?: string;
@@ -40,6 +52,7 @@ interface ReviewInterfaceProps {
 }
 
 export function ReviewInterface({
+  documentId,
   documentText = '',
   extractedData,
   warningMessage,
@@ -49,6 +62,10 @@ export function ReviewInterface({
   const { broadcast } = useFDC3();
   const [rejectionReason, setRejectionReason] = useState('');
   const [activeTab, setActiveTab] = useState('summary');
+  const [reviewTab, setReviewTab] = useState('data');
+  const [editMode, setEditMode] = useState(false);
+  const [editedData, setEditedData] = useState<CreditAgreement | undefined>(extractedData);
+  const [saving, setSaving] = useState(false);
 
   const isDataValid = Boolean(
     extractedData &&
@@ -62,13 +79,27 @@ export function ReviewInterface({
       broadcast({
         type: 'finos.creditnexus.loan',
         loan: {
-          agreementDate: extractedData.agreement_date,
-          parties: extractedData.parties,
-          facilities: extractedData.facilities?.map(f => ({
-            name: f.facility_name,
-            amount: f.commitment_amount.amount,
-            currency: f.commitment_amount.currency,
+          agreement_date: extractedData.agreement_date,
+          parties: (extractedData.parties || []).map((p, idx) => ({
+            id: (p as any).id || `party-${idx}`,
+            name: p.name,
+            role: p.role,
+            lei: (p as any).lei,
+            legal_name: (p as any).legal_name,
           })),
+          facilities: (extractedData.facilities || []).map(f => {
+            const interestTerms = (f as any).interest_terms || {
+              rate_option: { benchmark: 'SOFR', spread_bps: (f as any).spread_bps || 200 },
+              payment_frequency: { period: 'monthly', period_multiplier: 1 }
+            };
+            return {
+              facility_name: f.facility_name,
+              commitment_amount: f.commitment_amount,
+              interest_terms: interestTerms,
+              maturity_date: f.maturity_date || '',
+              spread_bps: (f as any).spread_bps || interestTerms.rate_option?.spread_bps || 200,
+            };
+          }),
         },
       });
       onApprove(extractedData);
@@ -77,6 +108,67 @@ export function ReviewInterface({
 
   const handleReject = () => {
     onReject(rejectionReason || 'Rejected by analyst');
+  };
+
+  const handleRequestChanges = async () => {
+    if (!documentId) {
+      onReject(rejectionReason || 'Changes requested');
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuth(
+        `/api/reviews/documents/${documentId}/request-changes`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reason: rejectionReason || 'Changes requested',
+            required_changes: [],
+          }),
+        }
+      );
+
+      if (response.ok) {
+        onReject(rejectionReason || 'Changes requested');
+      }
+    } catch (error) {
+      console.error('Error requesting changes:', error);
+      onReject(rejectionReason || 'Changes requested');
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!documentId || !editedData) return;
+
+    try {
+      setSaving(true);
+      const response = await fetchWithAuth(
+        `/api/reviews/documents/${documentId}/edit`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            edited_data: editedData,
+            comment: 'Edited extracted data',
+          }),
+        }
+      );
+
+      if (response.ok) {
+        setEditMode(false);
+        // Optionally reload data or update parent component
+      }
+    } catch (error) {
+      console.error('Error saving edit:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditedData(extractedData);
+    setEditMode(false);
   };
 
   // Check permissions - only show to users with review permissions
@@ -224,14 +316,43 @@ export function ReviewInterface({
                           <Calendar className="h-4 w-4" />
                           <span className="text-xs font-medium uppercase tracking-wide">Agreement Date</span>
                         </div>
-                        <p className="text-lg font-semibold">{formatDate(extractedData.agreement_date)}</p>
+                        {editMode ? (
+                          <Input
+                            type="date"
+                            value={editedData?.agreement_date || ''}
+                            onChange={(e) => setEditedData({
+                              ...editedData!,
+                              agreement_date: e.target.value
+                            })}
+                            className="text-lg font-semibold"
+                          />
+                        ) : (
+                          <p className="text-lg font-semibold">{formatDate(extractedData.agreement_date)}</p>
+                        )}
                       </div>
                       <div className="p-4 rounded-xl bg-muted/50">
                         <div className="flex items-center gap-2 text-muted-foreground mb-2">
                           <DollarSign className="h-4 w-4" />
                           <span className="text-xs font-medium uppercase tracking-wide">Total Commitment</span>
                         </div>
-                        <p className="text-lg font-semibold">{formatCurrency(totalCommitment, currency)}</p>
+                        {editMode ? (
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              value={editedData?.facilities?.[0]?.commitment_amount?.amount || 0}
+                              onChange={(e) => {
+                                const newData = { ...editedData! };
+                                if (newData.facilities && newData.facilities.length > 0) {
+                                  newData.facilities[0].commitment_amount.amount = parseFloat(e.target.value) || 0;
+                                }
+                                setEditedData(newData);
+                              }}
+                              className="text-lg font-semibold"
+                            />
+                          </div>
+                        ) : (
+                          <p className="text-lg font-semibold">{formatCurrency(totalCommitment, currency)}</p>
+                        )}
                       </div>
                     </div>
 
@@ -285,7 +406,18 @@ export function ReviewInterface({
                         <Scale className="h-4 w-4" />
                         <span className="text-xs font-medium uppercase tracking-wide">Governing Law</span>
                       </div>
-                      <p className="font-medium">{extractedData.governing_law}</p>
+                      {editMode ? (
+                        <Input
+                          value={editedData?.governing_law || ''}
+                          onChange={(e) => setEditedData({
+                            ...editedData!,
+                            governing_law: e.target.value
+                          })}
+                          className="font-medium"
+                        />
+                      ) : (
+                        <p className="font-medium">{extractedData.governing_law}</p>
+                      )}
                     </div>
                   </div>
                 </TabsContent>
@@ -293,7 +425,7 @@ export function ReviewInterface({
                 <TabsContent value="json" className="mt-0">
                   <div className="h-[420px] overflow-auto rounded-lg bg-muted/50 p-4">
                     <pre className="text-xs font-mono text-muted-foreground">
-                      {JSON.stringify(extractedData, null, 2)}
+                      {JSON.stringify(editMode ? editedData : extractedData, null, 2)}
                     </pre>
                   </div>
                 </TabsContent>
@@ -303,25 +435,122 @@ export function ReviewInterface({
         </div>
       </div>
 
+      {/* Review Tabs: Data, Comments, Assignments, Diff */}
+      {documentId && (
+        <Card className="shadow-lg border-0">
+          <CardHeader>
+            <Tabs value={reviewTab} onValueChange={setReviewTab}>
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="data">Data</TabsTrigger>
+                <TabsTrigger value="comments">
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Comments
+                </TabsTrigger>
+                <TabsTrigger value="assignments">
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Assignments
+                </TabsTrigger>
+                <TabsTrigger value="diff">
+                  <GitCompare className="h-4 w-4 mr-2" />
+                  Diff
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="data" className="mt-4">
+                <div className="rounded-lg border bg-muted/30 p-4 overflow-auto max-h-[360px]">
+                  <pre className="text-sm font-mono">
+                    {extractedData ? JSON.stringify(extractedData, null, 2) : 'No extracted data'}
+                  </pre>
+                </div>
+              </TabsContent>
+              <TabsContent value="comments" className="mt-4">
+                <ReviewCommentPanel 
+                  documentId={documentId} 
+                  versionId={undefined}
+                />
+              </TabsContent>
+              <TabsContent value="assignments" className="mt-4">
+                <ReviewAssignmentPanel documentId={documentId} />
+              </TabsContent>
+              <TabsContent value="diff" className="mt-4">
+                <DiffView documentId={documentId} />
+              </TabsContent>
+            </Tabs>
+          </CardHeader>
+        </Card>
+      )}
+
       <Card className="shadow-lg border-0">
         <CardContent className="p-6">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
             <div className="flex-1">
+              {editMode && (
+                <div className="flex items-center gap-2 mb-2">
+                  <Edit className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">Edit Mode</span>
+                </div>
+              )}
               {!isSuccess && (
                 <textarea
-                  placeholder="Rejection reason (optional)..."
+                  placeholder="Rejection reason or change request details..."
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
                   className="w-full min-h-[60px] px-4 py-3 text-sm border rounded-xl bg-muted/50 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 />
               )}
-              {isSuccess && (
+              {isSuccess && !editMode && (
                 <p className="text-muted-foreground">
-                  Review the extracted data above. Approve to send to staging or reject with a reason.
+                  Review the extracted data above. Approve to send to staging, request changes, or reject with a reason.
                 </p>
               )}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
+              {!editMode && (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setEditMode(true)}
+                  disabled={!extractedData}
+                  className="gap-2"
+                >
+                  <Edit className="h-4 w-4" />
+                  Edit
+                </Button>
+              )}
+              {editMode && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={handleCancelEdit}
+                    disabled={saving}
+                    className="gap-2"
+                  >
+                    <X className="h-4 w-4" />
+                    Cancel
+                  </Button>
+                  <Button
+                    size="lg"
+                    onClick={handleSaveEdit}
+                    disabled={saving}
+                    className="gap-2"
+                  >
+                    <Save className="h-4 w-4" />
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                </>
+              )}
+              {documentId && !editMode && (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={handleRequestChanges}
+                  disabled={!extractedData}
+                  className="gap-2 border-orange-500/30 text-orange-600 hover:bg-orange-500/10"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  Request Changes
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="lg"
@@ -335,7 +564,7 @@ export function ReviewInterface({
               <Button
                 size="lg"
                 onClick={handleApprove}
-                disabled={!isDataValid || isFailure}
+                disabled={!isDataValid || isFailure || editMode}
                 className="gap-2"
                 title={!isDataValid ? "Missing required fields: agreement date, parties, or governing law" : ""}
               >

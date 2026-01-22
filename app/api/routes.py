@@ -3,6 +3,7 @@
 import logging
 import io
 import json
+import time
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
@@ -11,6 +12,20 @@ from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
 import pandas as pd
+
+# Import metrics (optional - only if metrics are enabled)
+try:
+    from app.core.metrics import (
+        documents_processed_total,
+        document_processing_duration_seconds,
+        trades_executed_total,  # TODO: Task 4.4 - Trade execution metrics
+        trade_value_total  # TODO: Task 4.4 - Trade execution metrics
+    )
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.debug("Metrics not available for document processing tracking")
 
 from app.chains.extraction_chain import extract_data, extract_data_smart
 from app.models.cdm import ExtractionResult, CreditAgreement
@@ -189,6 +204,9 @@ async def extract_credit_agreement(
     from app.db.models import PolicyDecision as PolicyDecisionModel
     from app.models.cdm_events import generate_cdm_policy_evaluation
     
+    start_time = time.time()
+    file_type = "text"  # Default for text extraction
+    
     try:
         logger.info(f"Received extraction request for {len(request.text)} characters")
         
@@ -196,6 +214,19 @@ async def extract_credit_agreement(
             text=request.text,
             force_map_reduce=request.force_map_reduce
         )
+        
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="success",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
         
         if result is None:
             raise HTTPException(
@@ -422,6 +453,8 @@ async def upload_and_extract(file: UploadFile = File(...)):
             detail={"status": "error", "message": f"Unsupported file type: {extension or file.content_type}. Supported types: PDF, TXT"}
         )
     
+    start_time = time.time()
+    
     try:
         content = await file.read()
         
@@ -431,6 +464,19 @@ async def upload_and_extract(file: UploadFile = File(...)):
             text = content.decode("utf-8", errors="replace")
         
         if not text.strip():
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                documents_processed_total.labels(
+                    status="error",
+                    type=file_type
+                ).inc()
+                
+                document_processing_duration_seconds.labels(
+                    type=file_type
+                ).observe(duration)
+            
             raise HTTPException(
                 status_code=422,
                 detail={"status": "error", "message": "The uploaded file contains no extractable text."}
@@ -440,6 +486,19 @@ async def upload_and_extract(file: UploadFile = File(...)):
         
         result = extract_data_smart(text=text, force_map_reduce=False)
         
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="success",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         if result is None:
             raise HTTPException(
                 status_code=422,
@@ -447,6 +506,19 @@ async def upload_and_extract(file: UploadFile = File(...)):
             )
         
         if result.status == ExtractionStatus.FAILURE:
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                documents_processed_total.labels(
+                    status="error",
+                    type=file_type
+                ).inc()
+                
+                document_processing_duration_seconds.labels(
+                    type=file_type
+                ).observe(duration)
+            
             raise HTTPException(
                 status_code=422,
                 detail={"status": "irrelevant_document", "message": result.message or "This document does not appear to be a credit agreement."}
@@ -737,8 +809,7 @@ async def deep_research_query(
             user_id=current_user.id
         )
         
-        # TODO: Store research result in deep_research_results table
-        # For now, just return the result
+        # DeepResearchResult is persisted in DeepResearchService.research()
         
         # Update deal timeline if deal_id provided
         if request.deal_id:
@@ -776,6 +847,7 @@ async def deep_research_query(
         
         return {
             "status": "success",
+            "research_id": result.get("research_id"),
             "answer": result.get("answer", ""),
             "knowledge_items": result.get("knowledge_items", []),
             "visited_urls": result.get("visited_urls", []),
@@ -1579,7 +1651,7 @@ async def list_quantitative_analysis_results(
         query = query.filter(QuantitativeAnalysisResult.deal_id == deal_id)
     
     # Non-admin users only see their own results
-    if not current_user.is_admin:
+    if current_user.role != "admin":
         query = query.filter(QuantitativeAnalysisResult.user_id == current_user.id)
     
     results = query.order_by(QuantitativeAnalysisResult.created_at.desc()).limit(limit).all()
@@ -1621,7 +1693,7 @@ async def get_quantitative_analysis_result(
             )
         
         # Basic authorization: ensure user can view their own analysis or is admin
-        if result.user_id != current_user.id and not current_user.is_admin:
+        if result.user_id != current_user.id and current_user.role != "admin":
             raise HTTPException(
                 status_code=403,
                 detail={"status": "error", "message": "Not authorized to view this analysis result"}
@@ -1828,6 +1900,9 @@ async def extract_from_images(
     from app.chains.extraction_chain import extract_data_smart
     from app.models.cdm import ExtractionStatus
     
+    start_time = time.time()
+    file_type = "image"
+    
     # Validate file types
     supported_extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"]
     image_files = []
@@ -1891,6 +1966,19 @@ async def extract_from_images(
         
         logger.info(f"OCR complete: {len(combined_text)} characters extracted from {len(image_files)} image(s)")
         
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="success",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         # Prepare response
         response_data = {
             "status": "success",
@@ -1947,8 +2035,34 @@ async def extract_from_images(
         return response_data
         
     except HTTPException:
+        duration = time.time() - start_time
+        
+        # Record error metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="error",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         raise
     except Exception as e:
+        duration = time.time() - start_time
+        
+        # Record error metrics
+        if METRICS_AVAILABLE:
+            documents_processed_total.labels(
+                status="error",
+                type=file_type
+            ).inc()
+            
+            document_processing_duration_seconds.labels(
+                type=file_type
+            ).observe(duration)
+        
         logger.error(f"Unexpected error during image extraction: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -4009,7 +4123,8 @@ async def digitizer_chatbot_chat(
 async def digitizer_chatbot_launch_workflow(
     request: DigitizerChatbotLaunchWorkflowRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth)
+    current_user: User = Depends(require_auth),
+    policy_service: Optional[PolicyService] = Depends(get_policy_service),
 ):
     """
     Launch a workflow from the digitizer chatbot.
@@ -4057,12 +4172,51 @@ async def digitizer_chatbot_launch_workflow(
                 user_id=current_user.id
             )
         elif workflow_type == "langalpha":
-            # Placeholder - not yet implemented
+            from app.services.quantitative_analysis_service import QuantitativeAnalysisService
+            query = workflow_params.get("query") or workflow_params.get("company_name") or ""
+            if not query:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"status": "error", "message": "query or company_name is required for LangAlpha workflow"}
+                )
+            analysis_type = (workflow_params.get("analysis_type") or "company").lower()
+            svc = QuantitativeAnalysisService(db, policy_service=policy_service)
+            if analysis_type == "market":
+                out = await svc.analyze_market(
+                    query=query,
+                    market_type=workflow_params.get("market_type"),
+                    deal_id=request.deal_id,
+                    user_id=current_user.id,
+                    time_range=workflow_params.get("time_range"),
+                )
+            elif analysis_type == "loan_application":
+                deal_id = request.deal_id or workflow_params.get("deal_id")
+                if not deal_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"status": "error", "message": "deal_id is required for LangAlpha loan-application analysis"}
+                    )
+                out = await svc.analyze_loan_application(
+                    query=query,
+                    borrower_name=workflow_params.get("borrower_name"),
+                    deal_id=int(deal_id),
+                    user_id=current_user.id,
+                    time_range=workflow_params.get("time_range"),
+                )
+            else:
+                out = await svc.analyze_company(
+                    query=query,
+                    ticker=workflow_params.get("ticker"),
+                    company_name=workflow_params.get("company_name"),
+                    deal_id=request.deal_id,
+                    user_id=current_user.id,
+                    time_range=workflow_params.get("time_range"),
+                )
             result = {
                 "workflow_type": "langalpha",
-                "message": "LangAlpha quantitative analysis workflow is not yet implemented.",
-                "result": None,
-                "cdm_events": []
+                "message": "LangAlpha analysis completed. View results in the Agent Dashboard.",
+                "result": out,
+                "cdm_events": [out.get("cdm_event")] if out.get("cdm_event") else [],
             }
         else:
             raise HTTPException(
@@ -4189,7 +4343,7 @@ async def get_digitizer_chatbot_history(
             )
         
         # Check authorization
-        if session.user_id != current_user.id and not current_user.is_admin:
+        if session.user_id != current_user.id and current_user.role != "admin":
             raise HTTPException(
                 status_code=403,
                 detail={"status": "error", "message": "Not authorized to view this session"}
@@ -7279,42 +7433,7 @@ async def settle_trade_with_payment(
     
     try:
         # Step 1: Get trade execution event
-        # #region agent log
-        import json
-        log_data = {
-            "sessionId": "debug-session",
-            "runId": "trade-settlement",
-            "hypothesisId": "A",
-            "location": "routes.py:7182",
-            "message": "Attempting to get trade execution",
-            "data": {"trade_id": trade_id},
-            "timestamp": int(datetime.now().timestamp() * 1000)
-        }
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
         trade_event = get_trade_execution(trade_id, db)
-        
-        # #region agent log
-        log_data = {
-            "sessionId": "debug-session",
-            "runId": "trade-settlement",
-            "hypothesisId": "A",
-            "location": "routes.py:7184",
-            "message": "Trade lookup result",
-            "data": {"trade_id": trade_id, "found": trade_event is not None},
-            "timestamp": int(datetime.now().timestamp() * 1000)
-        }
-        try:
-            with open("c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a") as f:
-                f.write(json.dumps(log_data) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        
         if not trade_event:
             raise HTTPException(
                 status_code=404,
@@ -8209,6 +8328,11 @@ async def execute_trade(
     from app.db.models import PolicyDecision as PolicyDecisionModel
     from app.models.cdm import CreditAgreement
     
+    # TODO: Task 4.4 - Trade Execution Metrics
+    # Add metrics tracking: start_time = time.time() at line ~8323
+    # Determine trade type (default to "buy" for loan trades)
+    trade_type = "buy"  # Default for loan trades (can be extracted from CDM event if needed)
+    
     try:
         logger.info(
             f"Trade execution request: trade_id={trade_request.trade_id}, "
@@ -8297,6 +8421,10 @@ async def execute_trade(
                         # Handle foreign key validation errors gracefully
                         logger.warning(f"Could not persist policy decision to database: {e}. Continuing with block decision.")
                         db.rollback()
+                    
+                    # TODO: Task 4.4 - Trade Execution Metrics
+                    # Record metrics for BLOCK decision at line ~8412
+                    # trades_executed_total.labels(status="blocked", type=trade_type).inc()
                     
                     return {
                         "status": "blocked",
@@ -8396,6 +8524,11 @@ async def execute_trade(
             # Don't fail the request if vector store storage fails
         
         # Step 5: Return trade execution result
+        # TODO: Task 4.4 - Trade Execution Metrics
+        # Record success metrics at line ~8510 (after successful execution)
+        # trades_executed_total.labels(status="success", type=trade_type).inc()
+        # trade_value_total.labels(type=trade_type).inc(float(trade_request.amount))
+        
         return {
             "status": "executed",
             "trade_id": trade_request.trade_id,
@@ -8411,6 +8544,10 @@ async def execute_trade(
     except HTTPException:
         raise
     except Exception as e:
+        # TODO: Task 4.4 - Trade Execution Metrics
+        # Record error metrics at line ~8524 (in exception handler)
+        # trades_executed_total.labels(status="failed", type=trade_type).inc()
+        
         logger.error(f"Unexpected error during trade execution: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -9165,7 +9302,10 @@ async def export_generated_document(
 # ============================================================================
 
 from app.db.models import Application, Inquiry, Meeting, ApplicationType, ApplicationStatus, InquiryType, InquiryStatus
-from app.services.ics_generator import generate_ics_file, save_ics_file, get_ics_file_path
+try:
+    from app.services.ics_generator import generate_ics_file, save_ics_file, get_ics_file_path
+except ImportError:
+    generate_ics_file = save_ics_file = get_ics_file_path = None  # icalendar not installed
 from fastapi.responses import FileResponse
 from pathlib import Path
 
@@ -9940,6 +10080,8 @@ async def download_meeting_ics(
     current_user: User = Depends(get_current_user)
 ):
     """Download .ics file for a meeting."""
+    if get_ics_file_path is None or save_ics_file is None:
+        raise HTTPException(status_code=503, detail="ICS support unavailable. Install icalendar: pip install icalendar")
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -11165,9 +11307,20 @@ async def list_pending_signups(
         offset = (page - 1) * limit
         users = query.order_by(User.signup_submitted_at.desc()).offset(offset).limit(limit).all()
         
+        # Include organization info for each user
+        from app.db.models import Organization
+        user_data = []
+        for user in users:
+            user_dict = user.to_dict()
+            if user.organization_id:
+                org = db.query(Organization).filter(Organization.id == user.organization_id).first()
+                if org:
+                    user_dict["organization"] = org.to_dict()
+            user_data.append(user_dict)
+        
         return {
             "status": "success",
-            "data": [user.to_dict() for user in users],
+            "data": user_data,
             "pagination": {
                 "page": page,
                 "limit": limit,
@@ -12960,11 +13113,6 @@ async def get_compliance_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    # #region agent log
-    with open(r'get_debug_log_path()', 'a') as f:
-        import json, time
-        f.write(json.dumps({'location': 'routes.py:12961', 'message': 'Entering get_compliance_report API', 'data': {'deal_id': deal_id, 'jurisdiction': jurisdiction}, 'timestamp': int(time.time()*1000), 'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B'}) + '\n')
-    # #endregion
     """Generate compliance report for filings.
     
     Returns comprehensive compliance statistics including:

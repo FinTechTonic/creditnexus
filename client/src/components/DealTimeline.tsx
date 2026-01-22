@@ -7,8 +7,7 @@ import {
   FileText,
   MessageSquare,
   GitBranch,
-  ArrowRight,
-  RefreshCw,
+  // ArrowRight, RefreshCw removed - unused
   Shield,
   Eye,
   Phone,
@@ -91,12 +90,12 @@ const STATUS_COLORS = {
   }
 };
 
-const getEventStatus = (event: TimelineEvent): TimelineEvent['status'] => {
-  if (event.status) return event.status;
+const getEventStatus = (event: TimelineEvent): 'success' | 'failure' | 'pending' | 'review_needed' | 'warning' | 'default' => {
+  if (event.status) return event.status as 'success' | 'failure' | 'pending' | 'review_needed' | 'warning' | 'default';
   
   // Infer status from event type and data
   const eventType = event.event_type.toLowerCase();
-  const data = event.data || {};
+  // const data = event.data || {}; // Commented out - unused
   
   if (eventType.includes('approved') || eventType.includes('success') || eventType.includes('completed')) {
     return 'success';
@@ -212,7 +211,7 @@ export function DealTimeline({ events, dealStatus, className = '' }: DealTimelin
         y,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
-        status,
+        status: status || 'pending',
         hasBranch,
         branchId: event.branch_id,
         parentBranch: event.parent_branch
@@ -431,7 +430,7 @@ export function DealTimeline({ events, dealStatus, className = '' }: DealTimelin
                     )}
                     {node.status === 'failure' && node.event.data && (
                       <div className="mt-2 px-2 py-1 bg-red-500/20 rounded text-xs text-red-200">
-                        {node.event.data.reason || 'Failed'}
+                        {String(node.event.data.reason || 'Failed')}
                       </div>
                     )}
                     {/* Recovery event details */}
@@ -440,19 +439,19 @@ export function DealTimeline({ events, dealStatus, className = '' }: DealTimelin
                         <div className="text-xs text-slate-200">
                           Type: <span className="font-medium">{(node.event.data.default_type as string)?.replace('_', ' ')}</span>
                         </div>
-                        {node.event.data.days_past_due && (
+                        {node.event.data.days_past_due != null && (
                           <div className="text-xs text-slate-200">
-                            Days Past Due: <span className="font-medium">{node.event.data.days_past_due}</span>
+                            Days Past Due: <span className="font-medium">{String(node.event.data.days_past_due)}</span>
                           </div>
                         )}
-                        {node.event.data.amount_overdue && (
+                        {node.event.data.amount_overdue != null && (
                           <div className="text-xs text-slate-200">
-                            Amount: <span className="font-medium">${parseFloat(node.event.data.amount_overdue as string).toLocaleString()}</span>
+                            Amount: <span className="font-medium">${parseFloat(String(node.event.data.amount_overdue)).toLocaleString()}</span>
                           </div>
                         )}
-                        {node.event.data.severity && (
+                        {node.event.data.severity != null && (
                           <div className="text-xs text-slate-200">
-                            Severity: <span className="font-medium capitalize">{node.event.data.severity as string}</span>
+                            Severity: <span className="font-medium capitalize">{String(node.event.data.severity)}</span>
                           </div>
                         )}
                       </div>
@@ -462,14 +461,14 @@ export function DealTimeline({ events, dealStatus, className = '' }: DealTimelin
                         <div className="text-xs text-slate-200">
                           Method: <span className="font-medium capitalize">{(node.event.data.communication_method as string)?.toUpperCase()}</span>
                         </div>
-                        {node.event.data.action_type && (
+                        {node.event.data.action_type != null && (
                           <div className="text-xs text-slate-200">
                             Action: <span className="font-medium">{(node.event.data.action_type as string)?.replace('_', ' ')}</span>
                           </div>
                         )}
-                        {node.event.data.status && (
+                        {node.event.data.status != null && (
                           <div className="text-xs text-slate-200">
-                            Status: <span className="font-medium capitalize">{node.event.data.status as string}</span>
+                            Status: <span className="font-medium capitalize">{String(node.event.data.status)}</span>
                           </div>
                         )}
                       </div>

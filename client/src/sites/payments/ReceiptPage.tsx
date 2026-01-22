@@ -9,8 +9,7 @@ import {
   Share2,
   FileText,
   Loader2,
-  Copy,
-  ExternalLink
+  Copy
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
 

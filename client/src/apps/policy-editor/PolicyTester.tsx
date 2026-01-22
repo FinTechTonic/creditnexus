@@ -9,7 +9,7 @@
  * - Show decision result (ALLOW/BLOCK/FLAG)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { 
@@ -18,10 +18,7 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertTriangle,
-  FileText,
-  Code,
-  List,
-  ArrowRight
+  FileText
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';

@@ -8,7 +8,7 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
-  Clock,
+  // Clock removed - unused
   ExternalLink,
   Download,
   Filter,
@@ -16,8 +16,6 @@ import {
   Loader2,
   Building2,
   Globe,
-  TrendingUp,
-  TrendingDown
 } from 'lucide-react';
 
 interface FilingStatus {
@@ -59,7 +57,7 @@ export function FilingStatusDashboard({ dealId, documentId }: FilingStatusDashbo
   const [filings, setFilings] = useState<FilingStatus[]>([]);
   const [alerts, setAlerts] = useState<DeadlineAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [_error, setError] = useState<string | null>(null); // Prefix with _ - setter is used
   const [filterJurisdiction, setFilterJurisdiction] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [exporting, setExporting] = useState(false);
@@ -84,7 +82,8 @@ export function FilingStatusDashboard({ dealId, documentId }: FilingStatusDashbo
         const filingIds = Array.from(new Set(alertsData.alerts.map((a: DeadlineAlert) => a.filing_id)));
         
         // Fetch filing details for each
-        const filingPromises = filingIds.map(async (id: number) => {
+        const filingPromises = filingIds.map(async (id: unknown) => {
+          // const _filingId = typeof id === 'number' ? id : Number(id); // Commented out - unused
           const filingResponse = await fetchWithAuth(`/api/filings/${id}`);
           if (filingResponse.ok) {
             const filingData = await filingResponse.json();

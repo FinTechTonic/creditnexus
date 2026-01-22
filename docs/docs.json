@@ -136,10 +136,25 @@
           "guides/document-generation",
           "guides/trade-execution",
           "guides/verification",
+          "guides/pm2-dev-setup",
+          "guides/alpaca-trading-setup",
+          "guides/database-ssl-setup",
+          "guides/ssl-troubleshooting",
+          "guides/stock-prediction-setup",
+          "guides/rolling-credits-setup",
+          "guides/polymarket-cross-chain-setup",
+          "guides/polymarket-surveillance-signals",
+          "guides/electron-testing-guide",
           "guides/twilio-setup",
           "guides/digisigner-setup",
           "guides/metamask-setup",
           "guides/sentinelhub-setup"
+        ]
+      },
+      {
+        "group": "Specifications",
+        "pages": [
+          "specifications/nexus-file-format"
         ]
       },
       {

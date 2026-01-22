@@ -1,0 +1,101 @@
+---
+title: Polymarket Cross-Chain Setup
+description: Configure cross-chain bridging and SFP outcome token minting for Polymarket-style prediction markets
+---
+
+Cross-chain support allows bridging and SFP outcome token minting on L2s (e.g. Base, Polygon) for Polymarket-style prediction markets. When `CROSS_CHAIN_ENABLED=true`, the bridge API and outcome token contract can be used by `BridgeService` and related APIs (see roadmap).
+
+---
+
+## 1. Overview
+
+| Component | Role |
+|-----------|------|
+| **CROSS_CHAIN_ENABLED** | Master switch for cross-chain bridge and outcome token features |
+| **POLYMARKET_BRIDGE_API_URL** | Bridge/relay API for cross-chain transfers |
+| **OUTCOME_TOKEN_CHAIN_ID** | Chain ID where SFP outcome tokens are minted (e.g. Base 8453, Polygon 137) |
+| **SFP_OUTCOME_TOKEN_CONTRACT** | ERC-1155 contract address for SFP outcome tokens on that chain |
+
+**Code:** `CrossChainTransaction` model (`app/db/models.py`) and migration `a1c2d3e4f5b6_add_cross_chain_transactions`. When implemented: `BridgeService`, `blockchain_service.mint_outcome_token`, `GET /cross-chain/transactions`, `GET /bridge/status`, `POST /outcome-tokens/mint`. Config: `app/core/config.py`.
+
+---
+
+## 2. Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CROSS_CHAIN_ENABLED` | Enable cross-chain bridge and outcome token minting | `false` |
+| `POLYMARKET_BRIDGE_API_URL` | Bridge API base URL for cross-chain transfers (Polymarket bridge or custom relay) | — |
+| `OUTCOME_TOKEN_CHAIN_ID` | Chain ID for outcome tokens (e.g. Base=8453, Polygon=137) | — |
+| `SFP_OUTCOME_TOKEN_CONTRACT` | ERC-1155 SFP outcome token contract on `OUTCOME_TOKEN_CHAIN_ID` | — |
+
+---
+
+## 3. CrossChainTransaction model
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `user_id` | FK users | Initiator |
+| `source_chain_id` | int | e.g. 137 Polygon |
+| `dest_chain_id` | int | e.g. 8453 Base |
+| `bridge_external_id` | str, nullable | Id from bridge API |
+| `status` | str | pending, submitted, completed, failed |
+| `amount` | Numeric, nullable | Amount transferred |
+| `token_address` | str, nullable | Token on source/dest |
+| `market_event_id` | FK market_events, nullable | Optional SFP market |
+| `outcome_token_id` | str, nullable | Outcome token id |
+| `dest_tx_hash` | str, nullable | Tx hash on destination chain |
+| `extra_data` | JSONB, nullable | Extra payload from bridge |
+| `created_at`, `updated_at` | DateTime | |
+
+---
+
+## 4. Chain IDs (examples)
+
+| Network | Chain ID |
+|---------|----------|
+| Ethereum mainnet | 1 |
+| Polygon | 137 |
+| Base | 8453 |
+| Base Sepolia | 84532 |
+| Polygon Amoy | 80002 |
+
+Set `OUTCOME_TOKEN_CHAIN_ID` to the chain where the SFP outcome token contract is deployed. RPC for that chain must be available (e.g. via `X402_NETWORK_RPC_URL` when that is the active network, or a dedicated RPC if the app supports it).
+
+---
+
+## 5. Bridge API
+
+`POLYMARKET_BRIDGE_API_URL` should point to an API that supports at least:
+
+- **Status:** `GET {base}/bridge/status/{bridge_id}` — `BridgeService.get_bridge_status(bridge_id)` calls this. Returns JSON with at least `status` (and optionally `dest_tx_hash`, `bridge_id`, etc.).
+- **Submit:** `POST {base}/bridge/submit` — `BridgeService.submit_bridge(...)` sends JSON: `source_chain_id`, `dest_chain_id`, `amount`, `token_address`, `sender_address`, and optionally `market_event_id`, `outcome_token_id`, `receiver_address`, `extra`. The API should return e.g. `{ "bridge_id": "...", "status": "submitted" }`.
+
+Exact request/response shapes depend on the Polymarket bridge or your custom relay. `BridgeService` (`app/services/bridge_service.py`) implements the above; adapt the service or base URL path if your relay uses different conventions.
+
+---
+
+## 6. SFP Outcome Token (ERC-1155)
+
+`SFPOutcomeToken.sol` (`contracts/contracts/SFPOutcomeToken.sol`) is an ERC-1155 with `mint(to, outcomeTokenId, amount, data)` and `mintBatch` (owner-only). Deploy it on `OUTCOME_TOKEN_CHAIN_ID` and set `SFP_OUTCOME_TOKEN_CONTRACT`.
+
+`blockchain_service.mint_outcome_token(recipient_address, outcome_token_id, amount, data)` calls `mint`; it requires `CROSS_CHAIN_ENABLED`, `SFP_OUTCOME_TOKEN_CONTRACT`, and `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` (or deployer from `BLOCKCHAIN_AUTO_DEPLOY`). The Web3 RPC is `X402_NETWORK_RPC_URL`—use the node for `OUTCOME_TOKEN_CHAIN_ID` when minting.
+
+---
+
+## 7. Example .env
+
+```env
+CROSS_CHAIN_ENABLED=true
+POLYMARKET_BRIDGE_API_URL=https://bridge.example.com
+OUTCOME_TOKEN_CHAIN_ID=8453
+SFP_OUTCOME_TOKEN_CONTRACT=0x...
+```
+
+---
+
+## 8. Related
+
+- **Polymarket (SFP markets):** `POLYMARKET_ENABLED`, `POLYMARKET_API_URL`, `POLYMARKET_GAMMA_API_URL`, etc. — for internal SFP prediction markets and optional Gamma/CLOB. See `dev/POLYMARKET_CONFIGURATION_GUIDE.md` or `.env.example` if present.
+- **Polymarket Surveillance:** [Polymarket Surveillance Signals](./polymarket-surveillance-signals.mdx) — `POLYMARKET_DATA_API_URL`, `POLYMARKET_SURVEILLANCE_ENABLED`.
+- **Blockchain / RPC:** `X402_NETWORK_RPC_URL`, `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` — used for on-chain calls including outcome token minting when wired.

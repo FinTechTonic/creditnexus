@@ -5,6 +5,7 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+    base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -13,7 +14,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],
-    force: true,
+    force: false,
   },
   server: {
     host: '0.0.0.0',

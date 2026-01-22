@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+// Textarea removed - unused
 import { Badge } from '@/components/ui/badge';
 import {
   FileText,
@@ -12,10 +12,8 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
-  Calendar,
-  Building2,
-  DollarSign,
-  Globe
+  // Calendar, Building2, DollarSign removed - unused
+  // Globe removed - unused
 } from 'lucide-react';
 
 interface FilingFormField {

@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useWallet } from '@/context/WalletContext'
 import { useAuth } from '@/context/AuthContext'
+import { resolveApiUrl } from '@/utils/apiBase'
 
 interface AutoAuthState {
   attempting: boolean
@@ -26,7 +27,7 @@ export function useAutoAuth() {
     setState(prev => ({ ...prev, attempting: true, error: null }))
 
     try {
-      const response = await fetch('/api/auth/wallet/auto-login', {
+      const response = await fetch(resolveApiUrl('/api/auth/wallet/auto-login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wallet_address: walletAddress })
@@ -83,7 +84,7 @@ export function useAutoAuth() {
     setState(prev => ({ ...prev, attempting: true, error: null }))
 
     try {
-      const response = await fetch('/api/auth/wallet/signup', {
+      const response = await fetch(resolveApiUrl('/api/auth/wallet/signup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -26,15 +26,19 @@ logger = logging.getLogger(__name__)
 class EncryptionService:
     """Service for encrypting and decrypting sensitive data at rest."""
 
-    def __init__(self, encryption_key: Optional[str] = None):
+    def __init__(self, encryption_key: Optional[Union[str, Any]] = None):
         """
         Initialize encryption service.
         
         Args:
             encryption_key: Optional encryption key (defaults to ENCRYPTION_KEY from settings)
-                           If not provided and ENCRYPTION_KEY not set, generates a new key
+                           If not provided and ENCRYPTION_KEY not set, generates a new key.
+                           Accepts str, bytes, or Pydantic SecretStr (unwrapped automatically).
         """
-        self.encryption_key = encryption_key or settings.ENCRYPTION_KEY
+        raw = encryption_key or settings.ENCRYPTION_KEY
+        if raw is not None and hasattr(raw, "get_secret_value"):
+            raw = raw.get_secret_value()
+        self.encryption_key = raw
         self.fernet: Optional[Fernet] = None
         
         if not settings.ENCRYPTION_ENABLED:

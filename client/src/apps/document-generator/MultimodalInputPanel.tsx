@@ -5,7 +5,7 @@
  * Integrates audio, image, document retrieval, and text inputs.
  */
 
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { 
   Mic, 
   Image as ImageIcon, 

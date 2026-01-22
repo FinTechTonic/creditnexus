@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Send } from 'lucide-react';
 
-interface TranscriptionResult {
+export interface TranscriptionResult {
   status: string;
   transcription: string;
   transcription_length: number;
@@ -28,7 +28,7 @@ interface TranscriptionResult {
   extraction_message?: string;
 }
 
-interface ExtractionResult {
+export interface ExtractionResult {
   status: string;
   ocr_text: string;
   ocr_text_length: number;
@@ -44,7 +44,7 @@ interface ExtractionResult {
   extraction_message?: string;
 }
 
-interface DocumentResult {
+export interface DocumentResult {
   document_id: number;
   similarity_score: number;
   distance: number;

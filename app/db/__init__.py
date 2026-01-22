@@ -48,13 +48,22 @@ if DATABASE_URL:
         )
         logger.info("Database initialized: PostgreSQL")
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    
+    # Initialize database metrics if enabled
+    try:
+        from app.core.config import settings
+        if settings.METRICS_ENABLED:
+            from app.db.metrics import setup_db_metrics, setup_query_metrics
+            setup_db_metrics(engine)
+            setup_query_metrics(engine)
+    except Exception as e:
+        logger.warning(f"Failed to initialize database metrics: {e}")
 else:
     engine = None
     SessionLocal = None
     logger.warning("Database is disabled (DATABASE_ENABLED=false)")
 
 Base = declarative_base()
-
 
 def get_db():
     """Dependency for getting database sessions.
@@ -72,12 +81,14 @@ def get_db():
                 "hint": "For development, DATABASE_URL can be omitted to use SQLite automatically."
             }
         )
-    db = SessionLocal()
+    try:
+        db = SessionLocal()
+    except Exception as e:
+        raise
     try:
         yield db
     finally:
         db.close()
-
 
 def init_db():
     """Initialize the database tables."""

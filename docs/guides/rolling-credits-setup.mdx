@@ -1,0 +1,149 @@
+---
+title: Rolling Credits and CreditToken Setup
+description: Configure subscription-based rolling credits with optional blockchain registration
+---
+
+Rolling credits are subscription-based credits (signing, document_review, verification, trading, stock prediction, etc.) generated on **activate** and **renew**. They can optionally be registered on-chain via the **CreditToken** ERC-721 contract.
+
+---
+
+## 1. Overview
+
+| Component | Role |
+|-----------|------|
+| **RollingCreditsService** | `generate_subscription_credits()` — prorated allocation, DB (`CreditBalance`, `CreditTransaction`), optional blockchain registration |
+| **SubscriptionService** | `create_subscription` (activate) and `renew_subscription` → call `RollingCreditsService.generate_subscription_credits` for `pro` / `premium` |
+| **CreditToken.sol** | ERC-721 NFT: one token per user, `CreditBalanceStruct` with 14 credit types; `mintCredits`, `updateCredits` (4 decimals: 10000 = 1.0) |
+| **BlockchainService** | Loads CreditToken ABI, `mint_credit_token()`, `update_credit_token()` |
+
+**Code**: `app/services/rolling_credits_service.py`, `app/services/subscription_service.py`, `app/services/blockchain_service.py`, `contracts/contracts/CreditToken.sol`
+
+---
+
+## 2. Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CREDIT_TOKEN_CONTRACT` | CreditToken (ERC-721) contract address. If empty, credits are still generated in DB but **not** registered on-chain. | `""` |
+| `X402_NETWORK_RPC_URL` | RPC for the chain where CreditToken is deployed (Base, Base Sepolia, or local Hardhat). Must match deployment. | `https://mainnet.base.org` |
+| `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` | Private key of the account that deploys and is **owner** of CreditToken. Required for `mintCredits` / `updateCredits` (both are `onlyOwner`). | — |
+
+**Wallet for users:** On-chain registration runs only when the user has `wallet_address` set. If missing, credits are stored in DB only (`blockchain_registered=false`).
+
+---
+
+## 3. Tier Allocation and Proration
+
+| Tier | Example (full month) |
+|------|----------------------|
+| **pro** | signing 20, document_review 20, verification 20, trading 30, loaning 20, borrowing 20, compliance_check 20, securitization 15, risk_analysis 20, quantitative_analysis 15, stock_prediction_* 5 each, universal 100 |
+| **premium** | ~3× pro (e.g. universal 300, stock_prediction_* 15 each) |
+
+- **Proration:** `min(1.0, billing_days / 30)`. For a 15-day period, allocation is halved.
+- **Activate:** Billing window = `[started_at, expires_at]` or `[started_at, started_at+30]` for lifetime.
+- **Renew:** Billing window = `[expires_at, expires_at+30]` (monthly) or `[expires_at, expires_at+365]` (yearly).
+
+---
+
+## 4. Deploying CreditToken
+
+CreditToken is deployed by the same `deploy.js` as the securitization contracts. Use the same network (local, Base Sepolia, or Base mainnet) and the same `PRIVATE_KEY` / `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY`.
+
+### Compile
+
+```bash
+cd contracts
+npm install
+npx hardhat compile
+```
+
+### Deploy (examples)
+
+**Local Hardhat (persistent node):**
+
+```bash
+# Terminal 1
+npm run node
+
+# Terminal 2
+npm run deploy:localhost
+# or, if your npm script runs deploy.js: npx hardhat run scripts/deploy.js --network localhost
+```
+
+**Base Sepolia / Base mainnet:**
+
+```bash
+npx hardhat run scripts/deploy.js --network base-sepolia
+# or
+npx hardhat run scripts/deploy.js --network base
+```
+
+The script prints:
+
+```
+CREDIT_TOKEN_CONTRACT=0x...
+```
+
+Add to the project root `.env`:
+
+```env
+CREDIT_TOKEN_CONTRACT=0x...
+```
+
+Ensure `X402_NETWORK_RPC_URL` matches the deployment network (e.g. `http://127.0.0.1:8545`, `https://sepolia.base.org`, `https://mainnet.base.org`).
+
+---
+
+## 5. Artifacts and ABI
+
+`BlockchainService` loads the CreditToken ABI from:
+
+```
+contracts/artifacts/contracts/CreditToken.sol/CreditToken.json
+```
+
+This file is created by `npx hardhat compile`. If it is missing, `mint_credit_token` / `update_credit_token` are skipped (`"CreditToken ABI not loaded"`). Credits are still written to the database.
+
+---
+
+## 6. Flows
+
+### Activate (create_subscription)
+
+1. `SubscriptionService.create_subscription(...)` creates a `UserSubscription` and flushes.
+2. For `tier` in `("pro","premium")`, calls `RollingCreditsService.generate_subscription_credits(user_id, subscription.id, tier, period_start, period_end)`.
+3. `generate_subscription_credits` updates or creates `CreditBalance`, adds `CreditTransaction` rows, then `_register_credits_on_blockchain` if `CREDIT_TOKEN_CONTRACT` is set and the user has `wallet_address`.
+
+### Renew (renew_subscription)
+
+1. `SubscriptionService.renew_subscription(subscription_id)` loads the subscription, computes `period_start=expires_at` and `period_end=period_start+30` or `+365`.
+2. For `pro` / `premium`, calls `generate_subscription_credits` for that window.
+3. Sets `subscription.expires_at = period_end` and commits.
+
+### Blockchain registration (_register_credits_on_blockchain)
+
+- **No `CREDIT_TOKEN_CONTRACT` or no RPC/deployer:** `registered: false`, `reason: "blockchain_not_configured"` or `"blockchain_not_connected"`.
+- **User has no `wallet_address`:** `registered: false`, `reason: "no_wallet"`.
+- **First run (no `blockchain_token_id`):** `mint_credit_token(user_address, struct_from(generated_credits))`; on success, `blockchain_token_id`, `blockchain_tx_hash`, `blockchain_chain_id` are stored on `CreditBalance`.
+- **Later runs (has `blockchain_token_id`):** `update_credit_token(token_id, credit_type, amount, is_spend=False)` for each type with `amount > 0`.
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Checks |
+|---------|--------|
+| No credits in DB on activate | Tier must be `pro` or `premium`; `create_subscription` must complete without raising before commit. Check logs for `"Rolling credits generated on activate"` or `"Rolling credits on activate failed"`. |
+| Credits in DB but `blockchain_registered=false` | `CREDIT_TOKEN_CONTRACT` set? `X402_NETWORK_RPC_URL` correct and RPC reachable? User `wallet_address` present? `BlockchainService` deployer (owner) and `credit_token` ABI loaded? Check `blockchain` object in `generate_subscription_credits` result (`reason`). |
+| "CreditToken ABI not loaded" | Run `npx hardhat compile` in `contracts/` and ensure `contracts/artifacts/contracts/CreditToken.sol/CreditToken.json` exists. |
+| "blockchain_not_configured" | Set `CREDIT_TOKEN_CONTRACT` in `.env`. |
+| "no_wallet" | User needs `wallet_address` (or a resolved wallet from your auth/wallet flow). |
+| Mint/update revert | Deployer must be `owner` of CreditToken. For `updateCredits`, on-chain balance for that type must be ≥ amount when `isSpend=true` (only `isSpend=false` is used for subscription credits). |
+
+---
+
+## 8. References
+
+- **Contracts**: `contracts/README.md`, `contracts/scripts/deploy.js`
+- **Config**: `app/core/config.py` (`CREDIT_TOKEN_CONTRACT`), `dev/environment.md`
+- **Models**: `app/db/models.py` (`CreditBalance`, `CreditTransaction`, `CreditType`)

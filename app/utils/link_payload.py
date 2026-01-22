@@ -34,21 +34,20 @@ class LinkPayloadGenerator:
 
     def _get_or_generate_key(self):
         """Get encryption key from settings or generate one."""
-        # Try to get from settings
-        key_obj = getattr(settings, "LINK_ENCRYPTION_KEY", None)
-
-        if key_obj:
-            try:
-                # Handle SecretStr type from pydantic-settings
-                if hasattr(key_obj, "get_secret_value"):
-                    key_str = key_obj.get_secret_value()
-                else:
-                    key_str = str(key_obj)
-
-                if key_str and key_str.strip():
-                    return Fernet(key_str.encode())
-            except Exception as e:
-                logger.warning(f"Invalid LINK_ENCRYPTION_KEY, generating new one: {e}")
+        # Try to get from settings (LINK_ENCRYPTION_KEY may be Pydantic SecretStr)
+        key_val = getattr(settings, "LINK_ENCRYPTION_KEY", None)
+        if key_val is not None:
+            raw = (
+                key_val.get_secret_value()
+                if hasattr(key_val, "get_secret_value")
+                else key_val
+            )
+            if raw:
+                try:
+                    key_bytes = raw.encode() if isinstance(raw, str) else raw
+                    return Fernet(key_bytes)
+                except Exception as e:
+                    logger.warning(f"Invalid LINK_ENCRYPTION_KEY, generating new one: {e}")
 
         # Generate new key
         key = Fernet.generate_key()
@@ -64,6 +63,7 @@ class LinkPayloadGenerator:
         verifier_info: Optional[Dict[str, Any]] = None,
         file_references: Optional[List[Dict[str, Any]]] = None,
         expires_in_hours: int = 72,
+        hydrated_payload: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate encrypted verification link payload.
 
@@ -75,23 +75,29 @@ class LinkPayloadGenerator:
             verifier_info: Optional verifier metadata
             file_references: List of document metadata to include
             expires_in_hours: Link expiration time
+            hydrated_payload: Optional pre-hydrated payload (if provided, uses this instead)
 
         Returns:
             Base64url-encoded encrypted payload
         """
-        expires_at = (datetime.utcnow() + timedelta(hours=expires_in_hours)).isoformat()
+        # Use hydrated payload if provided
+        if hydrated_payload:
+            payload = hydrated_payload
+        else:
+            expires_at = (datetime.utcnow() + timedelta(hours=expires_in_hours)).isoformat()
 
-        payload = {
-            "verification_id": verification_id,
-            "deal_id": deal_id,
-            "deal_data": deal_data,
-            "cdm_payload": cdm_payload,
-            "verifier_info": verifier_info or {},
-            "file_references": file_references or [],
-            "expires_at": expires_at,
-            "created_at": datetime.utcnow().isoformat(),
-            "version": "2.0",
-        }
+            payload = {
+                "verification_id": verification_id,
+                "deal_id": deal_id,
+                "deal_data": deal_data,
+                "cdm_payload": cdm_payload,
+                "verifier_info": verifier_info or {},
+                "file_references": file_references or [],
+                "expires_at": expires_at,
+                "created_at": datetime.utcnow().isoformat(),
+                "version": "2.0",
+                "hydrated": False,
+            }
 
         # Serialize to JSON
         json_payload = json.dumps(payload, sort_keys=True, separators=(",", ":"))

@@ -23,21 +23,16 @@ import {
   FileCheck,
   Sparkles,
   Zap,
-  Target,
-  ArrowRight,
-  Mail,
-  Bell,
-  User,
-  ArrowRightCircle
+  ArrowRight
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
-import { SkeletonDashboard, EmptyState } from '@/components/ui/skeleton';
+import { SkeletonDashboard } from '@/components/ui/skeleton'; // EmptyState removed - unused
 import { useNavigate } from 'react-router-dom';
 import { ClauseEditor } from '@/components/ClauseEditor';
 import { PermissionGate } from '@/components/PermissionGate';
 import {
   PERMISSION_DOCUMENT_VIEW,
-  PERMISSION_FINANCIAL_VIEW,
+  // PERMISSION_FINANCIAL_VIEW removed - unused
   PERMISSION_AUDIT_VIEW,
   PERMISSION_TEMPLATE_VIEW,
   PERMISSION_TEMPLATE_GENERATE,
@@ -258,9 +253,11 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [analytics, setAnalytics] = useState<PortfolioAnalytics | null>(null);
   const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  // Application, Inquiry, Meeting types are defined locally in other components
+  // Using any[] temporarily - these should be imported from shared types
+  const [_applications, setApplications] = useState<any[]>([]); // Prefix with _ - unused
+  const [_inquiries, setInquiries] = useState<any[]>([]); // Prefix with _ - unused
+  const [_meetings, setMeetings] = useState<any[]>([]); // Prefix with _ - unused
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);

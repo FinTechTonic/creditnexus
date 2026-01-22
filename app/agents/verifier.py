@@ -8,6 +8,7 @@ This agent handles:
 """
 
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import os
@@ -20,6 +21,17 @@ from app.core.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import metrics (optional - only if metrics are enabled)
+try:
+    from app.core.metrics import (
+        verifications_total,
+        verification_duration_seconds
+    )
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    logger.debug("Metrics not available for verification tracking")
 
 
 # Sentinel Hub configuration
@@ -282,6 +294,26 @@ def generate_synthetic_bands(lat: float, lon: float) -> Tuple[np.ndarray, np.nda
     return (nir.astype(np.float32), red.astype(np.float32))
 
 
+async def suggest_outcome_from_ndvi(
+    lat: float,
+    lon: float,
+    threshold: float = 0.5,
+) -> Tuple[str, dict]:
+    """
+    Run NDVI verification and suggest a binary market outcome.
+
+    COMPLIANT or WARNING -> "yes", BREACH -> "no".
+
+    Returns:
+        Tuple of (outcome "yes"|"no", verification result dict).
+    """
+    result = await verify_asset_location(lat, lon, threshold=threshold, include_enhanced=False)
+    status = (result or {}).get("risk_status", "ERROR")
+    if status == "COMPLIANT" or status == "WARNING":
+        return ("yes", result or {})
+    return ("no", result or {})
+
+
 def determine_risk_status(ndvi_score: float, threshold: float = 0.8) -> str:
     """
     Determine risk status based on NDVI score and SPT threshold.
@@ -324,104 +356,152 @@ async def verify_asset_location(
     Returns:
         Dictionary with verification results
     """
+    start_time = time.time()
+    verification_type = "satellite" if get_sentinel_config() else "ground_truth"
+    
     logger.info(f"Starting verification for location ({lat}, {lon})")
     
-    # Fetch satellite data
-    bands = await fetch_sentinel_data(lat, lon)
-    
-    if bands is None:
-        return {
-            "success": False,
-            "error": "Failed to fetch satellite data",
-            "ndvi_score": None,
-            "risk_status": "ERROR",
-            "verified_at": datetime.utcnow().isoformat()
+    try:
+        # Fetch satellite data
+        bands = await fetch_sentinel_data(lat, lon)
+        
+        if bands is None:
+            duration = time.time() - start_time
+            
+            # Record error metrics
+            if METRICS_AVAILABLE:
+                verifications_total.labels(
+                    status="failed",
+                    type=verification_type
+                ).inc()
+                
+                verification_duration_seconds.labels(
+                    type=verification_type
+                ).observe(duration)
+            
+            return {
+                "success": False,
+                "error": "Failed to fetch satellite data",
+                "ndvi_score": None,
+                "risk_status": "ERROR",
+                "verified_at": datetime.utcnow().isoformat()
+            }
+        
+        nir_band, red_band = bands
+        
+        # Calculate NDVI
+        ndvi_score = calculate_ndvi(nir_band, red_band)
+        
+        # Determine risk status
+        risk_status = determine_risk_status(ndvi_score, threshold)
+        
+        result = {
+            "success": True,
+            "ndvi_score": ndvi_score,
+            "risk_status": risk_status,
+            "threshold": threshold,
+            "verified_at": datetime.utcnow().isoformat(),
+            "data_source": "sentinel_hub" if get_sentinel_config() else "synthetic"
         }
     
-    nir_band, red_band = bands
-    
-    # Calculate NDVI
-    ndvi_score = calculate_ndvi(nir_band, red_band)
-    
-    # Determine risk status
-    risk_status = determine_risk_status(ndvi_score, threshold)
-    
-    result = {
-        "success": True,
-        "ndvi_score": ndvi_score,
-        "risk_status": risk_status,
-        "threshold": threshold,
-        "verified_at": datetime.utcnow().isoformat(),
-        "data_source": "sentinel_hub" if get_sentinel_config() else "synthetic"
-    }
-    
-    # Enhanced metrics if enabled
-    if include_enhanced and settings.ENHANCED_SATELLITE_ENABLED:
-        try:
-            from app.services.osm_service import OSMService
-            from app.services.location_classifier import LocationClassifier
-            from app.services.air_quality_service import AirQualityService
-            from app.services.sustainability_scorer import SustainabilityScorer
+        # Enhanced metrics if enabled
+        if include_enhanced and settings.ENHANCED_SATELLITE_ENABLED:
+            try:
+                from app.services.osm_service import OSMService
+                from app.services.location_classifier import LocationClassifier
+                from app.services.air_quality_service import AirQualityService
+                from app.services.sustainability_scorer import SustainabilityScorer
+                
+                logger.info("Fetching enhanced satellite metrics (OSM, air quality, sustainability)")
+                
+                osm_service = OSMService()
+                location_classifier = LocationClassifier()
+                air_quality_service = AirQualityService()
+                sustainability_scorer = SustainabilityScorer()
+                
+                # Get OSM data
+                osm_data = await osm_service.get_osm_features(lat, lon)
+                
+                # Classify location
+                location_type, confidence = await location_classifier.classify(
+                    lat, lon, osm_data
+                )
+                
+                # Get air quality
+                air_quality = await air_quality_service.get_air_quality(lat, lon)
+                
+                # Calculate sustainability score
+                sustainability = sustainability_scorer.calculate(
+                    ndvi_score=ndvi_score,
+                    air_quality=air_quality,
+                    location_type=location_type,
+                    osm_data=osm_data
+                )
+                
+                # Add enhanced metrics to result
+                result.update({
+                    "location_type": location_type,
+                    "location_confidence": confidence,
+                    "air_quality_index": air_quality.get("aqi"),
+                    "air_quality": {
+                        "pm25": air_quality.get("pm25"),
+                        "pm10": air_quality.get("pm10"),
+                        "no2": air_quality.get("no2"),
+                        "data_source": air_quality.get("data_source", "unknown")
+                    },
+                    "composite_sustainability_score": sustainability.get("composite_score"),
+                    "sustainability_components": sustainability.get("components"),
+                    "osm_metrics": {
+                        "building_count": osm_data.get("building_count"),
+                        "road_density": osm_data.get("road_density"),
+                        "building_density": osm_data.get("building_density"),
+                        "green_infrastructure_coverage": osm_data.get("green_coverage")
+                    }
+                })
+                
+                logger.info(
+                    f"Enhanced metrics: location={location_type}, "
+                    f"AQI={air_quality.get('aqi', 'N/A')}, "
+                    f"sustainability={sustainability.get('composite_score', 0):.3f}"
+                )
             
-            logger.info("Fetching enhanced satellite metrics (OSM, air quality, sustainability)")
+            except Exception as e:
+                logger.warning(f"Enhanced metrics failed, continuing with basic verification: {e}", exc_info=True)
+                # Continue with basic result if enhanced metrics fail
+        
+        logger.info(f"Verification complete: NDVI={ndvi_score:.4f}, status={risk_status}")
+        
+        duration = time.time() - start_time
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            verifications_total.labels(
+                status="success",
+                type=verification_type
+            ).inc()
             
-            osm_service = OSMService()
-            location_classifier = LocationClassifier()
-            air_quality_service = AirQualityService()
-            sustainability_scorer = SustainabilityScorer()
+            verification_duration_seconds.labels(
+                type=verification_type
+            ).observe(duration)
+        
+        return result
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        
+        # Record error metrics
+        if METRICS_AVAILABLE:
+            verifications_total.labels(
+                status="failed",
+                type=verification_type
+            ).inc()
             
-            # Get OSM data
-            osm_data = await osm_service.get_osm_features(lat, lon)
-            
-            # Classify location
-            location_type, confidence = await location_classifier.classify(
-                lat, lon, osm_data
-            )
-            
-            # Get air quality
-            air_quality = await air_quality_service.get_air_quality(lat, lon)
-            
-            # Calculate sustainability score
-            sustainability = sustainability_scorer.calculate(
-                ndvi_score=ndvi_score,
-                air_quality=air_quality,
-                location_type=location_type,
-                osm_data=osm_data
-            )
-            
-            # Add enhanced metrics to result
-            result.update({
-                "location_type": location_type,
-                "location_confidence": confidence,
-                "air_quality_index": air_quality.get("aqi"),
-                "air_quality": {
-                    "pm25": air_quality.get("pm25"),
-                    "pm10": air_quality.get("pm10"),
-                    "no2": air_quality.get("no2"),
-                    "data_source": air_quality.get("data_source", "unknown")
-                },
-                "composite_sustainability_score": sustainability.get("composite_score"),
-                "sustainability_components": sustainability.get("components"),
-                "osm_metrics": {
-                    "building_count": osm_data.get("building_count"),
-                    "road_density": osm_data.get("road_density"),
-                    "building_density": osm_data.get("building_density"),
-                    "green_infrastructure_coverage": osm_data.get("green_coverage")
-                }
-            })
-            
-            logger.info(
-                f"Enhanced metrics: location={location_type}, "
-                f"AQI={air_quality.get('aqi', 'N/A')}, "
-                f"sustainability={sustainability.get('composite_score', 0):.3f}"
-            )
-            
-        except Exception as e:
-            logger.warning(f"Enhanced metrics failed, continuing with basic verification: {e}", exc_info=True)
-            # Continue with basic result if enhanced metrics fail
-    
-    logger.info(f"Verification complete: NDVI={ndvi_score:.4f}, status={risk_status}")
-    return result
+            verification_duration_seconds.labels(
+                type=verification_type
+            ).observe(duration)
+        
+        logger.error(f"Verification failed: {e}", exc_info=True)
+        raise
 
 
 # Demo function

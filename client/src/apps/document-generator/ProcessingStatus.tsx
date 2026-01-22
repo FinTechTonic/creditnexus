@@ -5,11 +5,11 @@
  * and triggers fusion for multimodal inputs.
  */
 
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Loader2,
   CheckCircle2,
-  AlertCircle,
+  // AlertCircle removed - unused
   AlertTriangle,
   Edit2,
   Merge,

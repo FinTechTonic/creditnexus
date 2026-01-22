@@ -74,4 +74,75 @@ This will:
 
 ## Deployment
 
-See `dev/SMART_CONTRACT_DEVELOPMENT_SETUP.md` for detailed deployment instructions and `dev/SECURITIZATION_WORKFLOW_IMPLEMENTATION_PLAN.md` for integration details.
+### Local development (no private key required)
+
+**Option A — One-off in-memory chain**
+
+Runs an ephemeral Hardhat network, deploys, then exits. Uses built-in test accounts; no `.env` or `PRIVATE_KEY`:
+
+```bash
+cd contracts
+npm run compile
+npm run deploy:local
+```
+
+**Option B — Persistent local node**
+
+For a long-lived chain (e.g. app or integration tests):
+
+1. **Terminal 1 — start the node:**
+   ```bash
+   cd contracts
+   npm run node
+   ```
+
+2. **Terminal 2 — deploy to it:**
+   ```bash
+   cd contracts
+   npm run deploy:localhost
+   ```
+
+3. Add the printed addresses to your project-root `.env` and set:
+   ```env
+   X402_NETWORK_RPC_URL=http://127.0.0.1:8545
+   SECURITIZATION_NOTARIZATION_CONTRACT=0x...
+   SECURITIZATION_TOKEN_CONTRACT=0x...
+   SECURITIZATION_PAYMENT_ROUTER_CONTRACT=0x...
+   ```
+
+### Base Sepolia (testnet) or Base (mainnet)
+
+Requires `PRIVATE_KEY` or `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` in the project-root `.env` (see `hardhat.config.js`). Optional: `contracts/.env` or `BASE_SEPOLIA_RPC_URL` / `BASE_RPC_URL`.
+
+```bash
+cd contracts
+npm run compile
+
+# Testnet
+npm run deploy:base-sepolia
+
+# Mainnet
+npm run deploy:base
+```
+
+After deployment, add the contract addresses to the project-root `.env` and set `X402_NETWORK_RPC_URL` to the matching RPC (e.g. `https://sepolia.base.org` or `https://mainnet.base.org`).
+
+### Scripts reference
+
+| Script | Description |
+|--------|-------------|
+| `npm run compile` | Compile contracts |
+| `npm run test` | Run Hardhat tests |
+| `npm run node` | Start persistent Hardhat node at `http://127.0.0.1:8545` |
+| `npm run deploy:local` | Deploy to in-memory Hardhat network (one-off) |
+| `npm run deploy:localhost` | Deploy to `http://127.0.0.1:8545` (run `npm run node` first) |
+| `npm run deploy:base-sepolia` | Deploy to Base Sepolia (requires `PRIVATE_KEY`) |
+| `npm run deploy:base` | Deploy to Base mainnet (requires `PRIVATE_KEY`) |
+| `npm run verify` | Verify contracts on BaseScan |
+
+### Contract verification
+
+```bash
+npx hardhat verify --network base <CONTRACT_ADDRESS> [CONSTRUCTOR_ARGS]
+# Example: npx hardhat verify --network base 0x... 0x[TOKEN_ADDRESS]  # for PaymentRouter
+```

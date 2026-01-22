@@ -1,12 +1,47 @@
 """File whitelist configuration for verification links."""
 
-import yaml
 import logging
 import threading
+import yaml
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _profile_to_config(profile) -> Dict[str, Any]:
+    """Build VerificationFileConfig _config dict from a WhitelistProfile (scope=file)."""
+    ec = profile.enabled_categories or []
+    ft = profile.file_types or {}
+    allowed = ft.get("allowed_extensions") or [".pdf", ".doc", ".docx", ".txt", ".json"]
+    max_mb = ft.get("max_file_size_mb", 50)
+    default_cats = {
+        "legal": {"enabled": True, "required": True, "file_types": [".pdf", ".doc", ".docx"]},
+        "financial": {"enabled": True, "required": False, "file_types": [".pdf", ".xlsx", ".csv"]},
+        "compliance": {"enabled": True, "required": False, "file_types": [".pdf", ".doc"]},
+        "supporting": {"enabled": False, "required": False, "file_types": [".pdf", ".jpg", ".png"]},
+    }
+    categories = {}
+    for k, v in default_cats.items():
+        categories[k] = {
+            "enabled": k in ec,
+            "required": v["required"] if k in ec else False,
+            "file_types": allowed if k in ec else v["file_types"],
+        }
+    subdirs = profile.subdirectories
+    if not subdirs or not isinstance(subdirs, dict):
+        subdirs = {
+            "documents": {"enabled": True, "priority": 1},
+            "extractions": {"enabled": True, "priority": 2},
+            "generated": {"enabled": False, "priority": 3},
+            "notes": {"enabled": False, "priority": 4},
+        }
+    return {
+        "enabled_categories": ec,
+        "file_types": {"allowed_extensions": allowed, "max_file_size_mb": max_mb},
+        "categories": categories,
+        "subdirectories": subdirs,
+    }
 
 
 class VerificationFileConfig:
@@ -52,7 +87,14 @@ class VerificationFileConfig:
     
 
     def _load_config(self):
-        """Load configuration from YAML file."""
+        """Load configuration from YAML file or database based on VERIFICATION_WHITELIST_SOURCE."""
+        from app.core.config import settings
+
+        source = (getattr(settings, "VERIFICATION_WHITELIST_SOURCE", None) or "yaml").lower()
+        if source == "database":
+            self._config = self._load_config_from_db()
+            return
+
         if not self._config_path or not self._config_path.exists():
             logger.warning(f"File whitelist config not found: {self._config_path}, using defaults")
             self._config = self._get_default_config()
@@ -64,6 +106,39 @@ class VerificationFileConfig:
         except Exception as e:
             logger.error(f"Failed to load file whitelist config: {e}")
             self._config = self._get_default_config()
+
+    def _load_config_from_db(self) -> Dict[str, Any]:
+        """Load file whitelist from WhitelistProfile (scope=file). On error or no DB, return defaults."""
+        from app.core.config import settings
+
+        default = self._get_default_config()
+        try:
+            from app.db import SessionLocal
+            from app.db.models import WhitelistProfile
+
+            if SessionLocal is None:
+                logger.warning(
+                    "VERIFICATION_WHITELIST_SOURCE=database but SessionLocal is None; using defaults"
+                )
+                return default
+            db = SessionLocal()
+            try:
+                q = db.query(WhitelistProfile).filter(
+                    WhitelistProfile.scope == "file",
+                    WhitelistProfile.is_active.is_(True),
+                )
+                profile_id = getattr(settings, "VERIFICATION_WHITELIST_PROFILE_ID", None)
+                if profile_id is not None:
+                    q = q.filter(WhitelistProfile.id == int(profile_id))
+                profile = q.first()
+                if profile:
+                    return _profile_to_config(profile)
+                return default
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error("Failed to load verification file whitelist from database: %s", e, exc_info=True)
+            return default
 
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""

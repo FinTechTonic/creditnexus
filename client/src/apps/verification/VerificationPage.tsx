@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { resolveApiUrl } from '@/utils/apiBase'
 
 import {
   CheckCircleIcon,
@@ -29,6 +30,12 @@ interface VerificationData {
     title: string
   }>
   expires_at: string
+  status?: 'pending' | 'accepted' | 'declined'
+  accepted_at?: string
+  declined_at?: string
+  accepted_by?: string
+  declined_by?: string
+  declined_reason?: string
 }
 
 export function VerificationPage() {
@@ -49,7 +56,7 @@ export function VerificationPage() {
     setError(null)
 
     try {
-      const response = await fetch(`/api/remote/verify/${payload}`)
+      const response = await fetch(resolveApiUrl(`/api/remote/verify/${payload}`))
       
       if (!response.ok) {
         const errorData = await response.json()
@@ -235,7 +242,7 @@ export function VerificationPage() {
 
                 {/* Expiration Notice */}
                 <div className={`flex items-start p-4 rounded-lg mb-6 ${
-                  new Date(data.expires_at) - new Date() < 24 * 60 * 60 * 1000
+                  new Date(data.expires_at).getTime() - new Date().getTime() < 24 * 60 * 60 * 1000
                     ? 'bg-yellow-50 border border-yellow-200'
                     : 'bg-gray-50 border border-gray-200'
                 }`}>

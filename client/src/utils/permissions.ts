@@ -101,6 +101,39 @@ export const PERMISSION_SATELLITE_EXPORT = "SATELLITE_EXPORT";
 export const PERMISSION_EXPORT_DATA = "EXPORT_DATA";
 export const PERMISSION_EXPORT_REPORTS = "EXPORT_REPORTS";
 
+// Trading Permissions
+export const PERMISSION_TRADING_VIEW = "TRADING_VIEW";
+export const PERMISSION_TRADING_TRADE = "TRADING_TRADE";
+export const PERMISSION_TRADING_ADVANCED_ORDERS = "TRADING_ADVANCED_ORDERS";
+export const PERMISSION_TRADING_MARKET_DATA = "TRADING_MARKET_DATA";
+
+// Compliance Permissions
+export const PERMISSION_COMPLIANCE_VIEW = "COMPLIANCE_VIEW";
+export const PERMISSION_COMPLIANCE_AUDIT = "COMPLIANCE_AUDIT";
+export const PERMISSION_COMPLIANCE_REPORT = "COMPLIANCE_REPORT";
+export const PERMISSION_COMPLIANCE_APPROVE = "COMPLIANCE_APPROVE";
+
+// Portfolio Permissions
+export const PERMISSION_PORTFOLIO_VIEW = "PORTFOLIO_VIEW";
+export const PERMISSION_PORTFOLIO_MANAGE = "PORTFOLIO_MANAGE";
+
+// Market Permissions (from Polymarket plan)
+export const PERMISSION_MARKET_CREATE = "MARKET_CREATE";
+export const PERMISSION_MARKET_VIEW = "MARKET_VIEW";
+export const PERMISSION_MARKET_TRADE = "MARKET_TRADE";
+export const PERMISSION_MARKET_RESOLVE = "MARKET_RESOLVE";
+
+// Signature Permissions (from DigiSign plan)
+export const PERMISSION_SIGNATURE_COORDINATE = "SIGNATURE_COORDINATE";
+export const PERMISSION_SIGNATURE_EXECUTE = "SIGNATURE_EXECUTE";
+export const PERMISSION_SIGNATURE_AUDIT = "SIGNATURE_AUDIT";
+export const PERMISSION_SIGNATURE_VIEW = "SIGNATURE_VIEW";
+
+// Billing Permissions (from Billing Dashboard plan)
+export const PERMISSION_BILLING_VIEW = "BILLING_VIEW";
+export const PERMISSION_BILLING_VIEW_ALL = "BILLING_VIEW_ALL";  // Admin only
+export const PERMISSION_BILLING_VIEW_ORGANIZATION = "BILLING_VIEW_ORGANIZATION";  // Org admin
+
 // User Roles
 export type UserRole = 
   | "auditor"
@@ -108,6 +141,8 @@ export type UserRole =
   | "law_officer"
   | "accountant"
   | "applicant"
+  | "trader"
+  | "compliance_officer"
   | "viewer"
   | "analyst"
   | "reviewer"
@@ -119,6 +154,8 @@ export const UserRole = {
   LAW_OFFICER: "law_officer" as const,
   ACCOUNTANT: "accountant" as const,
   APPLICANT: "applicant" as const,
+  TRADER: "trader" as const,
+  COMPLIANCE_OFFICER: "compliance_officer" as const,
   VIEWER: "viewer" as const,
   ANALYST: "analyst" as const,
   REVIEWER: "reviewer" as const,
@@ -147,6 +184,28 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSION_EXPORT_DATA,
     PERMISSION_EXPORT_REPORTS,
     PERMISSION_SATELLITE_EXPORT,
+    // Additional permissions
+    PERMISSION_TRADING_VIEW,
+    PERMISSION_TRADING_TRADE,
+    PERMISSION_TRADING_ADVANCED_ORDERS,
+    PERMISSION_TRADING_MARKET_DATA,
+    PERMISSION_COMPLIANCE_VIEW,
+    PERMISSION_COMPLIANCE_AUDIT,
+    PERMISSION_COMPLIANCE_REPORT,
+    PERMISSION_COMPLIANCE_APPROVE,
+    PERMISSION_PORTFOLIO_VIEW,
+    PERMISSION_PORTFOLIO_MANAGE,
+    PERMISSION_MARKET_CREATE,
+    PERMISSION_MARKET_VIEW,
+    PERMISSION_MARKET_TRADE,
+    PERMISSION_MARKET_RESOLVE,
+    PERMISSION_SIGNATURE_COORDINATE,
+    PERMISSION_SIGNATURE_EXECUTE,
+    PERMISSION_SIGNATURE_AUDIT,
+    PERMISSION_SIGNATURE_VIEW,
+    PERMISSION_BILLING_VIEW,
+    PERMISSION_BILLING_VIEW_ALL,
+    PERMISSION_BILLING_VIEW_ORGANIZATION,
   ],
   
   // Banker: Write permissions for deals, documents, trades
@@ -226,6 +285,35 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSION_INQUIRY_VIEW_OWN,
     PERMISSION_DOCUMENT_VIEW,
     PERMISSION_TEMPLATE_VIEW,
+  ],
+  
+  // Trader: Trading and portfolio management
+  [UserRole.TRADER]: [
+    PERMISSION_TRADING_VIEW,
+    PERMISSION_TRADING_TRADE,
+    PERMISSION_TRADING_MARKET_DATA,
+    PERMISSION_PORTFOLIO_VIEW,
+    PERMISSION_PORTFOLIO_MANAGE,
+    PERMISSION_MARKET_VIEW,
+    PERMISSION_MARKET_TRADE,
+    PERMISSION_DOCUMENT_VIEW,
+    PERMISSION_DEAL_VIEW,
+    PERMISSION_TRADE_VIEW,
+    PERMISSION_TRADE_EXECUTE,
+  ],
+  
+  // Compliance Officer: Compliance monitoring and reporting
+  [UserRole.COMPLIANCE_OFFICER]: [
+    PERMISSION_COMPLIANCE_VIEW,
+    PERMISSION_COMPLIANCE_AUDIT,
+    PERMISSION_COMPLIANCE_REPORT,
+    PERMISSION_COMPLIANCE_APPROVE,
+    PERMISSION_DOCUMENT_VIEW,
+    PERMISSION_DEAL_VIEW,
+    PERMISSION_TRADE_VIEW,
+    PERMISSION_AUDIT_VIEW,
+    PERMISSION_POLICY_VIEW,
+    PERMISSION_SIGNATURE_AUDIT,
   ],
   
   // Legacy roles for backward compatibility
@@ -339,9 +427,11 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
 
 /**
  * Get permissions for a given role.
+ * Role lookup is case-insensitive (e.g. "ADMIN" and "admin" both map to admin).
  */
 export function getRolePermissions(role: string): string[] {
-  return ROLE_PERMISSIONS[role] || [];
+  const key = (role || '').toLowerCase();
+  return ROLE_PERMISSIONS[key] || [];
 }
 
 /**

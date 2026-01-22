@@ -2,7 +2,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 interface AlertProps {
-  variant?: "default" | "success" | "warning" | "error" 
+  variant?: "default" | "success" | "warning" | "error" | "destructive" 
   title?: string
   className?: string
   children: React.ReactNode
@@ -10,11 +10,12 @@ interface AlertProps {
 
 const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
   ({ variant = "default", title, className, children }, ref) => {
-    const variantClasses = {
+    const variantClasses: Record<string, string> = {
       default: "bg-[var(--color-alert-bg)] border-[var(--color-alert-border)]",
       success: "bg-[var(--color-alert-success-bg)] border-[var(--color-alert-success-border)]",
       warning: "bg-[var(--color-alert-warning-bg)] border-[var(--color-alert-warning-border)]", 
-      error: "bg-[var(--color-alert-error-bg)] border-[var(--color-alert-error-border)]"
+      error: "bg-[var(--color-alert-error-bg)] border-[var(--color-alert-error-border)]",
+      destructive: "bg-[var(--color-alert-error-bg)] border-[var(--color-alert-error-border)]"
     }
 
     return (
@@ -22,7 +23,7 @@ const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
         ref={ref}
         className={cn(
           "rounded-lg border p-4 shadow-sm",
-          variantClasses[variant],
+          variantClasses[variant] || variantClasses.default,
           className
         )}
       >

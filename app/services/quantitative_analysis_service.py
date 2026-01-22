@@ -77,14 +77,19 @@ class QuantitativeAnalysisService:
     def _check_cache(
         self,
         cache_key: str,
-        max_age_hours: int = 24
+        max_age_hours: int = 24,
+        *,
+        analysis_type: str,
+        query: str,
     ) -> Optional[QuantitativeAnalysisResult]:
         """
         Check if analysis result exists in cache.
         
         Args:
-            cache_key: Cache key hash
-            max_age_hours: Maximum age of cached result in hours (default: 24)
+            cache_key: Cache key hash (kept for API; lookup uses analysis_type+query).
+            max_age_hours: Maximum age of cached result in hours (default: 24).
+            analysis_type: Analysis type (company, market, loan_application).
+            query: Analysis query text.
             
         Returns:
             Cached QuantitativeAnalysisResult or None
@@ -93,16 +98,13 @@ class QuantitativeAnalysisService:
         
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
         
-        # Look for completed analysis with matching query hash
-        # We'll store cache_key in a metadata field or use query hash
         cached = self.db.query(QuantitativeAnalysisResult).filter(
             QuantitativeAnalysisResult.status == QuantitativeAnalysisStatus.COMPLETED.value,
-            QuantitativeAnalysisResult.completed_at >= cutoff_time
+            QuantitativeAnalysisResult.analysis_type == analysis_type,
+            QuantitativeAnalysisResult.query == query,
+            QuantitativeAnalysisResult.completed_at >= cutoff_time,
         ).order_by(QuantitativeAnalysisResult.completed_at.desc()).first()
-        
-        # For now, simple cache: check if same query was analyzed recently
-        # TODO: Implement proper cache_key storage in database
-        return None  # Disable cache for now, can be enhanced later
+        return cached
     
     async def analyze_company(
         self,
@@ -135,7 +137,7 @@ class QuantitativeAnalysisService:
         # Check cache first
         if use_cache:
             cache_key = self._get_cache_key("company", query, ticker, company_name, time_range)
-            cached_result = self._check_cache(cache_key, max_cache_age_hours)
+            cached_result = self._check_cache(cache_key, max_cache_age_hours, analysis_type="company", query=query)
             if cached_result:
                 logger.info(f"Returning cached analysis result: {cached_result.analysis_id}")
                 return {
@@ -492,7 +494,7 @@ class QuantitativeAnalysisService:
         # Check cache first
         if use_cache:
             cache_key = self._get_cache_key("market", query, time_range=time_range)
-            cached_result = self._check_cache(cache_key, max_cache_age_hours)
+            cached_result = self._check_cache(cache_key, max_cache_age_hours, analysis_type="market", query=query)
             if cached_result:
                 logger.info(f"Returning cached market analysis result: {cached_result.analysis_id}")
                 return {
@@ -874,9 +876,9 @@ class QuantitativeAnalysisService:
                     deal_id=deal_id,
                     user_id=user_id
                 )
-                    logger.info(f"Created agent interaction note {note.id} for loan application analysis {analysis_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to create agent interaction note: {e}")
+                logger.info(f"Created agent interaction note {note.id} for loan application analysis {analysis_id}")
+            except Exception as e:
+                logger.warning(f"Failed to create agent interaction note: {e}")
             
             # Create agent report and attach as document
             if deal_id:

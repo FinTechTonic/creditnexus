@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "@/lib/utils"
+// cn removed - unused
 
 export interface CommandPaletteProps {
   open: boolean
@@ -39,4 +39,4 @@ export function CommandPalette({ open, onOpenChange, children }: CommandPaletteP
   )
 }
 
-export { CommandPalette }
+// CommandPalette already exported above

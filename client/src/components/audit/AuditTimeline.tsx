@@ -81,7 +81,7 @@ export function AuditTimeline({ events, onEventClick, height = 400 }: AuditTimel
       <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-700" />
       
       <div className="space-y-4">
-        {sortedEvents.map((event, index) => (
+        {sortedEvents.map((event) => ( // index removed - unused
           <div
             key={event.id}
             className="relative flex items-start gap-4 group cursor-pointer hover:bg-slate-800/50 rounded-lg p-3 transition-colors"

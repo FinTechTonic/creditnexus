@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { resolveApiUrl } from '@/utils/apiBase';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -27,14 +28,13 @@ import {
   GitCompare,
   X,
   Edit2,
-  Share2,
-  Shield
+  Share2
 } from 'lucide-react';
-import { useAuth, fetchWithAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/context/AuthContext';
 import { WorkflowActions } from './WorkflowActions';
 import { SkeletonDocumentList, EmptyState } from '@/components/ui/skeleton';
 import { PermissionGate } from '@/components/PermissionGate';
-import { PERMISSION_DOCUMENT_DELETE, PERMISSION_DOCUMENT_EDIT, PERMISSION_DOCUMENT_EXPORT } from '@/utils/permissions';
+import { PERMISSION_DOCUMENT_DELETE } from '@/utils/permissions';
 import { NotarizationButton } from './NotarizationButton';
 import { SignatureButton } from './SignatureButton';
 import { NotarizationStatus } from './NotarizationStatus';
@@ -110,7 +110,7 @@ interface DocumentHistoryProps {
 }
 
 export function DocumentHistory({ onViewData, onGenerateFromTemplate }: DocumentHistoryProps) {
-  const { isAuthenticated } = useAuth();
+  // const { isAuthenticated } = useAuth(); // isAuthenticated unused
   const navigate = useNavigate();
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<DocumentDetail | null>(null);
@@ -144,7 +144,7 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
       }
       params.append('limit', '50');
       
-      const response = await fetch(`/api/documents?${params.toString()}`);
+      const response = await fetch(resolveApiUrl(`/api/documents?${params.toString()}`));
       if (!response.ok) {
         throw new Error('Failed to fetch documents');
       }
@@ -162,7 +162,7 @@ export function DocumentHistory({ onViewData, onGenerateFromTemplate }: Document
   const fetchDocumentDetail = async (documentId: number) => {
     setIsLoadingDetail(true);
     try {
-      const response = await fetch(`/api/documents/${documentId}`);
+      const response = await fetch(resolveApiUrl(`/api/documents/${documentId}`));
       if (!response.ok) {
         throw new Error('Failed to fetch document');
       }

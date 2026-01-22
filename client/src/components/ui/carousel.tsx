@@ -49,4 +49,4 @@ export function Carousel({ children, className }: CarouselProps) {
   )
 }
 
-export { Carousel }
+// Carousel already exported above

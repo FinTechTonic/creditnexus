@@ -1,4 +1,5 @@
-import { Component, ReactNode, ErrorInfo } from 'react';
+import { Component } from 'react';
+import type { ReactNode, ErrorInfo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, RefreshCw, Home } from 'lucide-react';
@@ -55,7 +56,11 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   handleGoHome = () => {
-    window.location.href = '/dashboard';
+    if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+      window.location.hash = '#/dashboard';
+    } else {
+      window.location.href = '/dashboard';
+    }
   };
 
   render() {

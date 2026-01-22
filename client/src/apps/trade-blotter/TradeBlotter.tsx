@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useFDC3 } from '@/context/FDC3Context';
 import { fetchWithAuth } from '@/context/AuthContext';
 import type { CreditAgreementData, Facility, CreditNexusLoanContext } from '@/context/FDC3Context';
-import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTriangle, Shield, XCircle, Wallet, Loader2, Search, ChevronDown } from 'lucide-react';
+import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTriangle, Shield, XCircle, Wallet, Loader2, Search, ChevronDown, ExternalLink } from 'lucide-react';
+import { useWallet } from '@/context/WalletContext';
 import { PermissionGate } from '@/components/PermissionGate';
-import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
+import { PERMISSION_TRADE_EXECUTE } from '@/utils/permissions'; // PERMISSION_TRADE_VIEW removed - unused
 import { DashboardChatbotPanel } from '@/components/DashboardChatbotPanel';
 
 function addBusinessDays(date: Date, days: number): Date {
@@ -64,6 +66,7 @@ interface TradeBlotterProps {
 
 export function TradeBlotter({ state, setState }: TradeBlotterProps) {
   const { context, clearContext } = useFDC3();
+  const { account } = useWallet();
   const { 
     loanData, 
     tradeStatus, 
@@ -260,7 +263,7 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
         throw new Error(errorData.detail?.message || 'Settlement failed');
       }
       
-      const result = await response.json();
+      await response.json(); // result removed - unused
       
       // Trade settled successfully
       setState(prev => ({
@@ -299,7 +302,7 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
     }));
     
     try {
-      const response = await fetch(`/api/trades/${tradeId}/settle`, {
+      const response = await fetchWithAuth(`/api/trades/${tradeId}/settle`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -314,7 +317,7 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
         throw new Error(errorData.detail?.message || 'Payment failed');
       }
       
-      const result = await response.json();
+      await response.json(); // result removed - unused
       
       // Payment successful - trade settled
       setState(prev => ({
@@ -685,26 +688,29 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
                           </div>
                           <div className="mt-3 p-3 bg-slate-900/50 rounded border border-slate-700">
                             <p className="text-xs text-muted-foreground mb-2">
-                              Connect your wallet and submit payment to complete settlement.
+                              Connect your wallet and submit payment to complete settlement. Use &quot;Open x402 Facilitator&quot; to pay via the x402 facilitator, or &quot;Submit Payment&quot; to send a signed payload (demo: mock payload).
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              Facilitator: {paymentRequest.facilitator_url}
-                            </p>
+                            {paymentRequest.facilitator_url && (
+                              <p className="text-xs text-muted-foreground">
+                                Facilitator: {paymentRequest.facilitator_url}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="mt-4 flex gap-2">
+                        <div className="mt-4 flex flex-wrap gap-2">
                           <Button
                             size="sm"
                             onClick={() => {
-                              // In production, this would connect to wallet and get payment payload
-                              // For demo, we'll simulate a payment payload
+                              // In production: connect wallet, sign via x402 facilitator, then submit payment_payload from facilitator.
+                              // For demo: simulate a payment payload (mock_signature_for_demo).
                               const mockPaymentPayload = {
                                 transaction: {
                                   to: paymentRequest.receiver.id,
                                   value: paymentRequest.amount,
                                   currency: paymentRequest.currency
                                 },
-                                signature: "mock_signature_for_demo"
+                                signature: "mock_signature_for_demo",
+                                ...(account ? { wallet_address: account } : {})
                               };
                               handleSubmitPayment(mockPaymentPayload);
                             }}
@@ -713,6 +719,17 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
                             <Wallet className="h-4 w-4 mr-2" />
                             Submit Payment
                           </Button>
+                          {paymentRequest.facilitator_url && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => window.open(paymentRequest.facilitator_url!, '_blank')}
+                              className="border-blue-500/50 text-blue-400 hover:bg-blue-900/20"
+                            >
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Open x402 Facilitator
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -876,6 +893,9 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
                 </div>
               </CardContent>
             </Card>
+            <div className="pt-1">
+              <Link to="/app/link-accounts" className="text-xs text-cyan-400 hover:underline">Link bank</Link>
+            </div>
           </div>
         </div>
       )}

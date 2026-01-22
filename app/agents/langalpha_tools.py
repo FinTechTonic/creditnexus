@@ -32,17 +32,42 @@ import numpy as np
 from langchain_core.tools import tool, Tool
 from langchain_experimental.utilities import PythonREPL
 from polygon.rest import RESTClient
-from alpha_vantage.fundamentals import Fundamentals
+from alpha_vantage.fundamentaldata import FundamentalData
 from yahooquery import Ticker
 import httpx
 
 from app.core.config import settings
+from app.core import data_cache as dc
 from app.core.llm_client import get_chat_model
 from app.services.web_search_service import WebSearchService, get_web_search_service
 from app.utils.audit import log_audit_action
 from app.db.models import AuditAction
 
 logger = logging.getLogger(__name__)
+
+
+def _to_json_serializable(obj: Any) -> Any:
+    """Convert DataFrame, numpy types, and nested structures for json.dumps."""
+    if isinstance(obj, pd.DataFrame):
+        rows = obj.to_dict(orient="records")
+        return [
+            {k: (None if (isinstance(v, float) and (v != v)) else v) for k, v in r.items()}
+            for r in rows
+        ]
+    if hasattr(obj, "item") and callable(obj.item):  # numpy scalar
+        return obj.item()
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: _to_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_serializable(x) for x in obj]
+    return obj
+
 
 # Context variables for audit logging (set by graph nodes)
 _audit_db: ContextVar[Optional[Any]] = ContextVar('audit_db', default=None)
@@ -125,6 +150,15 @@ def _get_polygon_client() -> Optional[RESTClient]:
         return None
 
 
+def _polygon_aggs_ttl(timespan: str) -> int:
+    t = (timespan or "day").lower()
+    if t in ("minute", "min"):
+        return dc.TTL_OHLCV_15M
+    if t in ("hour", "h"):
+        return dc.TTL_OHLCV_1H
+    return dc.TTL_OHLCV_1D
+
+
 @tool
 def get_market_data(
     ticker: str,
@@ -165,6 +199,13 @@ def get_market_data(
     if not from_date:
         from_date = (date.today() - timedelta(days=30)).isoformat()
     
+    cache_key = dc.make_key("polygon_aggs", ticker, from_date, to_date, timespan, limit)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        _log_tool_usage("get_market_data", params, success=True)
+        return json.dumps(cached)
+    
     # Retry logic
     last_error = None
     for attempt in range(MAX_RETRIES):
@@ -179,7 +220,7 @@ def get_market_data(
                 limit=limit
             )
             
-            # Convert to dict
+            # Convert to list of dicts (values may be numpy; use _to_json_serializable for JSON)
             data = []
             for agg in aggs:
                 data.append({
@@ -192,9 +233,10 @@ def get_market_data(
                     "vwap": agg.vwap if hasattr(agg, 'vwap') else None
                 })
             
-            result = f'{{"ticker": "{ticker}", "data": {data}, "count": {len(data)}}}'
+            obj = _to_json_serializable({"ticker": ticker, "data": data, "count": len(data)})
+            dc.set(cache_key, obj, _polygon_aggs_ttl(timespan), dc.SOURCE_POLYGON, dc.KIND_TIMESERIES, _db)
             _log_tool_usage("get_market_data", params, success=True)
-            return result
+            return json.dumps(obj)
             
         except Exception as e:
             last_error = e
@@ -218,6 +260,12 @@ def get_ticker_snapshot(ticker: str) -> str:
     Returns:
         JSON string with ticker snapshot
     """
+    cache_key = dc.make_key("polygon_snapshot", ticker)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        return json.dumps(cached)
+    
     client = _get_polygon_client()
     if not client:
         return '{"error": "Polygon API key not configured"}'
@@ -226,7 +274,7 @@ def get_ticker_snapshot(ticker: str) -> str:
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
-            snapshot = client.get_snapshot_ticker(ticker=ticker)
+            snapshot = client.get_snapshot_ticker(market_type="stocks", ticker=ticker)
             
             # Convert to dict
             result = {
@@ -248,7 +296,7 @@ def get_ticker_snapshot(ticker: str) -> str:
                 } if snapshot.last_trade else None,
             }
             
-            import json
+            dc.set(cache_key, result, dc.TTL_SNAPSHOT, dc.SOURCE_POLYGON, dc.KIND_PUNCTUAL, _db)
             return json.dumps(result)
             
         except Exception as e:
@@ -265,7 +313,7 @@ def get_ticker_snapshot(ticker: str) -> str:
 # Fundamental Data Tools (Alpha Vantage)
 # ============================================================================
 
-def _get_alpha_vantage_client() -> Optional[Fundamentals]:
+def _get_alpha_vantage_client() -> Optional[FundamentalData]:
     """Get Alpha Vantage client."""
     api_key = None
     if hasattr(settings, "ALPHA_VANTAGE_API_KEY") and settings.ALPHA_VANTAGE_API_KEY:
@@ -278,7 +326,7 @@ def _get_alpha_vantage_client() -> Optional[Fundamentals]:
         return None
     
     try:
-        return Fundamentals(key=api_key, output_format='json')
+        return FundamentalData(key=api_key, output_format='json')
     except Exception as e:
         logger.error(f"Failed to initialize Alpha Vantage client: {e}")
         return None
@@ -304,14 +352,21 @@ def get_fundamental_data(
         "data_type": data_type
     }
     
+    if data_type not in ["overview", "income_statement", "balance_sheet", "cash_flow", "earnings"]:
+        _log_tool_usage("get_fundamental_data", params, success=False, error=f"Unknown data_type: {data_type}")
+        return f'{{"error": "Unknown data_type: {data_type}"}}'
+    
+    cache_key = dc.make_key("av_fundamental", ticker, data_type)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        _log_tool_usage("get_fundamental_data", params, success=True)
+        return json.dumps(cached)
+    
     client = _get_alpha_vantage_client()
     if not client:
         _log_tool_usage("get_fundamental_data", params, success=False, error="Alpha Vantage API key not configured")
         return '{"error": "Alpha Vantage API key not configured"}'
-    
-    if data_type not in ["overview", "income_statement", "balance_sheet", "cash_flow", "earnings"]:
-        _log_tool_usage("get_fundamental_data", params, success=False, error=f"Unknown data_type: {data_type}")
-        return f'{{"error": "Unknown data_type: {data_type}"}}'
     
     # Retry logic
     last_error = None
@@ -326,12 +381,12 @@ def get_fundamental_data(
             elif data_type == "cash_flow":
                 data = client.get_cash_flow_annual(symbol=ticker)
             elif data_type == "earnings":
-                data = client.get_earnings(symbol=ticker)
+                data = client.get_earnings_annual(symbol=ticker)
             
-            import json
-            result = json.dumps(data)
+            obj = _to_json_serializable(data)
+            dc.set(cache_key, obj, dc.TTL_FUNDAMENTAL, dc.SOURCE_ALPHA_VANTAGE, dc.KIND_PUNCTUAL, _db)
             _log_tool_usage("get_fundamental_data", params, success=True)
-            return result
+            return json.dumps(obj)
             
         except Exception as e:
             last_error = e
@@ -380,21 +435,21 @@ async def web_search(
             search_type=search_type,
             num_results=num_results,
             rerank=True,
-            top_k_after_rerank=num_results
+            top_k_after_rerank=num_results,
+            db=_audit_db.get(),
         )
         
-        # Format results for LangAlpha agents
+        # Format results for LangAlpha agents (unified shape: news has source/date, search has domain)
         formatted_results = []
         for chunk in result.get("extracted_content", []):
             formatted_results.append({
                 "title": chunk.get("title", ""),
                 "url": chunk.get("url", ""),
                 "content": chunk.get("content", ""),
-                "source": chunk.get("domain", ""),
-                "date": chunk.get("date", "")
+                "source": chunk.get("source") or chunk.get("domain", ""),
+                "date": chunk.get("date", ""),
             })
         
-        import json
         search_result = json.dumps({
             "query": query,
             "search_type": search_type,
@@ -431,6 +486,20 @@ def get_tickertick_news(
     Returns:
         JSON string with news articles
     """
+    # Build query
+    if ticker:
+        feed_query = f"z:{ticker}"  # Specific ticker news
+    elif query:
+        feed_query = query
+    else:
+        return '{"error": "Either ticker or query must be provided"}'
+    
+    cache_key = dc.make_key("tickertick_news", feed_query, limit)
+    _db = _audit_db.get()
+    cached = dc.get(cache_key, _db)
+    if cached is not None:
+        return json.dumps(cached)
+    
     api_key = None
     if hasattr(settings, "TICKERTICK_API_KEY") and settings.TICKERTICK_API_KEY:
         api_key = settings.TICKERTICK_API_KEY.get_secret_value()
@@ -439,14 +508,6 @@ def get_tickertick_news(
     
     if not api_key:
         return '{"error": "Tickertick API key not configured"}'
-    
-    # Build query
-    if ticker:
-        feed_query = f"z:{ticker}"  # Specific ticker news
-    elif query:
-        feed_query = query
-    else:
-        return '{"error": "Either ticker or query must be provided"}'
     
     # Retry logic
     last_error = None
@@ -468,7 +529,7 @@ def get_tickertick_news(
                         timestamp_sec = story["time"] / 1000
                         story["time"] = datetime.fromtimestamp(timestamp_sec).isoformat()
             
-            import json
+            dc.set(cache_key, data, dc.TTL_NEWS, dc.SOURCE_TICKERTICK, dc.KIND_PUNCTUAL, _db)
             return json.dumps(data)
             
         except httpx.HTTPStatusError as e:
@@ -1014,14 +1075,14 @@ def get_trading_signals(
     }
     
     try:
-        # Get market data first
-        market_data_str = get_market_data(
-            ticker=ticker,
-            from_date=from_date,
-            to_date=to_date,
-            timespan="day",
-            limit=252  # Need at least 252 days for some strategies
-        )
+        # Get market data first (use .invoke: get_market_data is a @tool/StructuredTool)
+        market_data_str = get_market_data.invoke({
+            "ticker": ticker,
+            "from_date": from_date,
+            "to_date": to_date,
+            "timespan": "day",
+            "limit": 252,  # Need at least 252 days for some strategies
+        })
         
         market_data = json.loads(market_data_str)
         

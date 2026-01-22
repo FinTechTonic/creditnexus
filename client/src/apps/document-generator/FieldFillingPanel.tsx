@@ -7,7 +7,7 @@
  * 3. AI suggestions (use LLM to suggest values)
  */
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { 
   FileText, 
   Image, 

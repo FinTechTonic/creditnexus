@@ -584,11 +584,6 @@ class FilingService:
         self,
         filing_id: int
     ) -> Dict[str, Any]:
-        # #region agent log
-        with open(r'get_debug_log_path()', 'a') as f:
-            import json, time
-            f.write(json.dumps({'location': 'filing_service.py:585', 'message': 'Entering track_filing_status', 'data': {'filing_id': filing_id}, 'timestamp': int(time.time()*1000), 'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B'}) + '\n')
-        # #endregion
         """
         Track the status of a regulatory filing.
         
@@ -1814,11 +1809,6 @@ By: _________________________
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None
     ) -> Dict[str, Any]:
-        # #region agent log
-        with open(r'get_debug_log_path()', 'a') as f:
-            import json, time
-            f.write(json.dumps({'location': 'filing_service.py:1807', 'message': 'Entering generate_compliance_report', 'data': {'deal_id': deal_id, 'jurisdiction': jurisdiction}, 'timestamp': int(time.time()*1000), 'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'B'}) + '\n')
-        # #endregion
         """Generate a compliance report for filings.
         
         Args:

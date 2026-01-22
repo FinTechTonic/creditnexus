@@ -8,7 +8,7 @@
  * - Field reference validation
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchWithAuth } from '../../context/AuthContext';
 import { 
   CheckCircle2, 
@@ -22,7 +22,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Alert, AlertDescription } from '../../components/ui/alert';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs';
+// import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs'; // unused
 
 // Types
 interface ValidationResult {

@@ -10,6 +10,9 @@ interface CollapsibleProps {
 
 const Collapsible = React.forwardRef<HTMLDivElement, CollapsibleProps>(
   ({ open, onOpenChange, children, className, ...props }, ref) => {
+    // Note: open and onOpenChange are accepted for API compatibility
+    // but current implementation doesn't use them for state management
+    // Components should manage their own collapsed state
     return (
       <div ref={ref} className={cn(className)} {...props}>
         {children}
@@ -26,7 +29,8 @@ interface CollapsibleTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonE
 const CollapsibleTrigger = React.forwardRef<HTMLButtonElement, CollapsibleTriggerProps>(
   ({ asChild, children, ...props }, ref) => {
     if (asChild && React.isValidElement(children)) {
-      return React.cloneElement(children, { ...props, ref })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return React.cloneElement(children, { ...props, ref } as any)
     }
     return (
       <button ref={ref} {...props}>

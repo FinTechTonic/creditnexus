@@ -35,16 +35,15 @@ const ModelViewer = React.forwardRef<HTMLDivElement, ModelViewerProps>(
           className
         )}
       >
-        <model-viewer
-          src={src}
-          alt={alt}
-          loading={loading}
-          auto-rotate
-          camera-controls
-          class="w-full h-full"
-        >
-          <div slot="progress-bar">Loading...</div>
-        </model-viewer>
+        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+        {React.createElement('model-viewer', {
+          src,
+          alt,
+          loading,
+          'auto-rotate': true,
+          'camera-controls': true,
+          className: "w-full h-full",
+        }, React.createElement('div', { slot: 'progress-bar' }, 'Loading...'))}
       </div>
     )
   }

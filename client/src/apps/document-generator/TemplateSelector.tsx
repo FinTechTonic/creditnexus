@@ -4,7 +4,7 @@
  * Displays a list of LMA templates with search and category filtering.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Search, Filter, FileText, Sparkles } from 'lucide-react';
 
 interface LMATemplate {

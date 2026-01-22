@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Shield, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { NotarizationModal } from './NotarizationModal';
-import { useAuth } from '@/context/AuthContext';
+// useAuth removed - unused
 
 interface NotarizationButtonProps {
   documentId?: number;
@@ -25,7 +25,7 @@ export function NotarizationButton({
 }: NotarizationButtonProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [notarizationStatus, setNotarizationStatus] = useState<'idle' | 'pending' | 'completed' | 'error'>('idle');
-  const { user } = useAuth();
+  // const { user } = useAuth(); // user unused
 
   const handleNotarizationComplete = (notarizationId: number) => {
     setNotarizationStatus('completed');

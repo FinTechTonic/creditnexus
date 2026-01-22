@@ -24,6 +24,7 @@
     "react-big-calendar": "^1.19.4",
     "react-dom": "19.1.0",
     "react-leaflet": "^5.0.0",
+    "react-plaid-link": "^4.1.1",
     "react-router-dom": "^6.28.0",
     "tailwind-merge": "^3.4.0",
     "zustand": "^5.0.10"
