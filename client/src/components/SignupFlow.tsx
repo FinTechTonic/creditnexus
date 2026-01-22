@@ -27,6 +27,7 @@ interface SignupFormData {
   displayName: string;
   role: UserRole | null;
   organizationId: number | null;
+  implementationIds: number[];
 
   // Profile Enrichment (will be populated by ProfileEnrichment component)
   profileData: Record<string, any>;
@@ -43,10 +44,11 @@ interface SignupFlowProps {
 const STEPS = [
   { id: 0, title: 'AI Profile Extraction', description: 'Extract profile data using AI' },
   { id: 1, title: 'Basic Information', description: 'Email, password, and role selection' },
-  { id: 2, title: 'Organization', description: 'Select your organization (optional)' },
-  { id: 3, title: 'Profile Enrichment', description: 'Complete your profile information' },
-  { id: 4, title: 'Document Upload', description: 'Upload supporting documents (optional)' },
-  { id: 5, title: 'Review & Submit', description: 'Review your information and complete signup' },
+  { id: 2, title: 'Organization', description: 'Select your organization' },
+  { id: 3, title: 'Implementations', description: 'Connect to services (optional)' },
+  { id: 4, title: 'Profile Enrichment', description: 'Complete your profile information' },
+  { id: 5, title: 'Document Upload', description: 'Upload supporting documents (optional)' },
+  { id: 6, title: 'Review & Submit', description: 'Review your information and complete signup' },
 ];
 
 function OrganizationSelectionStep({
@@ -58,6 +60,11 @@ function OrganizationSelectionStep({
 }) {
   const [choices, setChoices] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [createNew, setCreateNew] = useState(false);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  
   useEffect(() => {
     fetch(resolveApiUrl('/api/organizations/signup-choices'))
       .then((r) => (r.ok ? r.json() : []))
@@ -65,23 +72,192 @@ function OrganizationSelectionStep({
       .catch(() => setChoices([]))
       .finally(() => setLoading(false));
   }, []);
+  
+  const filteredChoices = choices.filter(c =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  
+  const handleCreateOrganization = async () => {
+    if (!newOrgName.trim()) {
+      return;
+    }
+    
+    setCreatingOrg(true);
+    try {
+      const response = await fetch(resolveApiUrl('/api/organizations/signup'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newOrgName.trim(), is_active: false }),
+      });
+      
+      if (response.ok) {
+        const org = await response.json();
+        updateFormData({ organizationId: org.id });
+        setCreateNew(false);
+        setNewOrgName('');
+      } else {
+        const error = await response.json().catch(() => ({ detail: 'Failed to create organization' }));
+        alert(error.detail || 'Failed to create organization');
+      }
+    } catch (err) {
+      alert('Failed to create organization');
+    } finally {
+      setCreatingOrg(false);
+    }
+  };
+  
   return (
     <div className="space-y-6">
-      <p className="text-slate-400">Optionally select an organization to join.</p>
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">Organization</label>
-        <select
-          value={formData.organizationId ?? ''}
-          onChange={(e) => updateFormData({ organizationId: e.target.value === '' ? null : Number(e.target.value) })}
-          className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          disabled={loading}
+      <p className="text-slate-400">Select your organization or create a new one (required).</p>
+      
+      <div className="flex gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => {
+            setCreateNew(false);
+            updateFormData({ organizationId: null });
+          }}
+          className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
+            !createNew
+              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+              : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
+          }`}
         >
-          <option value="">None</option>
-          {choices.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+          Select Existing
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCreateNew(true);
+            updateFormData({ organizationId: null });
+          }}
+          className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
+            createNew
+              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+              : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
+          }`}
+        >
+          Create New
+        </button>
       </div>
+      
+      {!createNew ? (
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Organization <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search organizations..."
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white mb-3 focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-slate-500"
+          />
+          <select
+            value={formData.organizationId ?? ''}
+            onChange={(e) => updateFormData({ organizationId: e.target.value === '' ? null : Number(e.target.value) })}
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            disabled={loading}
+            required
+          >
+            <option value="">Select an organization...</option>
+            {filteredChoices.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          {!formData.organizationId && (
+            <p className="mt-1 text-sm text-red-400">Organization selection is required</p>
+          )}
+        </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Organization Name <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            value={newOrgName}
+            onChange={(e) => setNewOrgName(e.target.value)}
+            placeholder="Enter organization name..."
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white mb-3 focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-slate-500"
+            disabled={creatingOrg}
+          />
+          <button
+            type="button"
+            onClick={handleCreateOrganization}
+            disabled={!newOrgName.trim() || creatingOrg}
+            className="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 rounded-lg text-white font-medium transition-colors"
+          >
+            {creatingOrg ? 'Creating...' : 'Create Organization'}
+          </button>
+          <p className="mt-2 text-xs text-slate-500">
+            New organizations require admin approval before activation.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImplementationSelectionStep({
+  formData,
+  updateFormData,
+}: {
+  formData: SignupFormData;
+  updateFormData: (u: Partial<SignupFormData>) => void;
+}) {
+  const [implementations, setImplementations] = useState<{
+    id: number;
+    name: string;
+    display_name: string;
+    category: string;
+  }[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    fetch(resolveApiUrl('/api/implementations/signup-choices'))
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setImplementations)
+      .catch(() => setImplementations([]))
+      .finally(() => setLoading(false));
+  }, []);
+  
+  const toggleImplementation = (implId: number) => {
+    const current = formData.implementationIds || [];
+    const updated = current.includes(implId)
+      ? current.filter(id => id !== implId)
+      : [...current, implId];
+    updateFormData({ implementationIds: updated });
+  };
+  
+  return (
+    <div className="space-y-6">
+      <p className="text-slate-400">
+        Optionally connect to verified implementations for enhanced features.
+      </p>
+      {loading ? (
+        <div className="text-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-slate-400" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {implementations.map((impl) => (
+            <button
+              key={impl.id}
+              type="button"
+              onClick={() => toggleImplementation(impl.id)}
+              className={`p-4 border-2 rounded-lg text-left transition-all ${
+                (formData.implementationIds || []).includes(impl.id)
+                  ? 'border-emerald-500 bg-emerald-500/10'
+                  : 'border-slate-600 hover:border-slate-500'
+              }`}
+            >
+              <div className="font-medium text-slate-100">{impl.display_name}</div>
+              <div className="text-xs text-slate-400 mt-1 capitalize">{impl.category}</div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -95,6 +271,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
     displayName: '',
     role: null,
     organizationId: null,
+    implementationIds: [],
     profileData: {},
     documents: [],
   });
@@ -175,6 +352,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         password: formData.password,
         display_name: formData.displayName,
         organization_id: formData.organizationId ?? undefined,
+        implementation_ids: formData.implementationIds?.length ? formData.implementationIds : undefined,
       });
       
       if (success) {
@@ -439,6 +617,9 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         return <OrganizationSelectionStep formData={formData} updateFormData={updateFormData} />;
 
       case 3:
+        return <ImplementationSelectionStep formData={formData} updateFormData={updateFormData} />;
+
+      case 4:
         return (
           <div className="space-y-6">
             {formData.role ? (
@@ -456,7 +637,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
           </div>
         );
 
-      case 4:
+      case 5:
         return (
           <div className="space-y-6">
             <div className="text-center py-8">
@@ -470,7 +651,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
           </div>
         );
 
-      case 5:
+      case 6:
         return (
           <div className="space-y-6">
             <div className="bg-slate-800/50 rounded-lg p-6 space-y-4">
@@ -489,6 +670,18 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
                   <span className="text-sm text-slate-400">Role:</span>
                   <p className="text-slate-100 capitalize">{formData.role?.replace('_', ' ')}</p>
                 </div>
+                {formData.organizationId && (
+                  <div>
+                    <span className="text-sm text-slate-400">Organization:</span>
+                    <p className="text-slate-100">Selected (ID: {formData.organizationId})</p>
+                  </div>
+                )}
+                {formData.implementationIds && formData.implementationIds.length > 0 && (
+                  <div>
+                    <span className="text-sm text-slate-400">Implementations:</span>
+                    <p className="text-slate-100">{formData.implementationIds.length} selected</p>
+                  </div>
+                )}
               </div>
             </div>
             

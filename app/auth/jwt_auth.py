@@ -32,6 +32,7 @@ from app.db.models import (
     User,
     UserImplementationConnection,
     UserRole,
+    VerifiedImplementation,
 )
 from app.core.config import settings
 from app.utils import get_debug_log_path
@@ -502,7 +503,7 @@ def _hydrate_user_context(user: User, db: Session) -> Dict[str, Any]:
 
 @jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
-    """Register a new user account.
+    """Register a new user account with organization and implementations.
 
     Password requirements:
     - Minimum 12 characters
@@ -516,6 +517,18 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
+
+    # Validate implementations if provided
+    if user_data.implementation_ids:
+        impls = db.query(VerifiedImplementation).filter(
+            VerifiedImplementation.id.in_(user_data.implementation_ids),
+            VerifiedImplementation.is_active == True
+        ).all()
+        if len(impls) != len(user_data.implementation_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more implementations are invalid or inactive"
+            )
 
     user = User(
         email=user_data.email,
@@ -533,6 +546,18 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # Create implementation connections
+    if user_data.implementation_ids:
+        for impl_id in user_data.implementation_ids:
+            connection = UserImplementationConnection(
+                user_id=user.id,
+                implementation_id=impl_id,
+                is_active=True,
+                connection_data=None
+            )
+            db.add(connection)
+        db.commit()
 
     audit_log = AuditLog(
         user_id=user.id,
@@ -553,6 +578,8 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        organization=ctx["organization"],
+        implementations=ctx["implementations"],
     )
 
 
@@ -561,12 +588,10 @@ async def signup_step1(
     request: Request,
     user_data: UserSignupStep1,
     db: Session = Depends(get_db),
-    ## organization=ctx["organization"],
-    ## implementations=ctx["implementations"],
 ):
-    """Step 1: Create user account with role selection.
+    """Step 1: Create user account with role, organization, and implementation selection.
 
-    Creates a user account with basic information and selected role.
+    Creates a user account with basic information, selected role, organization, and implementations.
     Returns a temporary signup token (expires in 1 hour) for step 2.
     """
     # Check if email already exists
@@ -576,12 +601,37 @@ async def signup_step1(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
-    # Create user with selected role
+    # Validate organization if provided
+    if user_data.organization_id:
+        org = db.query(Organization).filter(
+            Organization.id == user_data.organization_id,
+            Organization.is_active == True
+        ).first()
+        if not org:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or inactive organization"
+            )
+
+    # Validate implementations if provided
+    if user_data.implementation_ids:
+        impls = db.query(VerifiedImplementation).filter(
+            VerifiedImplementation.id.in_(user_data.implementation_ids),
+            VerifiedImplementation.is_active == True
+        ).all()
+        if len(impls) != len(user_data.implementation_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more implementations are invalid or inactive"
+            )
+
+    # Create user with selected role and organization
     user = User(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name,
         role=user_data.role.value,
+        organization_id=user_data.organization_id,
         is_active=False,  # Require admin approval
         is_email_verified=False,
         password_changed_at=datetime.utcnow(),
@@ -591,6 +641,18 @@ async def signup_step1(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # Create implementation connections
+    if user_data.implementation_ids:
+        for impl_id in user_data.implementation_ids:
+            connection = UserImplementationConnection(
+                user_id=user.id,
+                implementation_id=impl_id,
+                is_active=True,
+                connection_data=None  # Will be populated in step 2 or later
+            )
+            db.add(connection)
+        db.commit()
 
     # Create audit log
     audit_log = AuditLog(
@@ -790,7 +852,7 @@ async def signup_step2(
 
 @jwt_router.post("/login", response_model=TokenResponse)
 async def login(request: Request, credentials: UserLogin, db: Session = Depends(get_db)):
-    """Authenticate user and return JWT tokens.
+    """Authenticate user and return JWT tokens with organization and implementations.
 
     Account will be locked after 5 failed attempts for 30 minutes.
     Rate limited via slowapi default_limits (60/minute) with additional

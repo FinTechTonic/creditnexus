@@ -47,6 +47,7 @@ interface RegisterData {
   display_name: string;
   organization_identifier?: string;  // Organization alias, blockchain address, or key
   organization_id?: number;  // FK to organizations.id
+  implementation_ids?: number[];  // Implementation selection (multi-select)
 }
 
 interface AuthContextType {
@@ -193,6 +194,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const tokens: AuthTokens = await response.json();
         storeTokens(tokens);
+        // Store organization and implementations from TokenResponse
+        if (tokens.organization !== undefined) {
+          setOrganization(tokens.organization);
+        }
+        if (tokens.implementations !== undefined) {
+          setImplementations(Array.isArray(tokens.implementations) ? tokens.implementations : []);
+        }
         await refreshUser();
         return true;
       } else {
@@ -235,6 +243,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const tokens: AuthTokens = await response.json();
         storeTokens(tokens);
+        // Store organization and implementations from TokenResponse
+        if (tokens.organization !== undefined) {
+          setOrganization(tokens.organization);
+        }
+        if (tokens.implementations !== undefined) {
+          setImplementations(Array.isArray(tokens.implementations) ? tokens.implementations : []);
+        }
         await refreshUser();
         return true;
       } else {

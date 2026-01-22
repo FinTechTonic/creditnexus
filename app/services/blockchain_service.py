@@ -18,8 +18,13 @@ logger = logging.getLogger(__name__)
 class BlockchainService:
     """Service for smart contract deployment and interaction."""
     
-    def __init__(self):
-        """Initialize blockchain service."""
+    def __init__(self, organization_context: Optional[Dict[str, Any]] = None):
+        """Initialize blockchain service with optional organization context.
+        
+        Args:
+            organization_context: Optional organization blockchain context dictionary
+        """
+        self.organization_context = organization_context
         self.web3 = None
         self.deployer_account = None
         self._contract_abis = {}
@@ -28,12 +33,19 @@ class BlockchainService:
         self._load_contract_artifacts()
     
     def _initialize_web3(self):
-        """Initialize Web3 connection."""
+        """Initialize Web3 connection to organization's blockchain or default."""
         try:
             from web3 import Web3
             
-            if settings.X402_NETWORK_RPC_URL:
-                self.web3 = Web3(Web3.HTTPProvider(settings.X402_NETWORK_RPC_URL))
+            # Use organization's RPC if available
+            rpc_url = None
+            if self.organization_context and self.organization_context.get("rpc_url"):
+                rpc_url = self.organization_context["rpc_url"]
+            else:
+                rpc_url = settings.X402_NETWORK_RPC_URL
+            
+            if rpc_url:
+                self.web3 = Web3(Web3.HTTPProvider(rpc_url))
                 if not self.web3.is_connected():
                     logger.warning(f"Failed to connect to blockchain at {settings.X402_NETWORK_RPC_URL}")
                     self.web3 = None

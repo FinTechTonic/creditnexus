@@ -46,6 +46,21 @@ async def signup_organization_choices(
     return [{"id": o["id"], "name": o["name"]} for o in rows]
 
 
+@router.get("/pending", response_model=List[Dict[str, Any]])
+async def list_pending_organizations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List pending organizations awaiting approval (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    svc = OrganizationService(db)
+    try:
+        return svc.list_organizations(is_active=False, limit=200)
+    except OrganizationServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_organizations(
     is_active: Optional[bool] = Query(None),
@@ -89,6 +104,72 @@ async def create_organization(
             body.name, slug=body.slug, is_active=body.is_active
         )
     except OrganizationServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/signup", response_model=Dict[str, Any], status_code=201)
+async def create_organization_signup(
+    body: CreateOrganizationRequest,
+    db: Session = Depends(get_db),
+):
+    """Create a new organization during signup (requires admin approval).
+    
+    Creates organization with is_active=False, requiring admin approval.
+    """
+    svc = OrganizationService(db)
+    try:
+        # Create organization with is_active=False for admin approval
+        return svc.create_organization(
+            body.name, slug=body.slug, is_active=False
+        )
+    except OrganizationServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{org_id}/approve", response_model=Dict[str, Any])
+async def approve_organization(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Approve an organization (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    svc = OrganizationService(db)
+    try:
+        org = svc.get_organization(org_id)
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        
+        # Update organization to active
+        return svc.update_organization(org_id, is_active=True)
+    except OrganizationServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{org_id}/reject", response_model=Dict[str, Any])
+async def reject_organization(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reject an organization (admin only). Deletes the organization."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    svc = OrganizationService(db)
+    try:
+        org = svc.get_organization(org_id)
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        
+        # Delete organization (cascade will handle related records)
+        from app.db.models import Organization
+        db.delete(db.query(Organization).filter(Organization.id == org_id).first())
+        db.commit()
+        
+        return {"status": "success", "message": "Organization rejected and deleted"}
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 
