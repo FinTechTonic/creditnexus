@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { TrendingUp, TrendingDown, DollarSign, PieChart, Loader2 } from 'lucide-react';
 import { fetchWithAuth, useAuth } from '@/context/AuthContext';
 import { useTradingWebSocket } from '@/hooks/useTradingWebSocket';
+import { useFDC3, type PortfolioContext } from '@/context/FDC3Context';
 
 interface Position {
   id: string;
@@ -32,10 +33,19 @@ interface PortfolioSummary {
 
 export function PortfolioView() {
   const { user } = useAuth();
+  const { context } = useFDC3();
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refetch, setRefetch] = useState(0);
+
+  // Listen for FDC3 portfolio context updates
+  useEffect(() => {
+    if (context?.type === 'finos.creditnexus.portfolio') {
+      // Portfolio context received - trigger refresh
+      setRefetch((r) => r + 1);
+    }
+  }, [context]);
 
   const loadPortfolio = useCallback(async () => {
     setIsLoading(true);

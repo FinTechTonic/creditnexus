@@ -5,7 +5,7 @@ import os
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Union
 from pydantic import SecretStr, field_validator, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
@@ -297,6 +297,16 @@ class Settings(BaseSettings):
         default="creditnexus-stock-prediction",
         description="Modal app name for stock prediction (inference, market)",
     )
+    
+    # Demo Data Configuration
+    DEMO_BLOCKCHAIN_ACCOUNTS: Optional[str] = Field(
+        default=None,
+        description="Comma-separated list of wallet accounts for demo users. Format: 'address:private_key' pairs or just 'address'. Example: '0x123...:0xabc...,0x456...:0xdef...' (from Hardhat node)"
+    )
+    DEMO_BLOCKCHAIN_RPC_URL: Optional[str] = Field(
+        default="http://127.0.0.1:8545",
+        description="RPC URL for blockchain node (default: local Hardhat node)"
+    )
     MODAL_TOKEN_ID: Optional[SecretStr] = Field(default=None, description="Modal token ID for server-side Modal client (optional)")
     MODAL_TOKEN_SECRET: Optional[SecretStr] = Field(default=None, description="Modal token secret for server-side Modal client (optional)")
     MODAL_USE_GPU: bool = Field(
@@ -501,11 +511,24 @@ class Settings(BaseSettings):
     # Demo Data Configuration
     DEMO_DATA_ENABLED: bool = True  # Feature flag to enable/disable demo data generation
     DEMO_DATA_DEAL_COUNT: int = 12  # Default number of deals to generate
-    DEMO_DATA_DEAL_TYPES: List[str] = ["loan_application", "refinancing", "restructuring"]  # Available deal types
+    # Store as string to avoid pydantic-settings JSON parsing issues with List types
+    # Use Field with alias to map from DEMO_DATA_DEAL_TYPES env var
+    demo_data_deal_types_str: Optional[str] = Field(default=None, alias="DEMO_DATA_DEAL_TYPES", exclude=True)
     DEMO_DATA_STORAGE_PATH: str = "storage/deals/demo"  # Storage path for demo deal files
     DEMO_DATA_CACHE_ENABLED: bool = True  # Enable caching for generated CDM data
     DEMO_DATA_CACHE_TTL: int = 86400  # Cache TTL in seconds (default: 24 hours)
     DEMO_DATA_CACHE_PATH: Optional[str] = None  # Optional path for cache database (default: in-memory)
+    
+    @property
+    def DEMO_DATA_DEAL_TYPES(self) -> List[str]:
+        """Parse DEMO_DATA_DEAL_TYPES from comma-separated string or return default."""
+        if self.demo_data_deal_types_str:
+            # Parse comma-separated string
+            parsed = [item.strip() for item in self.demo_data_deal_types_str.split(',') if item.strip()]
+            if parsed:
+                return parsed
+        # Return default if not set or empty
+        return ["loan_application", "refinancing", "restructuring"]
     
     # Database Configuration
     DATABASE_URL: Optional[str] = None  # PostgreSQL or SQLite connection string
@@ -559,6 +582,7 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: Optional[SecretStr] = None  # Master encryption key for data at rest (Fernet key or password)
     ENCRYPTION_ENABLED: bool = True  # Enable encryption for sensitive fields
     ENCRYPTION_AUTO_ENCRYPT_FIELDS: bool = True  # Automatically encrypt sensitive fields in JSONB
+    ENCRYPTION_STRICT_MODE: bool = False  # If True, raise errors on decryption failure. If False, log warnings and attempt graceful fallback
     
     @field_validator('DATABASE_URL', mode='before')
     @classmethod

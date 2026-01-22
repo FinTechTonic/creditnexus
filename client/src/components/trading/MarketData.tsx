@@ -10,6 +10,7 @@ import { TrendingUp, TrendingDown, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchWithAuth } from '@/context/AuthContext';
 import { resolveApiUrl } from '@/utils/apiBase';
+import { CandleChart } from './CandleChart';
 
 interface MarketPrice {
   symbol: string;
@@ -73,20 +74,9 @@ export function MarketData() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load market data');
-      // Set mock data for development
+      // Don't set mock data - show error instead
       setMarketData({
-        prices: [
-          {
-            symbol: 'DEAL_2024_001',
-            price: 100.50,
-            change: 2.50,
-            change_percent: 2.55,
-            volume: 1000000,
-            bid: 100.45,
-            ask: 100.55,
-            timestamp: new Date().toISOString(),
-          },
-        ],
+        prices: [],
         orderBook: [],
         recentTrades: [],
       });
@@ -187,17 +177,17 @@ export function MarketData() {
                         )}
                       </div>
                       <div className={`text-2xl font-bold ${
-                        price.change >= 0 ? 'text-green-500' : 'text-red-500'
+                        (price.change ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
                       }`}>
-                        ${price.price.toFixed(2)}
+                        ${(price.price ?? 0).toFixed(2)}
                       </div>
                       <div className={`text-sm mt-1 ${
-                        price.change >= 0 ? 'text-green-500' : 'text-red-500'
+                        (price.change ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
                       }`}>
-                        {price.change >= 0 ? '+' : ''}{price.change.toFixed(2)} ({price.change_percent.toFixed(2)}%)
+                        {(price.change ?? 0) >= 0 ? '+' : ''}{(price.change ?? 0).toFixed(2)} ({(price.change_percent ?? 0).toFixed(2)}%)
                       </div>
                       <div className="text-xs text-muted-foreground mt-2">
-                        Volume: {price.volume.toLocaleString()}
+                        Volume: {(price.volume ?? 0).toLocaleString()}
                       </div>
                     </CardContent>
                   </Card>
@@ -205,29 +195,32 @@ export function MarketData() {
               </div>
 
               {selectedPrice && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{selectedPrice.symbol} Details</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div>
-                        <div className="text-sm text-muted-foreground">Bid</div>
-                        <div className="text-lg font-semibold">${selectedPrice.bid.toFixed(2)}</div>
-                      </div>
-                      <div>
-                        <div className="text-sm text-muted-foreground">Ask</div>
-                        <div className="text-lg font-semibold">${selectedPrice.ask.toFixed(2)}</div>
-                      </div>
-                      <div>
-                        <div className="text-sm text-muted-foreground">Spread</div>
-                        <div className="text-lg font-semibold">
-                          ${(selectedPrice.ask - selectedPrice.bid).toFixed(2)}
+                <>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{selectedPrice.symbol} Details</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div>
+                          <div className="text-sm text-muted-foreground">Bid</div>
+                          <div className="text-lg font-semibold">${(selectedPrice.bid ?? 0).toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-muted-foreground">Ask</div>
+                          <div className="text-lg font-semibold">${(selectedPrice.ask ?? 0).toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-muted-foreground">Spread</div>
+                          <div className="text-lg font-semibold">
+                            ${((selectedPrice.ask ?? 0) - (selectedPrice.bid ?? 0)).toFixed(2)}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                  <CandleChart symbol={selectedSymbol} timeframe="1D" days={30} height={400} />
+                </>
               )}
             </div>
           )}
@@ -255,8 +248,8 @@ export function MarketData() {
                       .filter(entry => entry.side === 'bid')
                       .map((entry, idx) => (
                         <div key={idx} className="flex justify-between text-sm">
-                          <span>${entry.price.toFixed(2)}</span>
-                          <span>{entry.quantity.toLocaleString()}</span>
+                          <span>${(entry.price ?? 0).toFixed(2)}</span>
+                          <span>{(entry.quantity ?? 0).toLocaleString()}</span>
                         </div>
                       ))}
                   </div>
@@ -268,8 +261,8 @@ export function MarketData() {
                       .filter(entry => entry.side === 'ask')
                       .map((entry, idx) => (
                         <div key={idx} className="flex justify-between text-sm">
-                          <span>${entry.price.toFixed(2)}</span>
-                          <span>{entry.quantity.toLocaleString()}</span>
+                          <span>${(entry.price ?? 0).toFixed(2)}</span>
+                          <span>{(entry.quantity ?? 0).toLocaleString()}</span>
                         </div>
                       ))}
                   </div>
@@ -310,8 +303,8 @@ export function MarketData() {
                         {new Date(trade.timestamp).toLocaleTimeString()}
                       </td>
                       <td className="p-2 font-medium">{trade.symbol}</td>
-                      <td className="p-2 text-right">${trade.price.toFixed(2)}</td>
-                      <td className="p-2 text-right">{trade.quantity.toFixed(2)}</td>
+                      <td className="p-2 text-right">${(trade.price ?? 0).toFixed(2)}</td>
+                      <td className="p-2 text-right">{(trade.quantity ?? 0).toFixed(2)}</td>
                       <td className={`p-2 text-center font-medium ${
                         trade.side === 'buy' ? 'text-green-500' : 'text-red-500'
                       }`}>

@@ -105,6 +105,7 @@ dependencies = [
     "prometheus-client>=0.19.0", # Prometheus Python client
     "prometheus-fastapi-instrumentator>=6.1.0", # FastAPI Prometheus integration
     "psutil>=5.9.0", # System metrics (CPU, memory, disk)
+    "alpaca-py>=0.15.0",
 ]
 
 [project.optional-dependencies]
@@ -171,4 +172,10 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+
+[dependency-groups]
+predictions = [
+    "chronos-forecasting>=2.2.2",
+    "torch>=2.9.1",
+]
 

@@ -27,6 +27,7 @@ interface SeedOptions {
   generate_deals: boolean;
   deal_count: number;
   dry_run: boolean;
+  force: boolean;  // If true, delete existing demo deals and recreate from scratch
   complete_partial_data?: boolean;
 }
 
@@ -56,6 +57,7 @@ export function DemoDataDashboard() {
     generate_deals: true,
     deal_count: 12,
     dry_run: false,
+    force: false,
     complete_partial_data: false
   });
 
@@ -311,8 +313,8 @@ export function DemoDataDashboard() {
       startPolling();
 
       if (seedOptions.generate_deals) {
-        // Generate deals separately
-        await generateDeals(seedOptions.deal_count);
+        // Generate deals separately with force option
+        await generateDeals(seedOptions.deal_count, seedOptions.force);
       }
 
       // Seed other data
@@ -323,6 +325,7 @@ export function DemoDataDashboard() {
         seed_policy_templates: seedOptions.seed_policy_templates,
         generate_deals: false, // Already handled above
         dry_run: seedOptions.dry_run,
+        force: seedOptions.force,
         complete_partial_data: seedOptions.complete_partial_data || false,
       });
 
@@ -561,11 +564,26 @@ export function DemoDataDashboard() {
                       <input
                         type="checkbox"
                         checked={seedOptions.generate_deals}
-                        onChange={(e) => setSeedOptions({ ...seedOptions, generate_deals: e.target.checked })}
+                        onChange={(e) => setSeedOptions({ ...seedOptions, generate_deals: e.target.checked, force: e.target.checked ? seedOptions.force : false })}
                         className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-600 focus:ring-indigo-500"
                       />
                       <span className="text-sm text-slate-300">Generate Deals</span>
                     </label>
+
+                    {seedOptions.generate_deals && (
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={seedOptions.force}
+                          onChange={(e) => setSeedOptions({ ...seedOptions, force: e.target.checked })}
+                          className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-slate-300">
+                          Force Regeneration
+                          <span className="text-xs text-slate-500 ml-1">(Delete existing deals and recreate)</span>
+                        </span>
+                      </label>
+                    )}
 
                     <label className="flex items-center space-x-2 cursor-pointer">
                       <input
