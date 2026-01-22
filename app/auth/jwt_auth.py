@@ -104,13 +104,14 @@ class PasswordStrengthError(Exception):
     pass
 
 class UserRegister(BaseModel):
-    """Registration request schema."""
+    """Registration request schema with organization and implementation selection."""
 
     email: EmailStr
     password: str
     display_name: str
     organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
     organization_id: Optional[int] = None  # FK to organizations.id
+    implementation_ids: Optional[List[int]] = None  # Implementation selection (multi-select)
     
     @field_validator("password")
     @classmethod
@@ -191,12 +192,14 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 class UserSignupStep1(BaseModel):
-    """Step 1 signup request: Basic info and role selection (all fields optional for partial signup)."""
+    """Step 1 signup request: Basic info, role, organization, and implementation selection."""
 
     email: Optional[EmailStr] = None
     password: Optional[str] = None
     display_name: Optional[str] = None
     role: Optional[UserRole] = None  # Selected role
+    organization_id: Optional[int] = None  # Organization selection
+    implementation_ids: Optional[List[int]] = None  # Implementation selection (multi-select)
 
     @field_validator("password")
     @classmethod
@@ -558,8 +561,8 @@ async def signup_step1(
     request: Request,
     user_data: UserSignupStep1,
     db: Session = Depends(get_db),
-    organization=ctx["organization"],
-    implementations=ctx["implementations"],
+    ## organization=ctx["organization"],
+    ## implementations=ctx["implementations"],
 ):
     """Step 1: Create user account with role selection.
 

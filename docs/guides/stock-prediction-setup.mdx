@@ -1,4 +1,7 @@
-# Stock Prediction, Chronos, Backtesting, and Market Data
+---
+title: Stock Prediction, Chronos, Backtesting, and Market Data
+description: Configure stock prediction with Chronos models, backtesting, and market data sources
+---
 
 Stock prediction provides daily, hourly, and 15‑minute forecasts (Chronos or technical strategies), backtesting over OHLCV, order recommendations, and market-status. It depends on **market data** (Alpaca or yahooquery) and optionally **Chronos** via Modal or locally. Rolling credits (`stock_prediction_daily`, `stock_prediction_hourly`, `stock_prediction_15min`) apply when `RollingCreditsService` is used.
 
@@ -35,7 +38,7 @@ Market data is provided by **MarketDataService**: Alpaca first (when enabled), t
 
 | Source | When used | Requirements |
 |--------|-----------|--------------|
-| **Alpaca** | `ALPACA_DATA_ENABLED=true` and `ALPACA_API_KEY` / `ALPACA_API_SECRET` set | `alpaca-py` installed; keys from [Alpaca](https://alpaca.markets/). See [Alpaca Trading Setup](alpaca-trading-setup.md). |
+| **Alpaca** | `ALPACA_DATA_ENABLED=true` and `ALPACA_API_KEY` / `ALPACA_API_SECRET` set | `alpaca-py` installed; keys from [Alpaca](https://alpaca.markets/). See [Alpaca Trading Setup](./alpaca-trading-setup.mdx). |
 | **yahooquery** | Fallback when Alpaca is off or returns no data | `pip install yahooquery` |
 
 **Config (Alpaca as data source):**
@@ -103,7 +106,7 @@ Modal image: `modal/image.py` (`chronos-bolt`, `torch`, `alpaca-py`, `pandas`, e
 
 ## 5. Rolling Credits (Stock Prediction)
 
-When `RollingCreditsService` is used, `stock_prediction_daily`, `stock_prediction_hourly`, `stock_prediction_15min` are deducted. Tier allocation is in [Rolling Credits Setup](rolling-credits-setup.md). If the user has no balance, prediction may be refused depending on service wiring.
+When `RollingCreditsService` is used, `stock_prediction_daily`, `stock_prediction_hourly`, `stock_prediction_15min` are deducted. Tier allocation is in [Rolling Credits Setup](./rolling-credits-setup.mdx). If the user has no balance, prediction may be refused depending on service wiring.
 
 ---
 
@@ -125,7 +128,7 @@ When `RollingCreditsService` is used, `stock_prediction_daily`, `stock_predictio
 | Issue | Check |
 |-------|-------|
 | 403 on prediction/backtest | `STOCK_PREDICTION_ENABLED=true` |
-| “Insufficient data” in backtest | Date range and symbol; need ≥130 bars. For 1d, use ~6+ months. yahooquery/Alpaca must return OHLCV. |
-| Chronos “chronos/torch not installed” | Local: `pip install chronos-bolt torch` |
+| "Insufficient data" in backtest | Date range and symbol; need ≥130 bars. For 1d, use ~6+ months. yahooquery/Alpaca must return OHLCV. |
+| Chronos "chronos/torch not installed" | Local: `pip install chronos-bolt torch` |
 | Modal inference fails | `modal run modal/app.py` or `modal deploy`; `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` if the app invokes Modal. `MODAL_USE_GPU=1` when deploying for GPU. |
 | No market data | `yahooquery` installed; or Alpaca with `ALPACA_DATA_ENABLED`, valid keys, and `ALPACA_BASE_URL` when also trading. |

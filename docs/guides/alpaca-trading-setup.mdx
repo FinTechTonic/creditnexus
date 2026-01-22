@@ -1,4 +1,7 @@
-# Alpaca Trading and Market Data Setup
+---
+title: Alpaca Trading and Market Data Setup
+description: Configure Alpaca for trading and historical market data in CreditNexus
+---
 
 Alpaca is used for **(1) trading** (place/cancel orders, portfolio, positions, market data in the Trading Dashboard) and **(2) historical OHLCV** for stock prediction and backtesting when `ALPACA_DATA_ENABLED=true`. The same API key and secret are used for both; the base URL selects paper vs live.
 
@@ -11,7 +14,7 @@ Alpaca is used for **(1) trading** (place/cancel orders, portfolio, positions, m
 | **Trading** | `TradingAPIService` → `AlpacaTradingAPIService` | `ALPACA_API_KEY` and `ALPACA_API_SECRET` set. Order placement, cancel, portfolio, positions, market data for Order Form, Portfolio, Market Data tab. |
 | **Historical data** | `MarketDataService` → Alpaca `StockHistoricalDataClient` | `ALPACA_DATA_ENABLED=true` and keys set. OHLCV for `StockPredictionService` and `run_backtest_from_data_source`. |
 
-If Alpaca keys are not set, **trading** uses `MockTradingAPIService`. If `ALPACA_DATA_ENABLED` is false or Alpaca returns no data, **market data** falls back to **yahooquery** (see [Stock Prediction Setup](stock-prediction-setup.md)).
+If Alpaca keys are not set, **trading** uses `MockTradingAPIService`. If `ALPACA_DATA_ENABLED` is false or Alpaca returns no data, **market data** falls back to **yahooquery** (see [Stock Prediction Setup](stock-prediction-setup.mdx)).
 
 ---
 
@@ -54,7 +57,7 @@ When `ALPACA_DATA_ENABLED=true` and keys are set, `MarketDataService.get_histori
 - **Timeframes:** 1D, 1H, 15Min.
 - Used by: `StockPredictionService` (daily/hourly/15min) and `run_backtest_from_data_source`.
 
-See [Stock Prediction Setup](stock-prediction-setup.md) for backtest and prediction config.
+See [Stock Prediction Setup](stock-prediction-setup.mdx) for backtest and prediction config.
 
 ---
 
@@ -89,6 +92,6 @@ ALPACA_DATA_ENABLED=true
 | Issue | Check |
 |-------|-------|
 | Orders not reaching Alpaca | `ALPACA_API_KEY`, `ALPACA_API_SECRET`, `ALPACA_BASE_URL` (paper vs live). |
-| “Using mock trading API” | Keys missing or invalid; `AlpacaTradingAPIService` init failed. |
-| No historical bars / backtest “Insufficient data” | `ALPACA_DATA_ENABLED=true`; valid keys; `alpaca-py` installed. Symbol and date range must have data on Alpaca. |
+| "Using mock trading API" | Keys missing or invalid; `AlpacaTradingAPIService` init failed. |
+| No historical bars / backtest "Insufficient data" | `ALPACA_DATA_ENABLED=true`; valid keys; `alpaca-py` installed. Symbol and date range must have data on Alpaca. |
 | 502 Trading API error | Alpaca outage or rate limits; check [status](https://status.alpaca.markets/). |

@@ -1,4 +1,7 @@
-# PM2 Development Setup
+---
+title: PM2 Development Setup
+description: Guide for running CreditNexus development processes with PM2 and centralized logging
+---
 
 This guide describes how to run CreditNexus development processes with **PM2** and collect logs in a project folder for easy access.
 
@@ -128,7 +131,7 @@ Relevant keys in `ecosystem.config.cjs`:
 | `watch` | `false`; Uvicorn/Vite handle hot reload |
 | `autorestart` | Restart on exit |
 | `max_restarts` | Max restarts in a short time |
-| `min_uptime` | Minimum uptime to consider a start “successful” |
+| `min_uptime` | Minimum uptime to consider a start "successful" |
 
 ---
 
@@ -242,6 +245,6 @@ On laptops this is usually optional.
 | PM2 not in PATH | Use `npx pm2` (after `npm install`) or install globally: `npm install -g pm2`. |
 | **EINVAL on spawn** (Windows) | Frontend runs `npm` via `cmd /c` on Windows (spawning `npm` or `npm.cmd` directly can EINVAL). Backend uses `python` + `scripts/run_dev.py` with `interpreter: 'none'`. If backend still EINVALs, try `script: 'py'`, `args: ['-3', 'scripts/run_dev.py']`. |
 | **SyntaxError in ...\\PYTHON.EXE** (Windows) | PM2 can pass the resolved `python.exe` path as the script to Python. The ecosystem uses `script: 'cmd'`, `args: ['/c', 'python', 'scripts/run_dev.py']` on Windows to avoid that. On Unix, `script: 'python'`, `args: ['scripts/run_dev.py']` is used. |
-| **"The service is no longer running: write EPIPE"** (vite:esbuild) or **500 on .tsx** | Vite’s esbuild child has exited. Set `optimizeDeps.force` to `false` in `client/vite.config.ts`. If it persists, run the frontend without PM2 (`npm run frontend`) to isolate; if that works, the cause is likely PM2 + `cmd /c` + esbuild. See `dev/errors-inventory.md`. |
+| **"The service is no longer running: write EPIPE"** (vite:esbuild) or **500 on .tsx** | Vite's esbuild child has exited. Set `optimizeDeps.force` to `false` in `client/vite.config.ts`. If it persists, run the frontend without PM2 (`npm run frontend`) to isolate; if that works, the cause is likely PM2 + `cmd /c` + esbuild. See `dev/errors-inventory.md`. |
 | **`api-dev`**, **"can't open file 'main.py'"**, **"Could not import module 'app.main'"**, or **"Script ... PYTHON.EXE had too many unstable restarts"** | A stale `api-dev` app is in PM2 (not in `ecosystem.config.cjs`). It tries to run `main.py` or `app.main`, which do not exist; the real backend is `backend-dev` via `scripts/run_dev.py` → `server:app`. Run `npx pm2 delete api-dev` (or `npm run dev:pm2:stop`, which now removes `api-dev` too), then `npm run dev:pm2` to start only `backend-dev`, `frontend-dev`, and `openfin-dev`. |
 | **OpenFin does not open** or **openfin-dev exits with error** | Read `logs/pm2/openfin-dev-out*.log` and `logs/pm2/openfin-dev-error*.log` (or `pm2 logs openfin-dev`). They log `BACKEND_URL`, `FRONTEND_URL`, `OPENFIN_MANIFEST_URL` and the wrap step. Ensure `OPENFIN_ENABLED` is not `0` if you expect OpenFin. Backend and frontend must be up (launcher waits for `/api/health` and `FRONTEND_URL`). If you see **"backend did not become ready; aborting OpenFin launch"**, the backend never responded in time: check `backend-dev` is running and stable (`pm2 status`, `logs/pm2/backend-dev-error*.log` for crash loops). Install OpenFin RVM if needed; see `scripts/launch_openfin.ps1` or `scripts/launch_openfin.sh`. On Windows, ensure PowerShell can run the launch script; on Unix, ensure `bash` and RVM (or `xdg-open`/`open`) are available. |

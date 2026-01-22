@@ -1,4 +1,7 @@
-# Polymarket Surveillance Signals
+---
+title: Polymarket Surveillance Signals
+description: Configure Polymarket surveillance for insider-like decision support with baselines, signals, and alerts
+---
 
 Polymarket surveillance provides insider-like decision support: baselines, signals, and alerts derived from the Polymarket Data API. Access requires a Pro (or higher) subscription when `SURVEILLANCE_REQUIRES_PRO` is enabled.
 
@@ -76,4 +79,4 @@ Unique on `(entity_type, entity_id, window, metric)` for upsert.
 - **List:** `GET /api/polymarket/surveillance/alerts?severity=...&reviewed=...&limit=50&offset=0`
 - **Review:** `POST /api/polymarket/surveillance/alerts/{id}/review` with body `{ "resolution": "dismissed" | "escalated" | "false_positive" }`
 
-The **Surveillance** section in the Polymarket Market Dashboard shows the `SurveillanceAlertsPanel`: it lists alerts, supports severity/reviewed filters, and a “Review” action with resolution dropdown. On 403 (subscription required), the panel shows an “Upgrade to Pro” CTA instead of the alerts table.
+The **Surveillance** section in the Polymarket Market Dashboard shows the `SurveillanceAlertsPanel`: it lists alerts, supports severity/reviewed filters, and a "Review" action with resolution dropdown. On 403 (subscription required), the panel shows an "Upgrade to Pro" CTA instead of the alerts table.

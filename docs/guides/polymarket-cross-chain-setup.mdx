@@ -1,4 +1,7 @@
-# Polymarket Cross-Chain Setup
+---
+title: Polymarket Cross-Chain Setup
+description: Configure cross-chain bridging and SFP outcome token minting for Polymarket-style prediction markets
+---
 
 Cross-chain support allows bridging and SFP outcome token minting on L2s (e.g. Base, Polygon) for Polymarket-style prediction markets. When `CROSS_CHAIN_ENABLED=true`, the bridge API and outcome token contract can be used by `BridgeService` and related APIs (see roadmap).
 
@@ -94,5 +97,5 @@ SFP_OUTCOME_TOKEN_CONTRACT=0x...
 ## 8. Related
 
 - **Polymarket (SFP markets):** `POLYMARKET_ENABLED`, `POLYMARKET_API_URL`, `POLYMARKET_GAMMA_API_URL`, etc. — for internal SFP prediction markets and optional Gamma/CLOB. See `dev/POLYMARKET_CONFIGURATION_GUIDE.md` or `.env.example` if present.
-- **Polymarket Surveillance:** [Polymarket Surveillance Signals](polymarket-surveillance-signals.md) — `POLYMARKET_DATA_API_URL`, `POLYMARKET_SURVEILLANCE_ENABLED`.
+- **Polymarket Surveillance:** [Polymarket Surveillance Signals](./polymarket-surveillance-signals.mdx) — `POLYMARKET_DATA_API_URL`, `POLYMARKET_SURVEILLANCE_ENABLED`.
 - **Blockchain / RPC:** `X402_NETWORK_RPC_URL`, `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` — used for on-chain calls including outcome token minting when wired.

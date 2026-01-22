@@ -282,6 +282,43 @@ DeepResearch performs iterative web research with knowledge accumulation.
 
 **Feature Documentation**: [Agent Workflows](/features/agent-workflows#deepresearch)
 
+### Reranking Configuration
+
+Reranking improves search result quality by reordering results based on relevance.
+
+<ParamField body="RERANKING_USE_LOCAL" type="boolean">
+  Use local reranking model (True) or remote API (False). Default: `true`
+  
+  **Local**: Uses sentence-transformers CrossEncoder (requires GPU/CPU resources)
+  **Remote**: Uses API-based reranking (e.g., Cohere, Jina)
+</ParamField>
+
+<ParamField body="RERANKING_MODEL" type="string">
+  Local reranking model identifier (HuggingFace model ID). Default: `"BAAI/bge-reranker-base"`
+  
+  **Alternatives**: 
+  - `"BAAI/bge-reranker-large"` (better quality)
+  - `"cross-encoder/ms-marco-MiniLM-L-6-v2"` (faster)
+</ParamField>
+
+<ParamField body="RERANKING_DEVICE" type="string">
+  Device for local reranking: `"cpu"`, `"cuda"`, `"cuda:0"`, etc. Default: `"cpu"`
+</ParamField>
+
+<ParamField body="RERANKING_API_URL" type="string">
+  Remote reranking API URL (only needed if `RERANKING_USE_LOCAL=false`).
+  
+  **Examples**:
+  - Cohere: `https://api.cohere.ai/v1/rerank`
+  - Jina: `https://api.jina.ai/v1/rerank`
+</ParamField>
+
+<ParamField body="RERANKING_API_KEY" type="string">
+  Remote reranking API key (only needed if using remote reranking)
+</ParamField>
+
+**Code Reference**: `app/services/web_search_service.py`
+
 ### PeopleHub Configuration
 
 PeopleHub provides business intelligence and psychometric analysis.
@@ -336,11 +373,33 @@ For production, SSL/TLS encryption is required:
   Path to SSL client key file (optional)
 </ParamField>
 
-<ParamField body="DB_SSL_CA" type="string">
-  Path to SSL CA certificate file (optional)
+<ParamField body="DB_SSL_CA_CERT" type="string">
+  Path to SSL CA certificate file (required for `verify-ca` and `verify-full` modes)
 </ParamField>
 
-**Code Reference**: `app/core/config.py` (lines 129-227), [SECURITY.md](https://github.com/josephrp/creditnexus/blob/main/SECURITY.md) (Database SSL section)
+<ParamField body="DB_SSL_AUTO_GENERATE" type="boolean">
+  Automatically generate self-signed certificates for development. Default: `false`
+</ParamField>
+
+<ParamField body="DB_SSL_AUTO_GENERATE_CA" type="boolean">
+  Auto-generate CA certificate. Default: `true` (when `DB_SSL_AUTO_GENERATE=true`)
+</ParamField>
+
+<ParamField body="DB_SSL_AUTO_GENERATE_CLIENT" type="boolean">
+  Auto-generate client certificate for mutual TLS. Default: `false`
+</ParamField>
+
+<ParamField body="DB_SSL_AUTO_CERT_DIR" type="string">
+  Certificate directory for auto-generated certificates. Default: `"./ssl_certs/db"`
+</ParamField>
+
+<ParamField body="DB_SSL_AUTO_CERT_VALIDITY_DAYS" type="integer">
+  Certificate validity period in days. Default: `365`
+</ParamField>
+
+**Setup Guide**: See [Database SSL Setup Guide](/guides/database-ssl-setup) and [SSL Troubleshooting Guide](/guides/ssl-troubleshooting)
+
+**Code Reference**: `app/core/config.py`, `app/db/ssl_config.py`
 
 ---
 
@@ -697,6 +756,257 @@ CreditNexus uses Base network (Coinbase Layer 2) for blockchain operations.
 </ParamField>
 
 **Code Reference**: `app/agents/vector_store.py`
+
+---
+
+## Data Cache Configuration
+
+CreditNexus uses unified caching for market data, tools, and external APIs. All TTL values are in seconds.
+
+<ParamField body="CACHE_TTL_OHLCV_1D" type="integer">
+  Daily OHLCV bars cache TTL. Default: `604800` (7 days)
+</ParamField>
+
+<ParamField body="CACHE_TTL_OHLCV_1H" type="integer">
+  Hourly OHLCV bars cache TTL. Default: `86400` (1 day)
+</ParamField>
+
+<ParamField body="CACHE_TTL_OHLCV_15M" type="integer">
+  15-minute OHLCV bars cache TTL. Default: `14400` (4 hours)
+</ParamField>
+
+<ParamField body="CACHE_TTL_SNAPSHOT" type="integer">
+  Ticker snapshot cache TTL (e.g., Polygon). Default: `90` (90 seconds)
+</ParamField>
+
+<ParamField body="CACHE_TTL_FUNDAMENTAL" type="integer">
+  Fundamental data cache TTL (e.g., Alpha Vantage). Default: `86400` (24 hours)
+</ParamField>
+
+<ParamField body="CACHE_TTL_NEWS" type="integer">
+  News cache TTL (e.g., Tickertick). Default: `1800` (30 minutes)
+</ParamField>
+
+<ParamField body="CACHE_TTL_WEB_SEARCH" type="integer">
+  Web search results cache TTL. Default: `3600` (1 hour)
+</ParamField>
+
+<ParamField body="CACHE_TTL_TRADING_QUOTE" type="integer">
+  Alpaca/trading quotes cache TTL. Default: `60` (1 minute)
+</ParamField>
+
+<ParamField body="CACHE_TTL_BACKTEST" type="integer">
+  Backtest results cache TTL. Default: `86400` (24 hours)
+</ParamField>
+
+**Code Reference**: `app/core/data_cache.py`
+
+---
+
+## Stock Prediction Configuration
+
+Stock prediction provides daily, hourly, and 15-minute forecasts using Chronos models or technical strategies.
+
+<ParamField body="STOCK_PREDICTION_ENABLED" type="boolean">
+  Enable stock prediction APIs (daily, hourly, 15min, backtest, recommend-order, models, market-status). Default: `false`
+  
+  If `false`, all prediction endpoints return 403.
+</ParamField>
+
+<ParamField body="STOCK_PREDICTION_DEFAULT_LOOKBACK_DAILY" type="integer">
+  Default lookback bars for daily predictions. Default: `252`
+</ParamField>
+
+<ParamField body="STOCK_PREDICTION_DEFAULT_LOOKBACK_HOURLY" type="integer">
+  Default lookback bars for hourly predictions. Default: `504`
+</ParamField>
+
+<ParamField body="STOCK_PREDICTION_DEFAULT_LOOKBACK_15MIN" type="integer">
+  Default lookback bars for 15-minute predictions. Default: `96`
+</ParamField>
+
+<ParamField body="STOCK_PREDICTION_USE_LOCAL" type="boolean">
+  Run Chronos locally with `chronos-bolt` (True) or use Modal `chronos_inference` (False). Default: `false`
+  
+  **Local**: Requires `pip install chronos-bolt torch`
+</ParamField>
+
+<ParamField body="CHRONOS_MODEL_ID" type="string">
+  Chronos model identifier. Default: `"amazon/chronos-t5-small"`
+  
+  **Options**: `"amazon/chronos-t5-small"`, `"amazon/chronos-t5-base"`
+  
+  Selectable in Predictions tab and via `model_id` query parameter.
+</ParamField>
+
+<ParamField body="CHRONOS_DEVICE" type="string">
+  Device for Chronos: `"cpu"`, `"cuda"`, `"cuda:0"`. Default: `"cpu"`
+  
+  Used by Modal and when running locally.
+</ParamField>
+
+<ParamField body="MODAL_APP_NAME" type="string">
+  Modal app name for Chronos. Default: `"creditnexus-stock-prediction"`
+</ParamField>
+
+<ParamField body="MODAL_TOKEN_ID" type="string">
+  Modal token ID for server-side client (optional)
+</ParamField>
+
+<ParamField body="MODAL_TOKEN_SECRET" type="string">
+  Modal token secret
+</ParamField>
+
+<ParamField body="MODAL_USE_GPU" type="boolean">
+  Use GPU (T4) for Chronos inference on Modal. Default: `false`
+  
+  **Note**: Set `MODAL_USE_GPU=1` when running `modal run` or `modal deploy` (environment variable at run/deploy time).
+</ParamField>
+
+**Setup Guide**: See [Stock Prediction Setup Guide](/guides/stock-prediction-setup)
+
+**Code Reference**: `app/services/stock_prediction_service.py`, `app/services/chronos_model_manager.py`
+
+---
+
+## Alpaca Trading & Market Data Configuration
+
+Alpaca is used for trading (place/cancel orders, portfolio) and historical OHLCV for stock prediction when enabled.
+
+<ParamField body="ALPACA_BASE_URL" type="string">
+  Trading API base URL. Default: `"https://paper-api.alpaca.markets"`
+  
+  **Paper**: `https://paper-api.alpaca.markets`
+  **Live**: `https://api.alpaca.markets`
+</ParamField>
+
+<ParamField body="ALPACA_API_KEY" type="string">
+  Alpaca API key. Get from https://alpaca.markets/
+</ParamField>
+
+<ParamField body="ALPACA_API_SECRET" type="string">
+  Alpaca API secret. Get from https://alpaca.markets/
+</ParamField>
+
+<ParamField body="ALPACA_DATA_ENABLED" type="boolean">
+  Use Alpaca for historical bars in stock prediction and backtesting. Default: `false`
+  
+  When `false`, `MarketDataService` uses yahooquery only.
+</ParamField>
+
+**Setup Guide**: See [Alpaca Trading Setup Guide](/guides/alpaca-trading-setup)
+
+**Code Reference**: `app/services/trading_api_service.py`, `app/services/market_data_service.py`
+
+---
+
+## Polymarket Configuration
+
+Polymarket-style prediction markets for Structured Financial Products (SFPs).
+
+<ParamField body="POLYMARKET_ENABLED" type="boolean">
+  Enable Polymarket features. Default: `false`
+</ParamField>
+
+<ParamField body="POLYMARKET_API_URL" type="string">
+  Polymarket CLOB API URL. Default: `"https://clob.polymarket.com"`
+</ParamField>
+
+<ParamField body="POLYMARKET_API_KEY" type="string">
+  Optional CLOB API key
+</ParamField>
+
+<ParamField body="POLYMARKET_NETWORK" type="string">
+  Blockchain network. Default: `"polygon"`
+</ParamField>
+
+<ParamField body="POLYMARKET_GAMMA_API_URL" type="string">
+  Gamma API URL. Default: `"https://gamma-api.polymarket.com"`
+</ParamField>
+
+<ParamField body="POLYMARKET_DATA_API_URL" type="string">
+  Data API URL. Default: `"https://data-api.polymarket.com"`
+</ParamField>
+
+<ParamField body="POLYMARKET_SURVEILLANCE_ENABLED" type="boolean">
+  Enable market surveillance and alerts. Default: `false`
+</ParamField>
+
+<ParamField body="POLYMARKET_PUBLISH_EXTERNAL" type="boolean">
+  Publish markets to external Polymarket. Default: `false`
+</ParamField>
+
+**Setup Guide**: See [Polymarket Surveillance Signals Guide](/guides/polymarket-surveillance-signals)
+
+**Code Reference**: `app/services/polymarket_service.py`, `app/api/polymarket_routes.py`
+
+---
+
+## Cross-Chain Configuration
+
+Cross-chain support allows bridging and SFP outcome token minting on L2s (e.g., Base, Polygon).
+
+<ParamField body="CROSS_CHAIN_ENABLED" type="boolean">
+  Enable cross-chain bridge and outcome token minting. Default: `false`
+</ParamField>
+
+<ParamField body="POLYMARKET_BRIDGE_API_URL" type="string">
+  Bridge API base URL for cross-chain transfers (Polymarket bridge or custom relay)
+</ParamField>
+
+<ParamField body="OUTCOME_TOKEN_CHAIN_ID" type="integer">
+  Chain ID for outcome tokens (e.g., Base=8453, Polygon=137)
+</ParamField>
+
+<ParamField body="SFP_OUTCOME_TOKEN_CONTRACT" type="string">
+  ERC-1155 SFP outcome token contract address on `OUTCOME_TOKEN_CHAIN_ID`
+</ParamField>
+
+**Setup Guide**: See [Polymarket Cross-Chain Setup Guide](/guides/polymarket-cross-chain-setup)
+
+**Code Reference**: `app/services/bridge_service.py`, `app/api/cross_chain_routes.py`
+
+---
+
+## RevenueCat Configuration
+
+RevenueCat integration enables entitlement checks and subscription upgrades via x402 payments.
+
+<ParamField body="REVENUECAT_ENABLED" type="boolean">
+  Enable RevenueCat integration. Default: `false`
+  
+  Enables entitlement checks (`GET /api/subscriptions/entitlement`) and post-x402 promotional grants.
+</ParamField>
+
+<ParamField body="REVENUECAT_API_KEY" type="string">
+  RevenueCat secret API key (sk_...) for REST API. Required when `REVENUECAT_ENABLED=true`
+</ParamField>
+
+<ParamField body="REVENUECAT_ENTITLEMENT_PRO" type="string">
+  Entitlement identifier for Pro tier (Polymarket, premium features). Default: `"pro"`
+</ParamField>
+
+<ParamField body="SUBSCRIPTION_UPGRADE_AMOUNT" type="float">
+  Amount in USD for subscription upgrade via x402 (`POST /api/subscriptions/upgrade`). Default: `9.99`
+</ParamField>
+
+**Code Reference**: `app/services/subscription_service.py`, `app/api/subscription_routes.py`
+
+---
+
+## Rolling Credits & CreditToken Configuration
+
+Rolling credits are subscription-based credits that can optionally be registered on-chain via the CreditToken ERC-721 contract.
+
+<ParamField body="CREDIT_TOKEN_CONTRACT" type="string">
+  CreditToken (ERC-721) contract address. Default: `""`
+  
+  If empty, credits are still generated in DB but **not** registered on-chain.
+</ParamField>
+
+**Setup Guide**: See [Rolling Credits Setup Guide](/guides/rolling-credits-setup)
+
+**Code Reference**: `app/services/rolling_credits_service.py`, `contracts/contracts/CreditToken.sol`
 
 ---
 
