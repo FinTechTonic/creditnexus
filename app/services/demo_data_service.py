@@ -21,13 +21,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.db.models import (
-from app.utils import get_debug_log_path
     User, UserRole, Deal, Application, Document, DocumentVersion, Workflow,
     GeneratedDocument, DealNote, PolicyDecision, DealStatus,
     DealType, ApplicationStatus, ApplicationType, WorkflowState, GeneratedDocumentStatus,
     GreenFinanceAssessment, SecuritizationPool, SecuritizationTranche,
     SecuritizationPoolAsset, RegulatoryFiling, NotarizationRecord
 )
+from app.utils import get_debug_log_path
+
 from app.models.cdm import CreditAgreement
 from app.models.loan_asset import LoanAsset
 from app.models.user_profile import UserProfileData
