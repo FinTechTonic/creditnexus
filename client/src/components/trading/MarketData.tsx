@@ -68,9 +68,25 @@ export function MarketData() {
       }
 
       const data: MarketDataState = await response.json();
-      setMarketData(data);
-      if (data.prices.length > 0 && !selectedSymbol) {
-        setSelectedSymbol(data.prices[0].symbol);
+      // Filter out prices with null/undefined values to prevent display issues
+      const validPrices = (data.prices || []).filter(p => 
+        p.symbol && 
+        p.price != null && 
+        !isNaN(p.price) && 
+        p.price > 0
+      );
+      setMarketData({
+        ...data,
+        prices: validPrices
+      });
+      if (validPrices.length > 0 && !selectedSymbol) {
+        setSelectedSymbol(validPrices[0].symbol);
+      } else if (validPrices.length === 0 && selectedSymbol) {
+        // If current selected symbol is no longer valid, clear selection
+        const stillValid = validPrices.find(p => p.symbol === selectedSymbol);
+        if (!stillValid) {
+          setSelectedSymbol('');
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load market data');

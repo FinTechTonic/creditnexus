@@ -3,6 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any
+import math
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Numeric, Date, Float, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import relationship
@@ -3001,6 +3002,12 @@ class StockPrediction(Base):
     user = relationship("User", foreign_keys=[user_id])
 
     def to_dict(self):
+        # Extract forecast array from stored dict
+        forecast_data = self.forecast if isinstance(self.forecast, dict) else {}
+        forecast_array = forecast_data.get("forecast", []) if isinstance(forecast_data, dict) else (self.forecast if isinstance(self.forecast, list) else [])
+        if not isinstance(forecast_array, list):
+            forecast_array = []
+        
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -3008,7 +3015,7 @@ class StockPrediction(Base):
             "timeframe": self.timeframe,
             "model_id": self.model_id,
             "strategy": self.strategy,
-            "forecast": self.forecast,
+            "forecast": forecast_array,  # Return as array for API compatibility
             "lookback_days": self.lookback_days,
             "horizon": self.horizon,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -3077,6 +3084,10 @@ class PredictionOrderRecommendation(Base):
     prediction = relationship("StockPrediction", foreign_keys=[prediction_id])
 
     def to_dict(self):
+        # Ensure confidence is a valid float, defaulting to 0.5 if None or NaN
+        confidence_val = self.confidence
+        if confidence_val is None or (isinstance(confidence_val, float) and math.isnan(confidence_val)):
+            confidence_val = 0.5
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -3084,7 +3095,7 @@ class PredictionOrderRecommendation(Base):
             "symbol": self.symbol,
             "action": self.action,
             "size": float(self.size) if self.size is not None else None,
-            "confidence": self.confidence,
+            "confidence": float(confidence_val) if confidence_val is not None else 0.5,
             "strategy": self.strategy,
             "reasoning": self.reasoning,
             "created_at": self.created_at.isoformat() if self.created_at else None,

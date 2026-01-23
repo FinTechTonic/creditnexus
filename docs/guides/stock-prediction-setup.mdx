@@ -17,7 +17,7 @@ Stock prediction provides daily, hourly, and 15‑minute forecasts (Chronos or t
 | **Backtesting** | `run_backtest_from_data_source` in `app.stock_prediction_core.backtesting`; strategies: trend, mean_reversion, momentum, volatility, stat_arb, combined |
 | **Modal** | `chronos_inference`, `chronos_train` (stub), `market_status` — optional when not using local Chronos |
 
-**Code**: `app/services/stock_prediction_service.py`, `app/services/chronos_model_manager.py`, `app/services/market_data_service.py`, `app/stock_prediction_core/backtesting.py`, `modal/app.py`, `app/api/stock_prediction_routes.py`
+**Code**: `app/services/stock_prediction_service.py`, `app/services/chronos_model_manager.py`, `app/services/market_data_service.py`, `app/stock_prediction_core/backtesting.py`, `modal_app/app.py`, `app/api/stock_prediction_routes.py`
 
 ---
 
@@ -72,9 +72,9 @@ pip install chronos-bolt torch
 | `MODAL_APP_NAME` | Modal app name | `creditnexus-stock-prediction` |
 | `MODAL_TOKEN_ID` | Modal token ID for server-side client (optional) | — |
 | `MODAL_TOKEN_SECRET` | Modal token secret | — |
-| `MODAL_USE_GPU` | **Env at run/deploy time.** `1`, `true`, or `yes`: Modal `chronos_inference` and `chronos_train` use GPU (T4). Set when running: `MODAL_USE_GPU=1 modal run modal/app.py` or `MODAL_USE_GPU=1 modal deploy` | — |
+| `MODAL_USE_GPU` | **Env at run/deploy time.** `1`, `true`, or `yes`: Modal `chronos_inference` and `chronos_train` use GPU (T4). Set when running: `MODAL_USE_GPU=1 modal run modal_app/app.py` or `MODAL_USE_GPU=1 modal deploy` | — |
 
-Modal image: `modal/image.py` (`chronos-bolt`, `torch`, `alpaca-py`, `pandas`, etc.).
+Modal image: `modal_app/image.py` (`chronos-bolt`, `torch`, `alpaca-py`, `pandas`, etc.).
 
 ---
 
@@ -130,5 +130,5 @@ When `RollingCreditsService` is used, `stock_prediction_daily`, `stock_predictio
 | 403 on prediction/backtest | `STOCK_PREDICTION_ENABLED=true` |
 | "Insufficient data" in backtest | Date range and symbol; need ≥130 bars. For 1d, use ~6+ months. yahooquery/Alpaca must return OHLCV. |
 | Chronos "chronos/torch not installed" | Local: `pip install chronos-bolt torch` |
-| Modal inference fails | `modal run modal/app.py` or `modal deploy`; `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` if the app invokes Modal. `MODAL_USE_GPU=1` when deploying for GPU. |
+| Modal inference fails | `modal run modal_app/app.py` or `modal deploy`; `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` if the app invokes Modal. `MODAL_USE_GPU=1` when deploying for GPU. |
 | No market data | `yahooquery` installed; or Alpaca with `ALPACA_DATA_ENABLED`, valid keys, and `ALPACA_BASE_URL` when also trading. |
