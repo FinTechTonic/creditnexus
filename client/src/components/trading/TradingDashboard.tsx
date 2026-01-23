@@ -5,7 +5,7 @@
  * Integrated with the unified dashboard system.
  */
 
-import { useState } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { OrderForm } from './OrderForm';
@@ -21,9 +21,47 @@ import { PerformanceAnalytics } from './PerformanceAnalytics';
 import { TrendingUp, Wallet, BarChart3, History, LineChart, BarChart2, Layers, Eye, Bell } from 'lucide-react';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export function TradingDashboard() {
-  const [activeTab, setActiveTab] = useState('orders');
+  // Persist activeTab in sessionStorage to survive re-renders
+  const getInitialTab = () => {
+    try {
+      const saved = sessionStorage.getItem('tradingDashboardActiveTab');
+      return saved && ['orders', 'portfolio', 'market', 'watchlists', 'alerts', 'predictions', 'backtest', 'history', 'structured'].includes(saved)
+        ? saved
+        : 'orders';
+    } catch {
+      return 'orders';
+    }
+  };
+  
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+  const isInitialMount = useRef(true);
+
+  // Save tab to sessionStorage whenever it changes
+  useEffect(() => {
+    if (!isInitialMount.current) {
+      try {
+        sessionStorage.setItem('tradingDashboardActiveTab', activeTab);
+      } catch (e) {
+        console.debug('Failed to save activeTab to sessionStorage:', e);
+      }
+    } else {
+      isInitialMount.current = false;
+    }
+  }, [activeTab]);
+
+  // Prevent tab from resetting if there's an error or re-render
+  const handleTabChange = useCallback((value: string) => {
+    try {
+      if (value && value !== activeTab) {
+        setActiveTab(value);
+      }
+    } catch (e) {
+      console.error('Error changing tab:', e);
+    }
+  }, [activeTab]);
 
   return (
     <PermissionGate
@@ -50,7 +88,7 @@ export function TradingDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-9">
             <TabsTrigger value="orders" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
@@ -114,11 +152,15 @@ export function TradingDashboard() {
           </TabsContent>
 
           <TabsContent value="predictions" className="space-y-4 mt-6">
-            <StockPredictionTab />
+            <ErrorBoundary>
+              <StockPredictionTab />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="backtest" className="space-y-4 mt-6">
-            <BacktestTab />
+            <ErrorBoundary>
+              <BacktestTab />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="history" className="space-y-4 mt-6">

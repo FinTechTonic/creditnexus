@@ -118,6 +118,9 @@ def get_historical_data(
       (alpaca.data.StockHistoricalDataClient) if alpaca-py is available.
     - Otherwise: uses yahooquery (Ticker.history). Requires yahooquery.
 
+    Note: For Alpaca free accounts, automatically adjusts end date to avoid
+    15-minute restriction (free accounts cannot query last 15 minutes).
+
     Returns:
         DataFrame with DatetimeIndex and columns Open, High, Low, Close, Volume,
         or None if unconfigured or error.
@@ -130,18 +133,45 @@ def get_historical_data(
     # Normalize symbol to uppercase
     symbol = symbol.strip().upper()
     
-    # Validate date range
-    is_valid, error_msg = validate_date_range(start, end)
-    if not is_valid:
-        logger.warning("Invalid date range for symbol %s: %s", symbol, error_msg)
-        return None
-    
+    # Ensure timezone-aware
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
     if end.tzinfo is None:
         end = end.replace(tzinfo=timezone.utc)
+    
+    # Store original end date for cache key (before any adjustments)
+    original_end = end
+    
+    # For Alpaca free accounts: adjust end date to avoid 15-minute restriction
+    # Free accounts cannot query data from the last 15 minutes
+    key = getattr(settings, "ALPACA_API_KEY", None)
+    secret = getattr(settings, "ALPACA_API_SECRET", None)
+    use_alpaca = getattr(settings, "ALPACA_DATA_ENABLED", False) or (key is not None and secret is not None)
+    
+    if use_alpaca and key and secret:
+        # Check if end date is too recent (within last 15 minutes)
+        now = datetime.now(timezone.utc)
+        time_since_end = (now - end).total_seconds() / 60  # minutes
+        if time_since_end < 16:  # Less than 16 minutes ago
+            # Adjust end date to 16 minutes ago to avoid Alpaca free account restriction
+            adjusted_end = now - timedelta(minutes=16)
+            if adjusted_end <= start:
+                # If adjusted end is at or before start, we need a valid range
+                # Set start to 1 day before adjusted end to ensure we have a valid range
+                start = adjusted_end - timedelta(days=1)
+            logger.debug("Adjusted end date for Alpaca free account restriction: original=%s, adjusted=%s (now=%s, time_since_end=%.1f min)", 
+                        original_end.isoformat(), adjusted_end.isoformat(), now.isoformat(), time_since_end)
+            end = adjusted_end
+    
+    # Validate date range (after potential adjustment)
+    is_valid, error_msg = validate_date_range(start, end)
+    if not is_valid:
+        logger.warning("Invalid date range for symbol %s: %s", symbol, error_msg)
+        return None
 
-    cache_key = dc.make_key("ohlcv", symbol, start.date().isoformat(), end.date().isoformat(), timeframe)
+    # Use original end date for cache key to maintain cache consistency
+    # The actual API call will use the adjusted end date if needed
+    cache_key = dc.make_key("ohlcv", symbol, start.date().isoformat(), original_end.date().isoformat(), timeframe)
     cached = dc.get(cache_key, db)
     if cached is not None:
         return pd.read_json(io.StringIO(json.dumps(cached)), orient="split")
@@ -157,9 +187,11 @@ def get_historical_data(
         if df is not None and not df.empty:
             _set_ohlcv_cache(cache_key, df, timeframe, db)
             return df
-        # If Alpaca is configured, never fall back to yahooquery - return None instead
-        logger.warning("Alpaca is configured but returned no data for %s. Not falling back to yahooquery to maintain data consistency.", symbol)
-        return None
+        # For historical data (not real-time), allow fallback to yahooquery if Alpaca returns no data
+        # This ensures charts and backtesting work even if Alpaca subscription doesn't cover the data
+        logger.warning("Alpaca is configured but returned no data for %s (start=%s, end=%s). Falling back to yahooquery for historical data.", 
+                      symbol, start.isoformat(), end.isoformat())
+        # Continue to yahooquery fallback below
 
     # yahooquery path - only use if Alpaca is NOT configured at all
     df = _get_yahooquery_bars(symbol, start, end, timeframe)
@@ -185,11 +217,24 @@ def _get_yahooquery_bars(symbol: str, start: datetime, end: datetime, timeframe:
     try:
         t = Ticker(symbol)
         # Fix yahooquery datetime comparison issue: convert datetime to date
+        # Also ensure end_date is not in the future (yahooquery doesn't like future dates)
         start_date = start.date() if hasattr(start, 'date') else start
         end_date = end.date() if hasattr(end, 'date') else end
+        today = datetime.now(timezone.utc).date()
+        if end_date > today:
+            logger.debug("Adjusted yahooquery end_date from %s to %s (today)", end_date, today)
+            end_date = today
+        # Ensure start_date is not after end_date
+        if start_date > end_date:
+            logger.warning("yahooquery: start_date %s is after end_date %s, adjusting start_date", start_date, end_date)
+            start_date = end_date - timedelta(days=1)
+        logger.debug("yahooquery: fetching %s from %s to %s (interval=%s)", symbol, start_date, end_date, interval)
         df = t.history(start=start_date, end=end_date, interval=interval)
         if df is None or df.empty:
+            logger.warning("yahooquery returned None or empty DataFrame for %s (start=%s, end=%s, interval=%s)", 
+                          symbol, start_date, end_date, interval)
             return None
+        logger.debug("yahooquery: retrieved %d rows for %s", len(df), symbol)
         if isinstance(df.index, pd.MultiIndex):
             df = df.droplevel(0)
         df = df.sort_index()
@@ -257,10 +302,17 @@ def _get_alpaca_bars(
         
         logger.debug("Alpaca API call: symbol=%s, start=%s (UTC), end=%s (UTC), timeframe=%s", 
                     symbol, start.isoformat(), end.isoformat(), timeframe)
-        bars = client.get_stock_bars(req)
+        try:
+            bars = client.get_stock_bars(req)
+        except Exception as api_error:
+            logger.warning("Alpaca API exception for %s: %s (start=%s, end=%s, timeframe=%s). "
+                          "This may indicate API key issues, subscription limitations, or network problems.",
+                          symbol, api_error, start.isoformat(), end.isoformat(), timeframe, exc_info=True)
+            return None
+        
         if bars is None:
             logger.warning("Alpaca get_stock_bars returned None for %s (start=%s, end=%s, timeframe=%s). "
-                          "Possible causes: symbol not available, invalid date range, or API access issue.", 
+                          "Possible causes: symbol not available, invalid date range, API access issue, or subscription limitations (Basic plan cannot query last 15 minutes).", 
                           symbol, start.isoformat(), end.isoformat(), timeframe)
             return None
         

@@ -57,6 +57,12 @@ export function OrderRecommendationCard({
         throw new Error(d.detail || d.error || d.reason || `HTTP ${res.status}`);
       }
       const data = await res.json();
+      // Ensure confidence is a valid number
+      if (data.confidence != null && !isNaN(data.confidence)) {
+        data.confidence = Number(data.confidence);
+      } else {
+        data.confidence = 0.5; // Default confidence if missing/invalid
+      }
       setRec(data);
       onRecommendation?.(data);
     } catch (e) {
@@ -104,7 +110,11 @@ export function OrderRecommendationCard({
               <ActionIcon className={`h-5 w-5 ${actionClass}`} />
               <span className="font-medium capitalize">{rec.action}</span>
               <span className="text-muted-foreground">· {rec.symbol}</span>
-              <span className="text-muted-foreground text-sm">{(rec.confidence * 100).toFixed(0)}% confidence</span>
+              <span className="text-muted-foreground text-sm">
+                {rec.confidence != null && !isNaN(rec.confidence) 
+                  ? `${(Number(rec.confidence) * 100).toFixed(0)}% confidence`
+                  : 'Confidence unavailable'}
+              </span>
             </div>
             {rec.reasoning && <p className="text-sm text-muted-foreground">{rec.reasoning}</p>}
             <p className="text-xs text-muted-foreground">Strategy: {rec.strategy}</p>

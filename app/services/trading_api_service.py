@@ -453,18 +453,47 @@ class AlpacaTradingAPIService(TradingAPIService):
                     except Exception as e3:
                         logger.debug(f"TradingClient fallback failed: {e3}")
             
-            # If all approaches failed, return None values
+            # If all approaches failed, try fallback to historical data service
             if out is None:
-                logger.warning(f"All market data approaches failed for {symbol}, returning None values")
-                out = {
-                    "symbol": symbol,
-                    "bid_price": None,
-                    "ask_price": None,
-                    "bid_size": None,
-                    "ask_size": None,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "raw_response": serialize_cdm_data({"source": "unavailable", "note": "Market data not available"})
-                }
+                logger.warning(f"All market data approaches failed for {symbol}, trying historical data fallback")
+                try:
+                    from app.services.market_data_service import get_historical_data
+                    from datetime import timedelta
+                    
+                    # Get most recent close price from historical data
+                    end_time = datetime.utcnow()
+                    start_time = end_time - timedelta(days=5)
+                    df = get_historical_data(symbol, start_time, end_time, timeframe="1D", db=db)
+                    
+                    if df is not None and not df.empty and len(df) > 0:
+                        # Use the most recent close price
+                        close_col = "Close" if "Close" in df.columns else "close"
+                        if close_col in df.columns:
+                            latest_price = float(df[close_col].iloc[-1])
+                            out = {
+                                "symbol": symbol,
+                                "bid_price": latest_price,
+                                "ask_price": latest_price,
+                                "bid_size": None,
+                                "ask_size": None,
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "raw_response": serialize_cdm_data({"source": "historical_fallback", "price": latest_price})
+                            }
+                except Exception as e_fallback:
+                    logger.debug(f"Historical data fallback failed: {e_fallback}")
+                
+                # Final fallback: return None values but with a valid structure
+                if out is None:
+                    logger.warning(f"All market data approaches failed for {symbol}, returning None values")
+                    out = {
+                        "symbol": symbol,
+                        "bid_price": None,
+                        "ask_price": None,
+                        "bid_size": None,
+                        "ask_size": None,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "raw_response": serialize_cdm_data({"source": "unavailable", "note": "Market data not available"})
+                    }
             
             dc.set(cache_key, out, dc.TTL_TRADING_QUOTE, dc.SOURCE_TRADING, dc.KIND_PUNCTUAL, db)
             return out

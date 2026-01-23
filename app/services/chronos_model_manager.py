@@ -18,9 +18,10 @@ def _run_local_chronos(
         from chronos import ChronosPipeline
         import torch
 
-        pipe = ChronosPipeline.from_pretrained(model_id, device_map=device, torch_dtype=torch.float32)
+        pipe = ChronosPipeline.from_pretrained(model_id, device_map=device, dtype=torch.float32)
         t = torch.tensor([context], dtype=torch.float32)
-        forecast = pipe.predict(context=t, prediction_length=horizon, num_samples=20)
+        # ChronosPipeline.predict() takes context as positional argument, not keyword
+        forecast = pipe.predict(t, prediction_length=horizon, num_samples=20)
         med = forecast.median(dim=1).values
         return {"forecast": med[0].tolist(), "model_id": model_id}
     except ImportError as e:

@@ -5,7 +5,7 @@
  * broadcasts finos.creditnexus.stockPrediction on successful run.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import { resolveApiUrl } from '@/utils/apiBase';
 import { MarketStatusWidget } from './MarketStatusWidget';
 import { PredictionChart } from './PredictionChart';
 import { OrderRecommendationCard } from './OrderRecommendationCard';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 function symbolFromContext(ctx: { type?: string; symbol?: string; id?: { ticker?: string; symbol?: string }; symbols?: string[] } | null): string | undefined {
   if (!ctx) return undefined;
@@ -37,12 +38,85 @@ export function StockPredictionTab() {
   const [timeframe, setTimeframe] = useState<Timeframe>('daily');
   const [strategy, setStrategy] = useState<Strategy>('chronos');
   const [modelId, setModelId] = useState('');
-  const [result, setResult] = useState<{ forecast?: number[]; prediction_id?: number; error?: string; cached?: boolean } | null>(null);
+  // Load result from sessionStorage on mount to persist across re-renders
+  const getInitialResult = (): { forecast?: number[]; prediction_id?: number; error?: string; cached?: boolean } | null => {
+    try {
+      const saved = sessionStorage.getItem('stockPredictionResult');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Only restore if it's recent (within last hour)
+        if (parsed.timestamp && Date.now() - parsed.timestamp < 3600000) {
+          return parsed.result;
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+    return null;
+  };
+  
+  const initialResult = getInitialResult();
+  const [result, setResult] = useState<{ forecast?: number[]; prediction_id?: number; error?: string; cached?: boolean } | null>(initialResult);
   const [loading, setLoading] = useState(false);
+  // Track our own broadcasts to prevent reacting to them
+  const lastBroadcastRef = useRef<{ symbol: string; prediction_id?: number } | null>(null);
+  // Persist result in ref to prevent loss during re-renders
+  const resultRef = useRef<{ forecast?: number[]; prediction_id?: number; error?: string; cached?: boolean } | null>(initialResult);
+  
+  // Sync ref with state whenever result changes
+  useEffect(() => {
+    if (result) {
+      resultRef.current = result;
+    }
+  }, [result]);
 
   useEffect(() => {
-    const s = symbolFromContext(context as Parameters<typeof symbolFromContext>[0]);
-    if (s && s !== symbol) setSymbol(s);
+    try {
+      // Ignore our own broadcasts by checking if this context matches what we just broadcasted
+      if (context?.type === 'finos.creditnexus.stockPrediction') {
+        const ctx = context as { symbol?: string; prediction_id?: number };
+        if (lastBroadcastRef.current && 
+            ctx.symbol === lastBroadcastRef.current.symbol &&
+            ctx.prediction_id === lastBroadcastRef.current.prediction_id) {
+          // This is our own broadcast - ignore it completely
+          // Don't update symbol, don't clear result, just return
+          // Also restore result from ref if it was lost during re-render
+          if (!result && resultRef.current) {
+            setResult(resultRef.current);
+          }
+          return;
+        }
+      }
+      
+      const s = symbolFromContext(context as Parameters<typeof symbolFromContext>[0]);
+      // Only update symbol if it's different AND not from our own broadcast
+      // IMPORTANT: Don't clear result when updating symbol from external context
+      if (s && s !== symbol && context?.type !== 'finos.creditnexus.stockPrediction') {
+        setSymbol(s);
+        // Note: We intentionally don't clear result here - let user keep their prediction results
+      }
+      
+      // Restore result from ref or sessionStorage if it was lost (safety check)
+      if (!result) {
+        if (resultRef.current) {
+          setResult(resultRef.current);
+        } else {
+          const restored = getInitialResult();
+          if (restored) {
+            resultRef.current = restored;
+            setResult(restored);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error in StockPredictionTab useEffect:', e);
+      // Restore result from ref on error
+      if (!result && resultRef.current) {
+        setResult(resultRef.current);
+      }
+    }
+    // Only depend on context, not symbol, to avoid infinite loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [context]);
 
   const runPrediction = async () => {
@@ -65,28 +139,73 @@ export function StockPredictionTab() {
         setResult({ error: data.error || data.detail || `HTTP ${res.status}` });
         return;
       }
-      const forecast = Array.isArray(data.forecast) ? data.forecast : (data.forecast as number[] | undefined);
+      // Handle forecast data - it might be nested in the response
+      let forecast: number[] = [];
+      if (data.forecast) {
+        if (Array.isArray(data.forecast)) {
+          forecast = data.forecast;
+        } else if (typeof data.forecast === 'object' && Array.isArray(data.forecast.forecast)) {
+          // Handle nested forecast structure
+          forecast = data.forecast.forecast;
+        }
+      }
+      
       const next = {
-        forecast: forecast || [],
+        forecast: forecast,
         prediction_id: data.prediction_id,
         error: data.error || undefined,
         cached: data.cached === true,
       };
+      // Set result first to ensure UI updates
+      // Also store in ref and sessionStorage to persist across re-renders
+      resultRef.current = next;
       setResult(next);
+      // Persist to sessionStorage
       try {
-        broadcast(createStockPredictionContext(symbol.trim(), {
-          symbol: symbol.trim(),
-          timeframe,
-          strategy,
-          forecast: next.forecast,
-          signal: (data as { signal?: 'bullish'|'bearish'|'neutral' }).signal,
-          prediction_id: next.prediction_id,
-          cached: next.cached,
+        sessionStorage.setItem('stockPredictionResult', JSON.stringify({
+          result: next,
+          timestamp: Date.now(),
         }));
-      } catch {
-        // ignore FDC3 broadcast errors
+      } catch (e) {
+        console.debug('Failed to save result to sessionStorage:', e);
+      }
+      
+      // Only broadcast if we have a valid forecast or prediction_id
+      // Use setTimeout to defer broadcast and prevent it from interfering with state updates
+      // Increased delay to ensure state updates complete before broadcast
+      if (forecast.length > 0 || next.prediction_id) {
+        // Track what we're about to broadcast so we can ignore it in useEffect
+        lastBroadcastRef.current = {
+          symbol: symbol.trim(),
+          prediction_id: next.prediction_id,
+        };
+        
+        // Defer broadcast significantly to ensure UI has fully updated
+        setTimeout(() => {
+          try {
+            broadcast(createStockPredictionContext(symbol.trim(), {
+              symbol: symbol.trim(),
+              timeframe,
+              strategy,
+              forecast: next.forecast,
+              signal: (data as { signal?: 'bullish'|'bearish'|'neutral' }).signal,
+              prediction_id: next.prediction_id,
+              cached: next.cached,
+            }));
+            // Clear the ref after a delay to allow useEffect to process it
+            setTimeout(() => {
+              lastBroadcastRef.current = null;
+            }, 500);
+          } catch (e) {
+            // ignore FDC3 broadcast errors - don't let them break the UI
+            console.debug('FDC3 broadcast error (ignored):', e);
+            // Clear the ref if broadcast failed
+            lastBroadcastRef.current = null;
+          }
+        }, 300);
       }
     } catch (e) {
+      console.error('Prediction request failed:', e);
       setResult({ error: e instanceof Error ? e.message : 'Request failed' });
     } finally {
       setLoading(false);
@@ -96,7 +215,9 @@ export function StockPredictionTab() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <MarketStatusWidget market="US_STOCKS" />
+        <ErrorBoundary fallback={<Card><CardContent className="py-6 text-muted-foreground text-sm">Market status unavailable</CardContent></Card>}>
+          <MarketStatusWidget market="US_STOCKS" />
+        </ErrorBoundary>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Predict</CardTitle>
@@ -161,15 +282,17 @@ export function StockPredictionTab() {
             </Button>
           </CardContent>
         </Card>
-        <OrderRecommendationCard
-          symbol={symbol}
-          predictionId={result?.prediction_id}
-          timeframe={timeframe}
-        />
+        <ErrorBoundary fallback={<Card><CardContent className="py-6 text-muted-foreground text-sm">Order recommendation unavailable</CardContent></Card>}>
+          <OrderRecommendationCard
+            symbol={symbol}
+            predictionId={result?.prediction_id}
+            timeframe={timeframe}
+          />
+        </ErrorBoundary>
       </div>
 
       {result && (
-        <Card>
+        <Card key={`result-${result.prediction_id || 'temp'}`}>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <LineChart className="h-4 w-4" />
@@ -180,7 +303,13 @@ export function StockPredictionTab() {
             {result.error ? (
               <p className="text-destructive">{result.error}</p>
             ) : (
-              <PredictionChart forecast={result.forecast || []} title={`${symbol} ${timeframe}`} />
+              <ErrorBoundary fallback={
+                <div className="py-6 text-muted-foreground text-sm">
+                  Error displaying chart. Forecast data: {result.forecast?.length || 0} points
+                </div>
+              }>
+                <PredictionChart forecast={result.forecast || []} title={`${symbol} ${timeframe}`} />
+              </ErrorBoundary>
             )}
           </CardContent>
         </Card>

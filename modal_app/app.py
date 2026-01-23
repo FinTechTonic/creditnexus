@@ -1,22 +1,33 @@
 """Modal App for CreditNexus stock prediction (Chronos inference, market, training)."""
 
 import os
-import importlib.util
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Dict, List
 
 import modal
 
-# Load image.py explicitly to avoid import conflicts with modal package
-_image_path = Path(__file__).parent / "image.py"
-_spec = importlib.util.spec_from_file_location("modal_image", _image_path)
-_image_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_image_module)
-chronos_image = _image_module.chronos_image
+# Define chronos_image directly in app.py to avoid import issues in Modal container
+# Modal will include this file when deploying, so we don't need to import image.py separately
+chronos_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install("git")
+    .pip_install(
+        "torch>=2.0.0",
+        "chronos-forecasting>=2.2.2",
+        "alpaca-py>=0.15.0",
+        "pandas>=2.0.0",
+        "numpy>=1.24.0",
+        "scikit-learn>=1.0.0",
+        "hmmlearn>=0.2.7",
+        "textblob>=0.17.1",
+        "arch>=6.0.0",
+        "plotly>=5.0.0",
+        "pytz>=2023.3",
+    )
+)
 
 # Config from env: MODAL_USE_GPU (1/true/yes) and CHRONOS_DEVICE (cpu, cuda, cuda:0).
-# Set when running: modal run modal/app.py or modal deploy, e.g. MODAL_USE_GPU=1 modal deploy
+# Set when running: modal run modal_app/app.py or modal deploy, e.g. MODAL_USE_GPU=1 modal deploy
 _MODAL_USE_GPU = os.getenv("MODAL_USE_GPU", "").lower() in ("1", "true", "yes")
 _CHRONOS_DEVICE = os.getenv("CHRONOS_DEVICE", "cpu")
 
@@ -40,10 +51,11 @@ def chronos_inference(
         from chronos import ChronosPipeline
         import torch
 
-        pipe = ChronosPipeline.from_pretrained(model_id, device_map=dev, torch_dtype=torch.float32)
+        pipe = ChronosPipeline.from_pretrained(model_id, device_map=dev, dtype=torch.float32)
         # context: [batch, length] or [length]; we have [length]
+        # ChronosPipeline.predict() takes context as positional argument, not keyword
         t = torch.tensor([context], dtype=torch.float32)
-        forecast = pipe.predict(context=t, prediction_length=horizon, num_samples=20)
+        forecast = pipe.predict(t, prediction_length=horizon, num_samples=20)
         # forecast: [batch, num_samples, horizon]; take median over samples
         med = forecast.median(dim=1).values
         out = med[0].tolist()

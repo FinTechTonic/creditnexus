@@ -612,7 +612,7 @@ class SecuritizationService:
             SecuritizationTranche.pool_id == pool_id
         ).all()
         
-        existing_tranche_sum = sum(Decimal(str(t.tranche_size)) for t in existing_tranches)
+        existing_tranche_sum = sum(Decimal(str(t.size)) for t in existing_tranches)
         
         # Validate new tranches
         new_tranche_sum = Decimal("0")
@@ -680,7 +680,7 @@ class SecuritizationService:
                     tranche_id=tranche_id,
                     tranche_name=t.tranche_name,
                     tranche_class=t.tranche_class,
-                    size=Money(amount=Decimal(str(t.tranche_size)), currency=Currency(pool.currency)),
+                    size=Money(amount=Decimal(str(t.size)), currency=Currency(pool.currency)),
                     interest_rate=t.interest_rate,
                     risk_rating=t.risk_rating,
                     payment_priority=t.payment_priority,
@@ -823,7 +823,7 @@ class SecuritizationService:
             
             payment_result = loop.run_until_complete(
                 payment_service.process_payment_flow(
-                amount=tranche.tranche_size,
+                amount=tranche.size,
                 currency=Currency(pool.currency),
                 payer=payer,
                 receiver=receiver,
@@ -835,6 +835,9 @@ class SecuritizationService:
             
             if payment_result.get("status") != "settled":
                 return payment_result  # Returns 402 Payment Required structure
+        
+        # Initialize payment_result to avoid UnboundLocalError
+        payment_result = {}
         
         # Get buyer wallet address
         buyer_wallet = self.wallet_service.ensure_user_has_wallet(buyer, self.db)
@@ -851,13 +854,13 @@ class SecuritizationService:
             "tranche_id": tranche_id,
             "tranche_name": tranche.tranche_name,
             "tranche_class": tranche.tranche_class,
-            "size": str(tranche.tranche_size),
+            "size": str(tranche.size),
             "interest_rate_percent": str(tranche.interest_rate),
             "risk_rating": tranche.risk_rating,
             "buyer_id": buyer_id,
             "purchase_date": datetime.utcnow().isoformat(),
             # Contract-specific fields (required for mintTranche function)
-            "principal_amount": int(tranche.tranche_size),  # In smallest currency unit (e.g., cents for USD)
+            "principal_amount": int(tranche.size),  # In smallest currency unit (e.g., cents for USD)
             "interest_rate": interest_rate_bps,  # In basis points for contract
             "payment_priority": tranche.payment_priority if hasattr(tranche, 'payment_priority') else 999
         }
@@ -871,7 +874,7 @@ class SecuritizationService:
             )
             
             # Update tranche record with token_id and owner
-            # Store in cdm_tranche_data if fields don't exist in schema yet
+            # Store in cdm_data (not cdm_tranche_data - that field doesn't exist)
             if mint_result.get("token_id"):
                 # Try to set fields if they exist
                 if hasattr(tranche, 'token_id'):
@@ -879,13 +882,13 @@ class SecuritizationService:
                 if hasattr(tranche, 'owner_wallet_address'):
                     tranche.owner_wallet_address = buyer_wallet
                 
-                # Also store in cdm_tranche_data for compatibility
-                tranche_data = tranche.cdm_tranche_data or {}
-                if not isinstance(tranche_data, dict):
-                    tranche_data = {}
-                tranche_data["token_id"] = mint_result["token_id"]
-                tranche_data["owner_wallet_address"] = buyer_wallet
-                tranche.cdm_tranche_data = tranche_data
+                # Also store in cdm_data for compatibility
+                cdm_data = tranche.cdm_data or {}
+                if not isinstance(cdm_data, dict):
+                    cdm_data = {}
+                cdm_data["token_id"] = mint_result["token_id"]
+                cdm_data["owner_wallet_address"] = buyer_wallet
+                tranche.cdm_data = cdm_data
                 
                 self.db.commit()
                 self.db.refresh(tranche)
@@ -898,7 +901,7 @@ class SecuritizationService:
                 "tranche_id": tranche_id,
                 "buyer_id": buyer_id,
                 "token_id": mint_result.get("token_id"),
-                "transaction_hash": payment_result.get("transaction_hash") if payment_service else mint_result.get("transaction_hash"),
+                "transaction_hash": payment_result.get("transaction_hash") if payment_service and payment_result else mint_result.get("transaction_hash"),
                 "mint_status": mint_result.get("status", "pending")
             }
         except Exception as e:
@@ -909,7 +912,7 @@ class SecuritizationService:
                 "pool_id": pool_id,
                 "tranche_id": tranche_id,
                 "buyer_id": buyer_id,
-                "transaction_hash": payment_result.get("transaction_hash") if payment_service else None,
+                "transaction_hash": payment_result.get("transaction_hash") if payment_service and payment_result else None,
                 "token_id": None,
                 "warning": f"Token minting failed: {str(e)}"
             }
@@ -961,11 +964,11 @@ class SecuritizationService:
             if payment_type == "interest":
                 tranche_payment = min(
                     remaining,
-                    (tranche.tranche_size * tranche.interest_rate) / Decimal("100")
+                    (tranche.size * tranche.interest_rate) / Decimal("100")
                 )
             else:
                 # Principal payment
-                tranche_payment = min(remaining, tranche.tranche_size)
+                tranche_payment = min(remaining, tranche.size)
             
             if tranche_payment > 0:
                 # Get tranche holders (owners of tokens for this tranche)

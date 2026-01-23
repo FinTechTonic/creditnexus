@@ -253,6 +253,40 @@ async def list_orders(
         raise HTTPException(status_code=500, detail=f"Failed to list orders: {str(e)}")
 
 
+@router.get("/orders/history", response_model=List[OrderResponse])
+async def get_order_history(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    order_service: OrderService = Depends(get_order_service)
+):
+    """Get order history for the current user.
+    
+    Alias for GET /api/trades/orders with default filters for completed orders.
+    Requires PERMISSION_TRADE_VIEW permission.
+    """
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    
+    # Default to showing filled/cancelled orders if no status specified
+    if not status:
+        # Get all orders and filter client-side, or use a default filter
+        pass
+    
+    return await list_orders(
+        status=status,
+        symbol=symbol,
+        limit=limit,
+        offset=offset,
+        db=db,
+        current_user=current_user,
+        order_service=order_service
+    )
+
+
 @router.get("/orders/{order_id}", response_model=OrderResponse)
 async def get_order(
     order_id: str,
@@ -563,44 +597,6 @@ async def get_market_data(
     except Exception as e:
         logger.error(f"Failed to get market data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get market data: {str(e)}")
-
-
-# ============================================================================
-# Order History Endpoint (alias for list_orders)
-# ============================================================================
-
-@router.get("/orders/history", response_model=List[OrderResponse])
-async def get_order_history(
-    status: Optional[str] = Query(None, description="Filter by status"),
-    symbol: Optional[str] = Query(None, description="Filter by symbol"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
-    offset: int = Query(0, ge=0, description="Offset for pagination"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    order_service: OrderService = Depends(get_order_service)
-):
-    """Get order history for the current user.
-    
-    Alias for GET /api/trades/orders with default filters for completed orders.
-    Requires PERMISSION_TRADE_VIEW permission.
-    """
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
-    
-    # Default to showing filled/cancelled orders if no status specified
-    if not status:
-        # Get all orders and filter client-side, or use a default filter
-        pass
-    
-    return await list_orders(
-        status=status,
-        symbol=symbol,
-        limit=limit,
-        offset=offset,
-        db=db,
-        current_user=current_user,
-        order_service=order_service
-    )
 
 
 # ============================================================================
@@ -953,7 +949,11 @@ async def get_ohlcv_data(
     symbol = symbol.strip().upper()
     
     try:
-        end = datetime.now(timezone.utc)
+        # For Alpaca free accounts: cannot query data from last 15 minutes
+        # Set end time to at least 15 minutes ago to avoid subscription limitations
+        now = datetime.now(timezone.utc)
+        # Subtract 16 minutes to ensure we're outside the 15-minute restriction window
+        end = now - timedelta(minutes=16)
         start = end - timedelta(days=days)
         
         df = get_historical_data(symbol, start, end, timeframe, db=db)
