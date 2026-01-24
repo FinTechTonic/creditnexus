@@ -151,10 +151,6 @@ async def create_securitization_pool(
                     except (ValueError, TypeError):
                         loan_asset_id = None
                 asset_dict["loan_asset_id"] = loan_asset_id
-            elif asset.get("asset_type") == "equity":
-                asset_dict["equity_symbol"] = asset.get("equity_symbol") or asset.get("asset_id")
-            elif asset.get("asset_type") == "commodity":
-                asset_dict["commodity_code"] = asset.get("commodity_code") or asset.get("asset_id")
             underlying_assets.append(asset_dict)
         
         # Convert tranche data format; support auto_tranche for bundle builder
