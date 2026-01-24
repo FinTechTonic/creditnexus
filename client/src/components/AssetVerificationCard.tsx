@@ -24,6 +24,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { useLayerStore } from '@/stores/layerStore';
 
 interface LoanAsset {
   id: number;
@@ -115,6 +116,41 @@ export function AssetVerificationCard({ assetId, onVerify }: AssetVerificationCa
     }
   };
 
+  /** Fetch layers from API and hydrate into layer store + map overlays after audit/run. */
+  const refetchAndHydrateLayers = async (id: number) => {
+    try {
+      const res = await fetchWithAuth(`/api/layers/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const layers = (data.layers || []).map((l: { id: number; layer_type: string; metadata?: Record<string, unknown>; bounds?: { north?: number; south?: number; east?: number; west?: number }; thumbnail_url?: string; created_at?: string }) => ({
+        id: l.id,
+        type: l.layer_type,
+        metadata: l.metadata || {},
+        bounds: l.bounds && l.bounds.north != null && l.bounds.south != null && l.bounds.east != null && l.bounds.west != null
+          ? { north: l.bounds.north, south: l.bounds.south, east: l.bounds.east, west: l.bounds.west }
+          : { north: 0, south: 0, east: 0, west: 0 },
+        thumbnail_url: l.thumbnail_url,
+        created_at: l.created_at
+      }));
+      const store = useLayerStore.getState();
+      store.setLayers(id, layers);
+      const overlays = store.mapState.overlays;
+      layers.forEach((layer, i) => {
+        if (!overlays.find((o) => o.layerId === String(layer.id))) {
+          store.addOverlay({
+            layerId: String(layer.id),
+            opacity: 0.7,
+            visible: true,
+            blendingMode: 'normal',
+            zIndex: overlays.length + i
+          });
+        }
+      });
+    } catch (e) {
+      console.error('Failed to hydrate layers after verification', e);
+    }
+  };
+
   const runVerification = async () => {
     try {
       setVerifying(true);
@@ -125,6 +161,8 @@ export function AssetVerificationCard({ assetId, onVerify }: AssetVerificationCa
         const data = await response.json();
         setAsset(data.loan_asset);
         onVerify?.();
+        // Hydrate layers into the layer store so MapView/LayerOverlays can display them
+        await refetchAndHydrateLayers(assetId);
       } else {
         // Get error message from response
         const errorData = await response.json().catch(() => ({ detail: 'Verification failed' }));
