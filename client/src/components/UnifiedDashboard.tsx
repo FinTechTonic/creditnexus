@@ -12,6 +12,8 @@ import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
 import { BridgeBuilder } from '@/components/BridgeBuilder';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
+import { QuickAccessSettings } from '@/components/QuickAccessSettings';
+import { UnifiedInvestmentDashboard } from '@/components/investment/UnifiedInvestmentDashboard';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -116,8 +118,8 @@ export function UnifiedDashboard() {
         id: 'trading',
         label: 'Trading',
         icon: <TrendingUp className="h-4 w-4" />,
-        component: () => <TradingDashboard />,
-        // requiredPermission removed: tab always visible; TradingDashboard's PermissionGate gates content
+        component: () => <UnifiedInvestmentDashboard />,
+        // requiredPermission removed: tab always visible; UnifiedInvestmentDashboard gates content
         subscriptionTier: 'free'
       },
       {
@@ -160,14 +162,7 @@ export function UnifiedDashboard() {
         requiredPermission: 'COMPLIANCE_VIEW', // Will be added to permissions.ts
         subscriptionTier: 'premium'
       },
-      {
-        id: 'portfolio',
-        label: 'Portfolio',
-        icon: <PieChart className="h-4 w-4" />,
-        component: PortfolioDashboard,
-        requiredPermission: 'PORTFOLIO_VIEW', // Will be added to permissions.ts
-        subscriptionTier: 'pro'
-      },
+      // Portfolio tab removed - now integrated into Trading tab (UnifiedInvestmentDashboard)
       {
         id: 'applications',
         label: 'Applications',
@@ -221,8 +216,11 @@ export function UnifiedDashboard() {
   }, [dashboardTabs, activeTab]);
 
   return (
-    <div className="flex flex-col h-full">
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+    <div className="flex flex-col h-full space-y-4">
+      {/* Quick Access Settings at top */}
+      <QuickAccessSettings />
+      
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <TabsList className="w-full justify-start border-b rounded-none">
           {dashboardTabs.map(tab => (
             <TabsTrigger

@@ -18,7 +18,8 @@ import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/button';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2 } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2, TrendingUp, BarChart3, PieChart, PenTool, FileCheck, DollarSign, Calendar, Users, Settings, Layers, FileSearch } from 'lucide-react';
+import { UserMenu } from '@/components/UserMenu';
 import { useAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext, WorkflowLinkContext } from '@/context/FDC3Context';
@@ -40,6 +41,8 @@ import { LinkAccounts } from '@/apps/link-accounts/LinkAccounts';
 import { AssetAlertsView } from '@/apps/asset-alerts/AssetAlertsView';
 import { PortfolioRiskView } from '@/apps/portfolio-risk/PortfolioRiskView';
 import { FilingStatusDashboard } from '@/components/FilingStatusDashboard';
+import { UserSettings } from '@/pages/UserSettings';
+import { AdminSettings } from '@/pages/AdminSettings';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useThemeClasses } from '@/utils/themeUtils';
 import { Link } from 'react-router-dom';
@@ -55,9 +58,14 @@ import {
   PERMISSION_DEAL_VIEW,
   PERMISSION_DEAL_VIEW_OWN,
   PERMISSION_AUDIT_VIEW,
+  PERMISSION_MARKET_VIEW,
+  PERMISSION_COMPLIANCE_VIEW,
+  PERMISSION_SIGNATURE_VIEW,
+  PERMISSION_APPLICATION_VIEW,
+  PERMISSION_BILLING_VIEW,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'whitelisting-dashboard' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings' | 'link-accounts' | 'asset-alerts' | 'portfolio-risk';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'whitelisting-dashboard' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings' | 'link-accounts' | 'asset-alerts' | 'portfolio-risk' | 'trading' | 'polymarket' | 'bridge' | 'signatures' | 'compliance' | 'billing' | 'settings' | 'admin-settings';
 
 interface AppConfig {
   id: AppView;
@@ -67,174 +75,336 @@ interface AppConfig {
   requiredPermission?: string;
   requiredPermissions?: string[];
   requireAll?: boolean;
+  subscriptionTier?: 'free' | 'pro' | 'premium' | 'lifetime';
+  category?: 'core' | 'trading' | 'compliance' | 'admin' | 'tools';
+  isInstanceAdminOnly?: boolean;
+  path?: string;
 }
 
-const mainApps: AppConfig[] = [
+// All apps consolidated into sidebar - mainApps removed, everything goes to sidebarApps
+const mainApps: AppConfig[] = [];
+
+const sidebarApps: AppConfig[] = [
+  // Core Applications
   {
     id: 'dashboard',
     name: 'Dashboard',
     icon: <LayoutDashboard className="h-5 w-5" />,
     description: 'Portfolio overview & analytics',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
-  },
-  {
-    id: 'document-parser',
-    name: 'Document Parser',
-    icon: <FileText className="h-5 w-5" />,
-    description: 'Extract & digitize credit agreements',
-    requiredPermission: PERMISSION_DOCUMENT_CREATE,
+    path: '/dashboard',
+    category: 'core',
+    subscriptionTier: 'free',
   },
   {
     id: 'library',
     name: 'Library',
     icon: <BookOpen className="h-5 w-5" />,
     description: 'Saved documents & history',
+    path: '/library',
+    category: 'core',
     requiredPermission: PERMISSION_DOCUMENT_VIEW,
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'document-parser',
+    name: 'Document Parser',
+    icon: <FileText className="h-5 w-5" />,
+    description: 'Extract & digitize credit agreements',
+    path: '/app/document-parser',
+    category: 'core',
+    requiredPermission: PERMISSION_DOCUMENT_CREATE,
+    subscriptionTier: 'free',
   },
   {
     id: 'document-generator',
     name: 'Document Generator',
     icon: <Sparkles className="h-5 w-5" />,
     description: 'Generate LMA documents from templates',
+    path: '/app/document-generator',
+    category: 'core',
     requiredPermissions: [PERMISSION_TEMPLATE_VIEW, PERMISSION_TEMPLATE_GENERATE],
     requireAll: false,
+    subscriptionTier: 'free',
   },
-];
-
-const sidebarApps: AppConfig[] = [
+  // Trading Applications
   {
-    id: 'demo-data',
-    name: 'Demo Data',
-    icon: <Database className="h-5 w-5 text-indigo-400" />,
-    description: 'Seed and manage demo data',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
-  },
-  {
-    id: 'verification-demo',
-    name: 'Verification Demo',
-    icon: <Sparkles className="h-5 w-5 text-indigo-400" />,
-    description: 'Live Verification Workflow',
-    requiredPermission: PERMISSION_SATELLITE_VIEW,
+    id: 'trading',
+    name: 'Trading',
+    icon: <TrendingUp className="h-5 w-5" />,
+    description: 'Execute trades and manage positions',
+    path: '/dashboard?tab=trading',
+    category: 'trading',
+    requiredPermission: PERMISSION_TRADE_VIEW,
+    subscriptionTier: 'pro',
   },
   {
-    id: 'ground-truth',
-    name: 'Ground Truth',
-    icon: <Shield className="h-5 w-5" />,
-    description: 'Geospatial verification for sustainability-linked loans',
-    requiredPermission: PERMISSION_SATELLITE_VIEW,
+    id: 'polymarket',
+    name: 'Polymarket',
+    icon: <BarChart3 className="h-5 w-5" />,
+    description: 'Credit event prediction markets',
+    path: '/dashboard?tab=polymarket',
+    category: 'trading',
+    requiredPermission: PERMISSION_MARKET_VIEW,
+    subscriptionTier: 'pro',
+  },
+  {
+    id: 'bridge',
+    name: 'Bridge',
+    icon: <ArrowLeftRight className="h-5 w-5" />,
+    description: 'Cross-chain asset transfers',
+    path: '/dashboard?tab=bridge',
+    category: 'trading',
+    requiredPermission: PERMISSION_TRADE_VIEW,
+    subscriptionTier: 'free',
   },
   {
     id: 'trade-blotter',
     name: 'Trade Blotter',
     icon: <ArrowLeftRight className="h-5 w-5" />,
     description: 'LMA trade confirmation & settlement',
+    path: '/app/trade-blotter',
+    category: 'trading',
     requiredPermission: PERMISSION_TRADE_VIEW,
+    subscriptionTier: 'free',
   },
   {
     id: 'link-accounts',
-    name: 'Link accounts',
-    icon: <Link2 className="h-5 w-5 text-cyan-400" />,
+    name: 'Link Accounts',
+    icon: <Link2 className="h-5 w-5" />,
     description: 'Connect bank and data sources',
+    path: '/app/link-accounts',
+    category: 'trading',
     requiredPermission: PERMISSION_TRADE_VIEW,
+    subscriptionTier: 'free',
   },
   {
     id: 'asset-alerts',
-    name: 'Asset alerts',
-    icon: <Bell className="h-5 w-5 text-amber-400" />,
+    name: 'Asset Alerts',
+    icon: <Bell className="h-5 w-5" />,
     description: 'Maturities and amortization reminders',
+    path: '/app/asset-alerts',
+    category: 'trading',
     requiredPermission: PERMISSION_TRADE_VIEW,
+    subscriptionTier: 'free',
   },
   {
     id: 'portfolio-risk',
-    name: 'Risk analysis',
-    icon: <BarChart2 className="h-5 w-5 text-cyan-400" />,
-    description: 'Asset-class allocation and diversification (Pro+)',
+    name: 'Risk Analysis',
+    icon: <BarChart2 className="h-5 w-5" />,
+    description: 'Portfolio risk metrics and analysis',
+    path: '/app/portfolio-risk',
+    category: 'trading',
     requiredPermission: PERMISSION_TRADE_VIEW,
+    subscriptionTier: 'pro',
+  },
+  // Compliance Applications
+  {
+    id: 'compliance',
+    name: 'Compliance',
+    icon: <Shield className="h-5 w-5" />,
+    description: 'Compliance monitoring and reporting',
+    path: '/dashboard?tab=compliance',
+    category: 'compliance',
+    requiredPermission: PERMISSION_COMPLIANCE_VIEW,
+    subscriptionTier: 'premium',
   },
   {
-    id: 'risk-war-room',
-    name: 'Risk War Room',
-    icon: <RadioTower className="h-5 w-5 text-red-500" />,
-    description: 'Global Portfolio Surveillance',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+    id: 'signatures',
+    name: 'Signatures',
+    icon: <PenTool className="h-5 w-5" />,
+    description: 'Document signature management',
+    path: '/dashboard?tab=signatures',
+    category: 'compliance',
+    requiredPermission: PERMISSION_SIGNATURE_VIEW,
+    subscriptionTier: 'free',
   },
   {
-    id: 'green-lens',
-    name: 'GreenLens',
-    icon: <Leaf className="h-5 w-5" />,
-    description: 'ESG performance & margin ratchet',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
-  },
-  {
-    id: 'policy-editor',
-    name: 'Policy Editor',
-    icon: <Shield className="h-5 w-5 text-purple-400" />,
-    description: 'Create and manage policy rules',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
-  },
-  {
-    id: 'admin-signups',
-    name: 'User Signups',
-    icon: <User className="h-5 w-5 text-blue-400" />,
-    description: 'Review platform user account signups (admin only)',
-    requiredPermission: PERMISSION_USER_VIEW,
-  },
-  {
-    id: 'agent-dashboard',
-    name: 'Agent Dashboard',
-    icon: <Sparkles className="h-5 w-5 text-emerald-400" />,
-    description: 'View and manage all agent analysis results',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+    id: 'applications',
+    name: 'Applications',
+    icon: <FileCheck className="h-5 w-5" />,
+    description: 'Loan and credit applications',
+    path: '/dashboard/applications',
+    category: 'compliance',
+    requiredPermission: PERMISSION_APPLICATION_VIEW,
+    subscriptionTier: 'free',
   },
   {
     id: 'deals',
     name: 'Deals',
-    icon: <Building2 className="h-5 w-5 text-emerald-400" />,
-    description: 'Deal management & lifecycle',
+    icon: <FileSearch className="h-5 w-5" />,
+    description: 'Deal management and tracking',
+    path: '/dashboard/deals',
+    category: 'compliance',
     requiredPermissions: [PERMISSION_DEAL_VIEW, PERMISSION_DEAL_VIEW_OWN],
     requireAll: false,
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'filings',
+    name: 'Filings',
+    icon: <FileText className="h-5 w-5" />,
+    description: 'Regulatory filing status',
+    path: '/app/filings',
+    category: 'compliance',
+    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'green-lens',
+    name: 'Green Lens',
+    icon: <Leaf className="h-5 w-5" />,
+    description: 'ESG analytics and sustainability',
+    path: '/app/green-lens',
+    category: 'compliance',
+    requiredPermission: PERMISSION_SATELLITE_VIEW,
+    subscriptionTier: 'pro',
+  },
+  {
+    id: 'ground-truth',
+    name: 'Ground Truth',
+    icon: <Shield className="h-5 w-5" />,
+    description: 'Geospatial verification for sustainability-linked loans',
+    path: '/app/ground-truth',
+    category: 'compliance',
+    requiredPermission: PERMISSION_SATELLITE_VIEW,
+    subscriptionTier: 'pro',
   },
   {
     id: 'auditor',
     name: 'Auditor',
-    icon: <Shield className="h-5 w-5 text-amber-400" />,
-    description: 'Audit dashboard & compliance monitoring',
+    icon: <Shield className="h-5 w-5" />,
+    description: 'Audit reports and compliance checks',
+    path: '/auditor',
+    category: 'compliance',
     requiredPermission: PERMISSION_AUDIT_VIEW,
+    subscriptionTier: 'premium',
+  },
+  // Tools
+  {
+    id: 'agent-dashboard',
+    name: 'Agent Dashboard',
+    icon: <Sparkles className="h-5 w-5" />,
+    description: 'AI agent workflows and results',
+    path: '/app/agent-dashboard',
+    category: 'tools',
+    subscriptionTier: 'pro',
   },
   {
     id: 'securitization',
     name: 'Securitization',
-    icon: <Building2 className="h-5 w-5 text-cyan-400" />,
-    description: 'Bundle deals into structured finance products',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+    icon: <Layers className="h-5 w-5" />,
+    description: 'Securitization pool management',
+    path: '/app/securitization',
+    category: 'tools',
+    requiredPermission: PERMISSION_TRADE_VIEW,
+    subscriptionTier: 'pro',
+  },
+  {
+    id: 'calendar',
+    name: 'Calendar',
+    icon: <Calendar className="h-5 w-5" />,
+    description: 'Deal and payment calendar',
+    path: '/dashboard/calendar',
+    category: 'tools',
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'billing',
+    name: 'Billing',
+    icon: <DollarSign className="h-5 w-5" />,
+    description: 'Billing and subscription management',
+    path: '/dashboard?tab=billing',
+    category: 'tools',
+    requiredPermission: PERMISSION_BILLING_VIEW,
+    subscriptionTier: 'free',
+  },
+  // Admin Applications (Instance Admin Only)
+  {
+    id: 'admin-signups',
+    name: 'User Signups',
+    icon: <Users className="h-5 w-5" />,
+    description: 'Review and approve user signups',
+    path: '/dashboard/admin-signups',
+    category: 'admin',
+    isInstanceAdminOnly: true,
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'demo-data',
+    name: 'Demo Data',
+    icon: <Database className="h-5 w-5" />,
+    description: 'Seed and manage demo data',
+    path: '/app/demo-data',
+    category: 'admin',
+    isInstanceAdminOnly: true,
+    subscriptionTier: 'free',
   },
   {
     id: 'verification-config',
     name: 'Verification Config',
-    icon: <Shield className="h-5 w-5 text-cyan-400" />,
-    description: 'Configure verification file whitelist',
-    requiredPermission: PERMISSION_USER_VIEW,
+    icon: <Settings className="h-5 w-5" />,
+    description: 'Verification file configuration',
+    path: '/app/verification-config',
+    category: 'admin',
+    isInstanceAdminOnly: true,
+    subscriptionTier: 'free',
   },
   {
     id: 'whitelisting-dashboard',
     name: 'Whitelisting',
-    icon: <Shield className="h-5 w-5 text-emerald-400" />,
-    description: 'File, IP, Implementation & Node whitelists',
-    requiredPermission: PERMISSION_USER_VIEW,
+    icon: <Shield className="h-5 w-5" />,
+    description: 'IP and file whitelist management',
+    path: '/app/whitelisting-dashboard',
+    category: 'admin',
+    isInstanceAdminOnly: true,
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'policy-editor',
+    name: 'Policy Editor',
+    icon: <Shield className="h-5 w-5" />,
+    description: 'Edit policy rules and compliance',
+    path: '/app/policy-editor',
+    category: 'admin',
+    isInstanceAdminOnly: true,
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'risk-war-room',
+    name: 'Risk War Room',
+    icon: <AlertTriangle className="h-5 w-5" />,
+    description: 'Risk monitoring and alerts',
+    path: '/app/risk-war-room',
+    category: 'admin',
+    isInstanceAdminOnly: true,
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'workflow-processor',
+    name: 'Workflow Processor',
+    icon: <Share2 className="h-5 w-5" />,
+    description: 'Process workflow links',
+    path: '/app/workflow/process',
+    category: 'admin',
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'workflow-share',
+    name: 'Workflow Share',
+    icon: <Share2 className="h-5 w-5" />,
+    description: 'Share workflow links',
+    path: '/app/workflow/share',
+    category: 'admin',
+    subscriptionTier: 'free',
   },
   {
     id: 'loan-recovery',
     name: 'Loan Recovery',
-    icon: <AlertTriangle className="h-5 w-5 text-red-500" />,
-    description: 'Loan recovery & default management',
-    requiredPermission: PERMISSION_DEAL_VIEW,
-  },
-  {
-    id: 'filings',
-    name: 'Regulatory Filings',
-    icon: <RadioTower className="h-5 w-5 text-indigo-400" />,
-    description: 'Manage regulatory filings & deadlines',
-    requiredPermission: PERMISSION_DOCUMENT_VIEW,
+    icon: <ArrowLeftRight className="h-5 w-5" />,
+    description: 'Loan recovery management',
+    path: '/app/loan-recovery',
+    category: 'admin',
+    subscriptionTier: 'free',
   },
 ];
 
@@ -291,7 +461,8 @@ export function DesktopAppLayout() {
       'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
       'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
       'policy-editor', 'library', 'auditor', 'securitization', 'verification-config', 'whitelisting-dashboard',
-      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk'
+      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk',
+      'trading', 'polymarket', 'bridge', 'signatures', 'compliance', 'billing', 'settings', 'admin-settings'
     ];
     
     // Try to restore from sessionStorage first
@@ -329,6 +500,8 @@ export function DesktopAppLayout() {
       '/app/filings': 'filings',
       '/library': 'library',
       '/auditor': 'auditor',
+      '/settings': 'settings',
+      '/admin-settings': 'admin-settings',
     };
     // Handle policy-editor routes with policyId parameter
     if (location.pathname.startsWith('/app/policy-editor')) {
@@ -342,6 +515,16 @@ export function DesktopAppLayout() {
     if (location.pathname.startsWith('/auditor')) {
       return 'auditor';
     }
+    // Handle dashboard tabs
+    const urlParams = new URLSearchParams(location.search);
+    const tab = urlParams.get('tab');
+    if (tab === 'trading') return 'trading';
+    if (tab === 'polymarket') return 'polymarket';
+    if (tab === 'bridge') return 'bridge';
+    if (tab === 'signatures') return 'signatures';
+    if (tab === 'compliance') return 'compliance';
+    if (tab === 'billing') return 'billing';
+    
     const result = pathToApp[location.pathname] || 'dashboard';
     return result;
   };
@@ -400,6 +583,11 @@ export function DesktopAppLayout() {
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const { isAvailable, pendingIntent, clearPendingIntent, onIntentReceived } = useFDC3();
   const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
+  
+  // Check if user is instance admin
+  const isInstanceAdmin = user?.role === 'admin' && user?.is_instance_admin === true;
+  // Check if user is organization admin
+  const isOrgAdmin = user?.role === 'admin' || user?.organization_role === 'admin';
   const isNavigatingRef = useRef(false);
   const lastNavigatedPathRef = useRef<string | null>(null);
   const visibleMainAppsRef = useRef<typeof mainApps>([]);
@@ -430,25 +618,37 @@ export function DesktopAppLayout() {
 
   const visibleSidebarApps = useMemo(() => {
     return sidebarApps.filter((app) => {
-      if (!app.requiredPermission && !app.requiredPermissions) {
-        return true; // No permission required
+      // Instance admin only apps
+      if (app.isInstanceAdminOnly && !isInstanceAdmin) {
+        return false;
       }
       
-      if (app.requiredPermission) {
-        return hasPermission(app.requiredPermission);
+      // Permission checks
+      if (app.requiredPermission && !hasPermission(app.requiredPermission)) {
+        return false;
       }
-      
       if (app.requiredPermissions) {
         if (app.requireAll) {
-          return hasAllPermissions(app.requiredPermissions);
+          if (!hasAllPermissions(app.requiredPermissions)) {
+            return false;
+          }
         } else {
-          return hasAnyPermission(app.requiredPermissions);
+          if (!app.requiredPermissions.some(p => hasPermission(p))) {
+            return false;
+          }
         }
       }
       
-      return false;
+      // Subscription tier check
+      const tierLevels = { free: 0, pro: 1, premium: 2, lifetime: 3 };
+      const userTier = user?.subscription_tier || 'free';
+      if (tierLevels[userTier] < tierLevels[app.subscriptionTier || 'free']) {
+        return false;
+      }
+      
+      return true;
     });
-  }, [hasPermission, hasAnyPermission, hasAllPermissions]);
+  }, [hasPermission, hasAnyPermission, hasAllPermissions, user, isInstanceAdmin]);
 
   // Keep refs in sync with current values
   useEffect(() => {
@@ -654,39 +854,13 @@ export function DesktopAppLayout() {
       }
     }
     
+    // Find app config to get path
+    const allApps = [...mainApps, ...sidebarApps];
+    const appConfig = allApps.find(a => a.id === app);
+    const path = appConfig?.path;
+    
     // Restore tab state for the new app if available
     const savedTab = typeof window !== 'undefined' ? sessionStorage.getItem(`creditnexus_${app}_tab`) : null;
-    
-    const appToPath: Record<AppView, string> = {
-      'dashboard': '/dashboard',
-      'applications': '/dashboard/applications',
-      'admin-signups': '/dashboard/admin-signups',
-      'calendar': '/dashboard/calendar',
-      'deals': '/dashboard/deals',
-      'document-parser': '/app/document-parser',
-      'document-generator': '/app/document-generator',
-      'trade-blotter': '/app/trade-blotter',
-      'link-accounts': '/app/link-accounts',
-      'asset-alerts': '/app/asset-alerts',
-      'portfolio-risk': '/app/portfolio-risk',
-      'green-lens': '/app/green-lens',
-      'ground-truth': '/app/ground-truth',
-      'verification-demo': '/app/verification-demo',
-      'demo-data': '/app/demo-data',
-      'risk-war-room': '/app/risk-war-room',
-      'policy-editor': '/app/policy-editor',
-      'verification-config': '/app/verification-config',
-      'whitelisting-dashboard': '/app/whitelisting-dashboard',
-      'securitization': '/app/securitization',
-      'agent-dashboard': '/app/agent-dashboard',
-      'library': '/library',
-      'auditor': '/auditor',
-      'workflow-share': '/app/workflow/share',
-      'workflow-processor': '/app/workflow/process',
-      'loan-recovery': '/app/loan-recovery',
-      'filings': '/app/filings',
-    };
-    const path = appToPath[app];
     
     // Build target path with tab parameter if saved tab exists
     let targetPath = path || '';
@@ -882,31 +1056,7 @@ export function DesktopAppLayout() {
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
-            {visibleMainApps.map((app) => (
-              <button
-                key={app.id}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleAppChange(app.id);
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeApp === app.id
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                  }`}
-              >
-                {app.icon}
-                <span className="hidden md:inline">{app.name}</span>
-                {app.id !== 'document-parser' && hasBroadcast && (
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
+          {/* Top menu removed - all apps moved to sidebar */}
 
           <div className="flex items-center gap-4">
             <ThemeToggle />
@@ -927,36 +1077,7 @@ export function DesktopAppLayout() {
                 <Loader2 className="h-4 w-4 animate-spin" />
               </div>
             ) : isAuthenticated && user ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  {user.profile_image ? (
-                    <img
-                      src={user.profile_image}
-                      alt={user.display_name}
-                      className="w-8 h-8 rounded-full object-cover border-2 border-emerald-500"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center border-2 border-emerald-500">
-                      <User className="h-4 w-4 text-slate-300" />
-                    </div>
-                  )}
-                  <div className="hidden md:block">
-                    <p className="text-sm font-medium text-slate-100">{user.display_name}</p>
-                    <p className="text-xs text-slate-400 capitalize">{user.role}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    logout();
-                    navigate('/login');
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors"
-                  title="Log out"
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span className="hidden lg:inline">Log out</span>
-                </button>
-              </div>
+              <UserMenu />
             ) : (
               <button
                 onClick={() => navigate('/login')}
@@ -983,34 +1104,64 @@ export function DesktopAppLayout() {
               {sidebarOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
             </button>
           </div>
-          <nav className="px-3 space-y-1">
-            <p className={`text-xs text-slate-500 uppercase tracking-wider px-2 py-2 ${!sidebarOpen && 'sr-only'}`}>
-              Tools
-            </p>
-            {visibleSidebarApps.map((app) => (
-              <button
-                key={app.id}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleAppChange(app.id);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeApp === app.id
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                  }`}
-                title={app.description}
-              >
-                {app.icon}
-                {sidebarOpen && <span>{app.name}</span>}
-                {hasBroadcast && (
-                  <span className="relative flex h-2 w-2 ml-auto">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                )}
-              </button>
-            ))}
+          <nav className="px-3 space-y-1 overflow-y-auto flex-1">
+            {['core', 'trading', 'compliance', 'tools', 'admin'].map(category => {
+              const categoryApps = visibleSidebarApps.filter(app => app.category === category);
+              if (categoryApps.length === 0) return null;
+              
+              return (
+                <div key={category} className="mb-4">
+                  {sidebarOpen && (
+                    <p className="text-xs text-slate-500 uppercase tracking-wider px-2 py-2">
+                      {category}
+                    </p>
+                  )}
+                  {categoryApps.map((app) => {
+                    // For tab-based apps (trading, polymarket, etc.), activeApp should be 'dashboard'
+                    const isActive = app.id === 'trading' || app.id === 'polymarket' || app.id === 'bridge' || 
+                                   app.id === 'signatures' || app.id === 'compliance' || app.id === 'billing'
+                                   ? activeApp === 'dashboard' && location.search.includes(`tab=${app.id}`)
+                                   : activeApp === app.id;
+                    
+                    return (
+                      <button
+                        key={app.id}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (app.path) {
+                            navigate(app.path);
+                            // For tab-based apps, set activeApp to 'dashboard'
+                            if (app.id === 'trading' || app.id === 'polymarket' || app.id === 'bridge' || 
+                                app.id === 'signatures' || app.id === 'compliance' || app.id === 'billing') {
+                              setActiveApp('dashboard');
+                            } else {
+                              handleAppChange(app.id);
+                            }
+                          } else {
+                            handleAppChange(app.id);
+                          }
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive
+                          ? 'bg-emerald-600 text-white'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                          }`}
+                        title={app.description}
+                      >
+                        {app.icon}
+                        {sidebarOpen && <span>{app.name}</span>}
+                        {hasBroadcast && (
+                          <span className="relative flex h-2 w-2 ml-auto">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
             <div className={`mt-4 pt-4 border-t border-slate-700 ${!sidebarOpen && 'hidden'}`}>
               <div className="flex items-center gap-2 px-2 py-2 text-sm text-slate-400" title={isAvailable ? 'FDC3 Desktop Agent Connected' : 'FDC3 Mock Mode'}>
                 <Radio className={`h-4 w-4 ${isAvailable ? 'text-emerald-500' : 'text-slate-500'}`} />
@@ -1108,6 +1259,8 @@ export function DesktopAppLayout() {
             // Default to workflow
             return <SecuritizationWorkflow />;
           })()}
+          {activeApp === 'settings' && <UserSettings />}
+          {activeApp === 'admin-settings' && <AdminSettings />}
         </main>
       </div>
 

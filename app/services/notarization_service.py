@@ -15,6 +15,7 @@ from app.utils.crypto_verification import (
     compute_payload_hash,
 )
 from app.models.cdm_events import generate_cdm_notarization_event
+from app.services.cdm_event_service import CDMEventService
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,14 @@ class NotarizationService:
             db: Database session
         """
         self.db = db
+        self.cdm_event_service = CDMEventService(db)
 
     def create_notarization_request(
-        self, deal_id: int, required_signers: List[str], message_prefix: Optional[str] = None
+        self, 
+        deal_id: int, 
+        required_signers: List[str], 
+        message_prefix: Optional[str] = None,
+        organization_id: Optional[int] = None
     ) -> NotarizationRecord:
         """Create a new notarization request.
 
@@ -39,6 +45,7 @@ class NotarizationService:
             deal_id: Deal ID
             required_signers: List of wallet addresses
             message_prefix: Optional prefix for signing message
+            organization_id: Optional organization ID for organization blockchain notarization
 
         Returns:
             Created NotarizationRecord
@@ -47,6 +54,10 @@ class NotarizationService:
 
         if not deal:
             raise ValueError(f"Deal {deal_id} not found")
+
+        # Get organization_id from deal applicant if not provided
+        if organization_id is None and deal.applicant and deal.applicant.organization_id:
+            organization_id = deal.applicant.organization_id
 
         # Get or create CDM payload
         cdm_payload = self._get_deal_cdm_payload(deal)
@@ -70,11 +81,79 @@ class NotarizationService:
         deal.notarization_required = True
         self.db.commit()
 
+        # If organization blockchain is available, prepare for organization-specific notarization
+        if organization_id and deal.applicant_id:
+            try:
+                from app.services.organization_context_service import OrganizationContextService
+                org_service = OrganizationContextService(self.db)
+                blockchain_config = org_service.get_organization_blockchain(deal.applicant_id)
+                if blockchain_config:
+                    logger.info(
+                        f"Notarization request {record.id} will use organization blockchain: "
+                        f"organization_id={organization_id}, chain_id={blockchain_config.get('chain_id')}"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to get organization blockchain config: {e}")
+
         logger.info(
             f"Created notarization request: deal_id={deal_id}, signers={len(required_signers)}"
         )
 
         return record
+    
+    def _notarize_on_org_blockchain(
+        self,
+        deal_id: int,
+        notarization_id: int,
+        organization_id: int,
+        blockchain_config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Notarize on organization-specific blockchain.
+        
+        Args:
+            deal_id: Deal ID
+            notarization_id: Notarization record ID
+            organization_id: Organization ID
+            blockchain_config: Organization blockchain configuration
+            
+        Returns:
+            Transaction hash dictionary or None
+        """
+        try:
+            from app.services.blockchain_service import BlockchainService
+            
+            # Initialize blockchain service with organization context
+            blockchain_service = BlockchainService(organization_context=blockchain_config)
+            
+            # Get notarization record
+            notarization = self.db.query(NotarizationRecord).filter(
+                NotarizationRecord.id == notarization_id
+            ).first()
+            
+            if not notarization:
+                return None
+            
+            # Use blockchain service to create notarization on chain
+            # This would use the organization's specific blockchain deployment
+            result = blockchain_service.create_pool_notarization_on_chain(
+                pool_id=str(deal_id),
+                notarization_hash_hex=notarization.notarization_hash,
+                signers=notarization.required_signers or []
+            )
+            
+            if result.get("success"):
+                logger.info(
+                    f"Notarized on organization blockchain: "
+                    f"deal_id={deal_id}, tx_hash={result.get('transaction_hash')}"
+                )
+                return result
+            else:
+                logger.warning(f"Failed to notarize on organization blockchain: {result.get('error')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error notarizing on organization blockchain: {e}", exc_info=True)
+            return None
 
     def generate_signing_message(
         self, notarization: NotarizationRecord, wallet_address: str
@@ -155,7 +234,7 @@ class NotarizationService:
             notarization.status = "signed"
             notarization.completed_at = datetime.utcnow()
 
-            # Generate CDM event
+            # Generate and persist CDM event
             try:
                 cdm_event = generate_cdm_notarization_event(
                     notarization_id=str(notarization.id),
@@ -171,6 +250,18 @@ class NotarizationService:
                 else:
                     # Fallback for string format
                     notarization.cdm_event_id = str(global_key) if global_key else ""
+                
+                # Persist CDM event if deal_id is available
+                if notarization.deal_id:
+                    try:
+                        self.cdm_event_service.persist_event(
+                            deal_id=notarization.deal_id,
+                            event_type="Notarization",
+                            event_data=cdm_event
+                        )
+                    except Exception as persist_error:
+                        logger.warning(f"Failed to persist CDM notarization event: {persist_error}")
+                
                 logger.info(f"Generated CDM notarization event: {notarization.cdm_event_id}")
             except Exception as e:
                 logger.error(f"Failed to generate CDM notarization event: {e}")

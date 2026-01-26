@@ -18,6 +18,7 @@ from app.api.trading_routes import get_trading_api_service
 from app.services.trading_api_service import TradingAPIService
 from app.services.subscription_service import SubscriptionService
 from app.services.portfolio_risk_service import PortfolioRiskService
+from app.services.technical_indicators_service import TechnicalIndicatorsService
 
 logger = logging.getLogger(__name__)
 
@@ -277,3 +278,30 @@ async def get_portfolio_performance(
     except Exception as e:
         logger.error(f"Failed to calculate portfolio performance: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to calculate performance: {str(e)}")
+
+
+@router.get("/technical-indicators")
+async def get_technical_indicators(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    days: int = Query(30, ge=1, le=365, description="Number of days for calculation")
+):
+    """Get technical indicators for user's portfolio.
+    
+    Returns RSI, MACD, Bollinger Bands, and Moving Averages.
+    Requires PERMISSION_TRADE_VIEW.
+    """
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    try:
+        service = TechnicalIndicatorsService(db)
+        indicators = service.get_portfolio_technical_indicators(
+            user_id=current_user.id,
+            days=days
+        )
+        
+        return indicators
+    except Exception as e:
+        logger.error(f"Failed to calculate technical indicators: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to calculate technical indicators: {str(e)}")

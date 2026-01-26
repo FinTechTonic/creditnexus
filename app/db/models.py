@@ -316,6 +316,14 @@ class User(Base):
     subscriptions = relationship("UserSubscription", back_populates="user")
     credit_balance = relationship("CreditBalance", back_populates="user", uselist=False)
     subscription_tier = Column(String(20), default=SubscriptionTier.FREE.value, nullable=False)
+    
+    # Admin fields
+    is_instance_admin = Column(Boolean, default=False, nullable=False, index=True)
+    organization_role = Column(String(50), nullable=True, index=True)  # 'admin', 'member', etc.
+    
+    # User preferences and API keys
+    preferences = Column(JSONB, nullable=True)  # User preferences (audio_input_mode, investment_mode, etc.)
+    api_keys = Column(JSONB, nullable=True)  # Encrypted API keys for account linking
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -1385,6 +1393,24 @@ class Deal(Base):
     notarization_required = Column(Boolean, default=False, nullable=False)
 
     notarization_completed_at = Column(DateTime, nullable=True)
+
+    # Signature tracking
+    required_signatures = Column(JSONB, nullable=True)  # List of required signers: [{"name": "...", "email": "...", "role": "..."}]
+    completed_signatures = Column(JSONB, nullable=True)  # List of completed: [{"signer_email": "...", "signed_at": "...", "signature_id": ...}]
+    signature_status = Column(String(50), nullable=True, index=True)  # pending, in_progress, completed, expired
+    signature_progress = Column(Integer, default=0, nullable=False)  # Percentage: 0-100
+    signature_deadline = Column(DateTime, nullable=True, index=True)
+    
+    # Documentation tracking
+    required_documents = Column(JSONB, nullable=True)  # List of required: [{"document_type": "...", "document_category": "...", "required_by": "..."}]
+    completed_documents = Column(JSONB, nullable=True)  # List of completed: [{"document_id": ..., "document_type": "...", "completed_at": "..."}]
+    documentation_status = Column(String(50), nullable=True, index=True)  # pending, in_progress, complete, non_compliant
+    documentation_progress = Column(Integer, default=0, nullable=False)  # Percentage: 0-100
+    documentation_deadline = Column(DateTime, nullable=True, index=True)
+    
+    # Compliance tracking
+    compliance_status = Column(String(50), nullable=True, index=True)  # compliant, non_compliant, pending_review
+    compliance_notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

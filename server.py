@@ -55,6 +55,8 @@ from app.api.p2p_routes import router as p2p_router
 from app.api.whitelist_routes import router as whitelist_router
 from app.api.remote_profile_routes import router as remote_profile_router
 from app.api.metrics_routes import router as metrics_router
+from app.api.user_settings_routes import router as user_settings_router
+from app.api.deal_signature_routes import router as deal_signature_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -692,6 +694,8 @@ app.include_router(organization_router)
 app.include_router(p2p_router)
 app.include_router(whitelist_router)
 app.include_router(remote_profile_router)
+app.include_router(user_settings_router)
+app.include_router(deal_signature_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")

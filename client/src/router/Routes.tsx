@@ -19,6 +19,7 @@ import { VerificationFileConfigEditor } from '@/apps/verification-config/Verific
 import { WorkflowProcessingPage } from '@/components/WorkflowProcessingPage';
 import { WorkflowShareInterface } from '@/components/WorkflowShareInterface';
 import { LicenseViewer } from '@/components/LicenseViewer';
+import { UserSettings } from '@/pages/UserSettings';
 
 // Placeholder components for microsites (to be implemented)
 // Note: /project and /docs are deployed separately (GitHub Pages and Mintlify)
@@ -419,6 +420,22 @@ export const router = createAppRouter([
     element: (
       <AdminRoute>
         <div className="p-8">Inbox (Coming Soon)</div>
+      </AdminRoute>
+    ),
+  },
+  {
+    path: '/settings',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin-settings',
+    element: (
+      <AdminRoute>
+        <DesktopAppLayout />
       </AdminRoute>
     ),
   },

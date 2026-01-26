@@ -32,6 +32,9 @@ import { SignatureButton } from '@/components/SignatureButton';
 import { NotarizationStatus } from '@/components/NotarizationStatus';
 import { LoanRecoverySidebar } from '@/components/LoanRecoverySidebar';
 import { BorrowerContactManager } from '@/components/BorrowerContactManager';
+import { DealSignatureTracking } from '@/components/deals/DealSignatureTracking';
+import { DealDocumentationTracking } from '@/components/deals/DealDocumentationTracking';
+import { DealComplianceSummary } from '@/components/deals/DealComplianceSummary';
 
 interface Deal {
   id: number;
@@ -482,6 +485,17 @@ export function DealDetail() {
               />
             </CardContent>
           </Card>
+
+          {/* Signature & Documentation Tracking */}
+          {dealId && deal && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <DealSignatureTracking dealId={deal.id} />
+                <DealDocumentationTracking dealId={deal.id} />
+              </div>
+              <DealComplianceSummary dealId={deal.id} />
+            </>
+          )}
         </div>
       )}
 
