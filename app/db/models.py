@@ -174,6 +174,15 @@ class SubscriptionType(str, enum.Enum):
     LIFETIME = "lifetime"
 
 
+class ConsentType(str, enum.Enum):
+    """Consent categories for data handling."""
+
+    PROCESSING = "processing"
+    MARKETING = "marketing"
+    SHARING = "sharing"
+    ANALYTICS = "analytics"
+
+
 class CreditType(str, enum.Enum):
     """Credit types for different workflows (rolling credits, billing)."""
     SIGNING = "signing"
@@ -340,6 +349,65 @@ class User(Base):
             "profile_data": self.profile_data,
             "organization_id": self.organization_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Consent(Base):
+    """Current consent state for a user."""
+
+    __tablename__ = "consents"
+    __table_args__ = (UniqueConstraint("user_id", "consent_type", name="uq_consents_user_type"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    consent_type = Column(String(50), nullable=False, index=True)
+    granted = Column(Boolean, default=False, nullable=False)
+    source = Column(String(100), nullable=True)  # signup, settings, admin, api
+    consent_metadata = Column(JSONB, name="metadata", nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", backref="consents")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "consent_type": self.consent_type,
+            "granted": self.granted,
+            "source": self.source,
+            "metadata": self.consent_metadata,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ConsentHistory(Base):
+    """Consent change history for auditability."""
+
+    __tablename__ = "consent_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    consent_type = Column(String(50), nullable=False, index=True)
+    granted = Column(Boolean, default=False, nullable=False)
+    source = Column(String(100), nullable=True)
+    change_reason = Column(Text, nullable=True)
+    consent_metadata = Column(JSONB, name="metadata", nullable=True)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", backref="consent_history")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "consent_type": self.consent_type,
+            "granted": self.granted,
+            "source": self.source,
+            "change_reason": self.change_reason,
+            "metadata": self.consent_metadata,
+            "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
         }
 
 

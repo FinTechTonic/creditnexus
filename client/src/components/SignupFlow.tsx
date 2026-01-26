@@ -34,6 +34,14 @@ interface SignupFormData {
 
   // Documents
   documents: File[];
+
+  // Consent
+  consents: {
+    processing: boolean;
+    marketing: boolean;
+    sharing: boolean;
+    analytics: boolean;
+  };
 }
 
 interface SignupFlowProps {
@@ -274,6 +282,12 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
     implementationIds: [],
     profileData: {},
     documents: [],
+    consents: {
+      processing: false,
+      marketing: false,
+      sharing: false,
+      analytics: false,
+    },
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -346,6 +360,12 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
     clearError();
     
     try {
+      if (!formData.consents.processing) {
+        setErrors({ consent: 'Processing consent is required to create an account.' });
+        setIsSubmitting(false);
+        return;
+      }
+
       // Register user with basic info
       const success = await register({
         email: formData.email,
@@ -353,6 +373,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         display_name: formData.displayName,
         organization_id: formData.organizationId ?? undefined,
         implementation_ids: formData.implementationIds?.length ? formData.implementationIds : undefined,
+        consents: formData.consents,
       });
       
       if (success) {
@@ -694,6 +715,85 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
                 </div>
               </div>
             )}
+
+            <div className="bg-slate-800/50 rounded-lg p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-slate-100 mb-2">Consent Preferences</h3>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.consents.processing}
+                  onChange={() =>
+                    updateFormData({
+                      consents: { ...formData.consents, processing: !formData.consents.processing },
+                    })
+                  }
+                  className="mt-1"
+                />
+                <div>
+                  <div className="font-medium text-slate-100">Data Processing (Required)</div>
+                  <div className="text-sm text-slate-400">
+                    Allows us to process your data to provide core services.
+                  </div>
+                </div>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.consents.marketing}
+                  onChange={() =>
+                    updateFormData({
+                      consents: { ...formData.consents, marketing: !formData.consents.marketing },
+                    })
+                  }
+                  className="mt-1"
+                />
+                <div>
+                  <div className="font-medium text-slate-100">Marketing</div>
+                  <div className="text-sm text-slate-400">
+                    Receive product updates, newsletters, and promotions.
+                  </div>
+                </div>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.consents.sharing}
+                  onChange={() =>
+                    updateFormData({
+                      consents: { ...formData.consents, sharing: !formData.consents.sharing },
+                    })
+                  }
+                  className="mt-1"
+                />
+                <div>
+                  <div className="font-medium text-slate-100">Third-Party Sharing</div>
+                  <div className="text-sm text-slate-400">
+                    Allow data sharing with trusted third parties.
+                  </div>
+                </div>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={formData.consents.analytics}
+                  onChange={() =>
+                    updateFormData({
+                      consents: { ...formData.consents, analytics: !formData.consents.analytics },
+                    })
+                  }
+                  className="mt-1"
+                />
+                <div>
+                  <div className="font-medium text-slate-100">Analytics</div>
+                  <div className="text-sm text-slate-400">
+                    Help us improve the product with usage analytics.
+                  </div>
+                </div>
+              </label>
+              {errors.consent && (
+                <div className="text-sm text-red-400">{errors.consent}</div>
+              )}
+            </div>
           </div>
         );
 

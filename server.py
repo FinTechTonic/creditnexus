@@ -704,7 +704,9 @@ if settings.METRICS_ENABLED:
 
 # GDPR compliance routes
 from app.api.gdpr_routes import gdpr_router
+from app.api.consent_routes import consent_router
 app.include_router(gdpr_router, prefix="/api")
+app.include_router(consent_router, prefix="/api")
 
 # Serve OpenFin manifest files
 openfin_dir = Path(__file__).parent / "openfin"

@@ -34,6 +34,7 @@ from app.db.models import (
     UserRole,
     VerifiedImplementation,
 )
+from app.services.consent_service import ConsentService
 from app.core.config import settings
 from app.utils import get_debug_log_path
 
@@ -98,6 +99,7 @@ MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 30
 
 MIN_PASSWORD_LENGTH = 12
+ALLOWED_CONSENT_TYPES = {"processing", "marketing", "sharing", "analytics"}
 
 class PasswordStrengthError(Exception):
     """Raised when password doesn't meet security requirements."""
@@ -111,6 +113,7 @@ class UserRegister(BaseModel):
     password: str
     display_name: str
     organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
+    consents: Optional[Dict[str, bool]] = None
     
     @field_validator("password")
     @classmethod
@@ -200,6 +203,7 @@ class UserSignupStep1(BaseModel):
     role: Optional[UserRole] = None  # Selected role
     organization_id: Optional[int] = None  # Organization selection
     implementation_ids: Optional[List[int]] = None  # Implementation selection (multi-select)
+    consents: Optional[Dict[str, bool]] = None
 
     @field_validator("password")
     @classmethod
@@ -521,6 +525,30 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
+    if not user_data.consents or not user_data.consents.get("processing"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Processing consent is required to create an account",
+        )
+    unknown_consents = set(user_data.consents.keys()) - ALLOWED_CONSENT_TYPES
+    if unknown_consents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown consent types: {', '.join(sorted(unknown_consents))}",
+        )
+
+    if not user_data.consents or not user_data.consents.get("processing"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Processing consent is required to create an account",
+        )
+    unknown_consents = set(user_data.consents.keys()) - ALLOWED_CONSENT_TYPES
+    if unknown_consents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown consent types: {', '.join(sorted(unknown_consents))}",
+        )
+
     # Validate implementations if provided
     if user_data.implementation_ids:
         impls = db.query(VerifiedImplementation).filter(
@@ -573,6 +601,22 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
     )
     db.add(audit_log)
     db.commit()
+
+    consent_service = ConsentService(db)
+    consent_service.set_consents_bulk(
+        user_id=user.id,
+        consents=user_data.consents,
+        source="signup",
+        change_reason="initial_capture",
+    )
+
+    consent_service = ConsentService(db)
+    consent_service.set_consents_bulk(
+        user_id=user.id,
+        consents=user_data.consents,
+        source="signup",
+        change_reason="initial_capture",
+    )
 
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)

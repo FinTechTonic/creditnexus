@@ -18,7 +18,8 @@ import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/button';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2 } from 'lucide-react';
+import { ConsentManagement } from '@/components/gdpr/ConsentManagement';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext, WorkflowLinkContext } from '@/context/FDC3Context';
@@ -57,7 +58,7 @@ import {
   PERMISSION_AUDIT_VIEW,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'whitelisting-dashboard' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings' | 'link-accounts' | 'asset-alerts' | 'portfolio-risk';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'whitelisting-dashboard' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings' | 'link-accounts' | 'asset-alerts' | 'portfolio-risk' | 'consent';
 
 interface AppConfig {
   id: AppView;
@@ -223,6 +224,12 @@ const sidebarApps: AppConfig[] = [
     requiredPermission: PERMISSION_USER_VIEW,
   },
   {
+    id: 'consent',
+    name: 'Consent',
+    icon: <CheckCircle2 className="h-5 w-5 text-emerald-400" />,
+    description: 'Manage GDPR consent preferences',
+  },
+  {
     id: 'loan-recovery',
     name: 'Loan Recovery',
     icon: <AlertTriangle className="h-5 w-5 text-red-500" />,
@@ -291,7 +298,7 @@ export function DesktopAppLayout() {
       'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
       'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
       'policy-editor', 'library', 'auditor', 'securitization', 'verification-config', 'whitelisting-dashboard',
-      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk'
+      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk', 'consent'
     ];
     
     // Try to restore from sessionStorage first
@@ -325,6 +332,7 @@ export function DesktopAppLayout() {
       '/app/policy-editor': 'policy-editor',
       '/app/verification-config': 'verification-config',
       '/app/whitelisting-dashboard': 'whitelisting-dashboard',
+      '/app/consent': 'consent',
       '/app/agent-dashboard': 'agent-dashboard',
       '/app/filings': 'filings',
       '/library': 'library',
@@ -516,6 +524,7 @@ export function DesktopAppLayout() {
       '/app/policy-editor': 'policy-editor',
       '/app/verification-config': 'verification-config',
       '/app/whitelisting-dashboard': 'whitelisting-dashboard',
+      '/app/consent': 'consent',
       '/app/agent-dashboard': 'agent-dashboard',
       '/app/loan-recovery': 'loan-recovery',
       '/library': 'library',
@@ -677,6 +686,7 @@ export function DesktopAppLayout() {
       'policy-editor': '/app/policy-editor',
       'verification-config': '/app/verification-config',
       'whitelisting-dashboard': '/app/whitelisting-dashboard',
+      'consent': '/app/consent',
       'securitization': '/app/securitization',
       'agent-dashboard': '/app/agent-dashboard',
       'library': '/library',
@@ -1082,6 +1092,7 @@ export function DesktopAppLayout() {
           {activeApp === 'policy-editor' && <PolicyEditor />}
           {activeApp === 'verification-config' && <VerificationFileConfigEditor />}
           {activeApp === 'whitelisting-dashboard' && <WhitelistingDashboard />}
+          {activeApp === 'consent' && <ConsentManagement />}
           {activeApp === 'workflow-share' && <WorkflowShareInterface />}
           {activeApp === 'workflow-processor' && <WorkflowProcessingPage />}
           {activeApp === 'auditor' && <AuditorRouter />}

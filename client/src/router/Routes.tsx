@@ -217,6 +217,14 @@ export const router = createAppRouter([
     ),
   },
   {
+    path: '/app/consent',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/app/securitization',
     element: (
       <ProtectedRoute>

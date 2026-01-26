@@ -94,6 +94,21 @@ def get_x402_payment_service(request: Request) -> Optional[X402PaymentService]:
     return None
 
 
+def require_processing_consent(current_user: Optional[User], db: Session) -> None:
+    if not current_user:
+        return
+    from app.services.consent_service import ConsentService
+
+    service = ConsentService(db)
+    try:
+        service.require_consent(current_user.id, "processing")
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
 MAX_FILE_SIZE_MB = 20
 
 def extract_text_from_pdf(file_content: bytes) -> str:
@@ -208,6 +223,7 @@ async def extract_credit_agreement(
     file_type = "text"  # Default for text extraction
     
     try:
+        require_processing_consent(current_user, db)
         logger.info(f"Received extraction request for {len(request.text)} characters")
         
         result = extract_data_smart(
@@ -592,6 +608,7 @@ async def extract_accounting_document(
     from app.services.deal_service import DealService
     
     try:
+        require_processing_consent(current_user, db)
         # Read file content
         content = await file.read()
         text = extract_text_from_file(content, file.filename)
@@ -1756,6 +1773,8 @@ async def transcribe_audio(
     """
     from app.chains.audio_transcription_chain import process_audio_file
     from app.models.cdm import ExtractionStatus
+
+    require_processing_consent(current_user, db)
     
     # Validate file type
     filename = file.filename or "audio.wav"
@@ -1898,6 +1917,8 @@ async def extract_from_images(
     """
     from app.chains.image_extraction_chain import process_multiple_image_files
     from app.chains.extraction_chain import extract_data_smart
+
+    require_processing_consent(current_user, db)
     from app.models.cdm import ExtractionStatus
     
     start_time = time.time()
@@ -3488,6 +3509,7 @@ async def fuse_multimodal_cdm(
     from app.chains.multimodal_fusion_chain import fuse_multimodal_inputs
     
     try:
+        require_processing_consent(current_user, db)
         # Validate that at least one source is provided
         has_cdm = any([
             request.audio_cdm,
@@ -4425,6 +4447,8 @@ async def extract_profile(
     from app.chains.profile_extraction_chain import extract_profile_data
     
     try:
+        require_processing_consent(current_user, db)
+
         # Extract profile data using the chain
         result = extract_profile_data(
             text=request.text,

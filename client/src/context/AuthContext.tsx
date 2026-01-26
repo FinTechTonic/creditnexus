@@ -48,6 +48,7 @@ interface RegisterData {
   organization_identifier?: string;  // Organization alias, blockchain address, or key
   organization_id?: number;  // FK to organizations.id
   implementation_ids?: number[];  // Implementation selection (multi-select)
+  consents?: Record<string, boolean>;
 }
 
 interface AuthContextType {
