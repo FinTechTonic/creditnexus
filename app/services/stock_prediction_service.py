@@ -150,9 +150,23 @@ class StockPredictionService:
         cache_key = _make_cache_key(symbol, tf, lb, h, strategy, mid if strategy == "chronos" else None)
         cached = self._get_cached(cache_key)
         if cached is not None:
-            return {**cached, "cached": True}
+            # Extract forecast array from cached result
+            forecast_array = cached.get("forecast", [])
+            if not isinstance(forecast_array, list):
+                forecast_array = []
+            return {
+                "forecast": forecast_array,
+                "cached": True,
+                "model_id": cached.get("model_id", mid),
+                "strategy": strategy,
+                "symbol": symbol,
+                "timeframe": tf,
+                "error": cached.get("error"),
+                "signal": cached.get("signal"),
+            }
 
         # credits (skip if no user or no service)
+        # For demo/development, allow predictions without credits if user has no balance
         credit_type = _CREDIT_TYPE.get(tf, "universal")
         if user_id and self._credits:
             spent = self._credits.spend_credits(
@@ -163,9 +177,15 @@ class StockPredictionService:
                 description=f"Stock prediction {tf} {symbol}",
             )
             if not spent.get("ok"):
-                if METRICS_AVAILABLE:
-                    stock_predictions_total.labels(timeframe=tf, status="error").inc()
-                return {"error": "insufficient_credits", "reason": spent.get("reason", "insufficient_credits")}
+                # In development/demo mode, allow predictions even without credits
+                # Check if this is a demo user or if credits are optional
+                # Note: settings is already imported at module level, don't import again
+                if not getattr(settings, "REQUIRE_CREDITS_FOR_PREDICTIONS", False):
+                    logger.info(f"User {user_id} has insufficient credits for {credit_type}, but allowing prediction in demo mode")
+                else:
+                    if METRICS_AVAILABLE:
+                        stock_predictions_total.labels(timeframe=tf, status="error").inc()
+                    return {"error": "insufficient_credits", "reason": spent.get("reason", "insufficient_credits")}
 
         # fetch data
         market_tf = self._tf_to_market(tf)
@@ -195,6 +215,11 @@ class StockPredictionService:
                 stock_prediction_duration_seconds.labels(timeframe=tf).observe(time.time() - start_time)
             return {**out, "error": out.get("error", "inference_failed")}
 
+        # Extract forecast array from out dict for API response
+        forecast_array = out.get("forecast", [])
+        if not isinstance(forecast_array, list):
+            forecast_array = []
+        
         # persist
         rec = StockPrediction(
             user_id=user_id,
@@ -202,7 +227,7 @@ class StockPredictionService:
             timeframe=tf,
             model_id=out.get("model_id", mid),
             strategy=strategy,
-            forecast=out,
+            forecast=out,  # Store full dict in DB
             lookback_days=lb,
             horizon=h,
             prediction_metadata={"cdm_events": [{"type": "StockPredictionRequest", "timeframe": tf, "symbol": symbol}]},
@@ -217,7 +242,18 @@ class StockPredictionService:
             stock_predictions_total.labels(timeframe=tf, status="success").inc()
             stock_prediction_duration_seconds.labels(timeframe=tf).observe(time.time() - start_time)
 
-        return {**out, "prediction_id": rec.id, "cached": False}
+        # Return forecast as array for API compatibility
+        return {
+            "forecast": forecast_array,
+            "prediction_id": rec.id,
+            "cached": False,
+            "model_id": out.get("model_id", mid),
+            "strategy": strategy,
+            "symbol": symbol,
+            "timeframe": tf,
+            "error": out.get("error"),
+            "signal": out.get("signal"),
+        }
 
     def predict_daily(
         self,

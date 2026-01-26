@@ -12,6 +12,7 @@ from app.services.trading_api_service import TradingAPIService, TradingAPIError
 from app.services.commission_service import CommissionService
 from app.utils.audit import log_audit_action
 from app.db.models import AuditAction
+from app.utils.json_serializer import serialize_cdm_data
 
 logger = logging.getLogger(__name__)
 
@@ -236,9 +237,12 @@ class OrderService:
             order.trading_api_order_id = api_response.get("order_id")
             order.status = api_response.get("status", OrderStatus.SUBMITTED.value)
             order.filled_quantity = Decimal(str(api_response.get("filled_quantity", 0)))
-            order.average_fill_price = Decimal(str(api_response["average_fill_price"])) if api_response.get("average_fill_price") else None
+            # Handle average_fill_price safely - may be None for pending orders
+            avg_fill_price = api_response.get("average_fill_price")
+            order.average_fill_price = Decimal(str(avg_fill_price)) if avg_fill_price is not None else None
             order.submitted_at = datetime.utcnow()
-            order.trading_api_response = api_response
+            # Serialize API response to ensure all UUIDs and other non-JSON types are converted
+            order.trading_api_response = serialize_cdm_data(api_response)
             
             # Calculate commission if service available
             if self.commission_service and order.average_fill_price:

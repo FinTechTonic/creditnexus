@@ -25,7 +25,8 @@ from app.db.models import (
     GeneratedDocument, DealNote, PolicyDecision, DealStatus,
     DealType, ApplicationStatus, ApplicationType, WorkflowState, GeneratedDocumentStatus,
     GreenFinanceAssessment, SecuritizationPool, SecuritizationTranche,
-    SecuritizationPoolAsset, RegulatoryFiling, NotarizationRecord
+    SecuritizationPoolAsset, RegulatoryFiling, NotarizationRecord, DocumentFiling,
+    DocumentSignature, UserSubscription, CreditBalance, SubscriptionTier, SubscriptionType
 )
 from app.utils import get_debug_log_path
 
@@ -52,9 +53,113 @@ class SeedingStatus:
     completed_at: Optional[datetime] = None
 
 
+@dataclass
+class DemoDataConfig:
+    """Configuration for demo data generation."""
+    jurisdiction_distribution: Dict[str, float] = field(default_factory=lambda: {
+        "US": 0.40,
+        "UK": 0.25,
+        "EU": 0.20,
+        "CA": 0.10,
+        "AU": 0.05
+    })
+    deal_type_distribution: Dict[str, float] = field(default_factory=lambda: {
+        "loan_application": 0.60,
+        "refinancing": 0.15,
+        "restructuring": 0.10,
+        "debt_sale": 0.10,
+        "loan_purchase": 0.05
+    })
+    generate_timeline_events: bool = True
+    generate_document_filings: bool = True
+    assign_users_to_deals: bool = True
+    min_notes_per_deal: int = 2
+    max_notes_per_deal: int = 5
+    timeline_events_per_deal: int = 5
+
+
 # Global seeding status store - persists across requests
 # This is necessary because each API request creates a new DemoDataService instance
 _global_seeding_status: Dict[str, SeedingStatus] = {}
+
+
+def get_demo_config_preset(preset_name: str) -> Optional[DemoDataConfig]:
+    """
+    Get preset configuration for demo data generation.
+    
+    Presets:
+    - "us_focused": 80% US, 20% other
+    - "eu_focused": 60% EU, 30% UK, 10% other
+    - "uk_focused": 70% UK, 20% EU, 10% other
+    - "mixed": Default balanced distribution
+    - "custom": Returns None (use request values)
+    
+    Args:
+        preset_name: Name of preset
+        
+    Returns:
+        DemoDataConfig or None for custom
+    """
+    if preset_name == "us_focused":
+        return DemoDataConfig(
+            jurisdiction_distribution={
+                "US": 0.80,
+                "UK": 0.10,
+                "EU": 0.05,
+                "CA": 0.03,
+                "AU": 0.02
+            },
+            deal_type_distribution={
+                "loan_application": 0.70,
+                "refinancing": 0.15,
+                "restructuring": 0.08,
+                "debt_sale": 0.05,
+                "loan_purchase": 0.02
+            }
+        )
+    elif preset_name == "eu_focused":
+        return DemoDataConfig(
+            jurisdiction_distribution={
+                "EU": 0.60,
+                "UK": 0.30,
+                "US": 0.05,
+                "CA": 0.03,
+                "AU": 0.02
+            },
+            deal_type_distribution={
+                "loan_application": 0.65,
+                "refinancing": 0.20,
+                "restructuring": 0.10,
+                "debt_sale": 0.04,
+                "loan_purchase": 0.01
+            }
+        )
+    elif preset_name == "uk_focused":
+        return DemoDataConfig(
+            jurisdiction_distribution={
+                "UK": 0.70,
+                "EU": 0.20,
+                "US": 0.05,
+                "CA": 0.03,
+                "AU": 0.02
+            },
+            deal_type_distribution={
+                "loan_application": 0.60,
+                "refinancing": 0.18,
+                "restructuring": 0.12,
+                "debt_sale": 0.08,
+                "loan_purchase": 0.02
+            }
+        )
+    elif preset_name == "mixed":
+        # Default balanced distribution
+        return DemoDataConfig()
+    elif preset_name == "custom":
+        return None
+    else:
+        # Unknown preset, return default
+        logger.warning(f"Unknown preset '{preset_name}', using default")
+        return DemoDataConfig()
 
 
 class DemoDataService:
@@ -73,6 +178,8 @@ class DemoDataService:
         self._progress_callback: Optional[Callable[[str, SeedingStatus], None]] = None
         # Initialize file storage service for creating demo files
         self.file_storage = FileStorageService(base_storage_path="storage/deals")
+        # Demo config (set during create_demo_deals)
+        self._demo_config: Optional[DemoDataConfig] = None
     
     def set_progress_callback(self, callback: Callable[[str, SeedingStatus], None]):
         """Set callback for progress updates."""
@@ -289,11 +396,16 @@ The document contains placeholder content representing a credit agreement.
         
         try:
             # Import seed function and user definitions
-            from scripts.seed_demo_users import seed_demo_users, DEMO_USERS
+            from scripts.dev.seed_demo_users import seed_demo_users, DEMO_USERS
             
             # Call seed function with seed_all_roles=True to ensure all users are created
             # (API calls should seed all roles by default, not rely on environment variables)
             count = seed_demo_users(self.db, force=force, seed_all_roles=True)
+            
+            # Assign blockchain wallets and create subscriptions/credits for demo users
+            if not dry_run:
+                self._assign_blockchain_wallets_to_users()
+                self._create_demo_subscriptions_and_credits()
             
             # Validate and migrate profile data against UserProfileData schema for all users
             if not dry_run:
@@ -352,6 +464,185 @@ The document contains placeholder content representing a credit agreement.
             logger.error(f"Error seeding users: {error_msg}", exc_info=True)
             self._update_status("users", status="failed", completed_at=datetime.utcnow(), errors=[error_msg])
             return {"created": 0, "updated": 0, "errors": [error_msg], "user_credentials": []}
+    
+    def _assign_blockchain_wallets_to_users(self) -> None:
+        """
+        Assign blockchain wallet addresses and private keys from environment variable to demo users.
+        
+        Reads DEMO_BLOCKCHAIN_ACCOUNTS from environment.
+        Format: comma-separated list of "address:private_key" pairs
+        Example: "0x123...:0xabc...,0x456...:0xdef..."
+        
+        Private keys are stored securely in profile_data (EncryptedJSON).
+        """
+        from app.core.config import settings
+        
+        # Get blockchain accounts from environment
+        blockchain_accounts_str = settings.DEMO_BLOCKCHAIN_ACCOUNTS
+        if not blockchain_accounts_str:
+            logger.info("DEMO_BLOCKCHAIN_ACCOUNTS not set, skipping wallet assignment")
+            return
+        
+        # Parse comma-separated wallet accounts (format: "address:private_key" or just "address")
+        account_pairs = []
+        for account_str in blockchain_accounts_str.split(","):
+            account_str = account_str.strip()
+            if not account_str:
+                continue
+            
+            # Check if format is "address:private_key" or just "address"
+            if ":" in account_str:
+                parts = account_str.split(":", 1)
+                address = parts[0].strip()
+                private_key = parts[1].strip() if len(parts) > 1 else None
+            else:
+                # Just address, no private key
+                address = account_str
+                private_key = None
+            
+            if address:
+                account_pairs.append({"address": address, "private_key": private_key})
+        
+        if not account_pairs:
+            logger.warning("No valid wallet accounts found in DEMO_BLOCKCHAIN_ACCOUNTS")
+            return
+        
+        # Get all demo users (those created by seed_demo_users)
+        from scripts.dev.seed_demo_users import DEMO_USERS
+        demo_user_emails = [u["email"] for u in DEMO_USERS]
+        users = self.db.query(User).filter(User.email.in_(demo_user_emails)).all()
+        
+        # Assign wallets and private keys to users in order
+        wallets_assigned = 0
+        for idx, user in enumerate(users):
+            if idx < len(account_pairs):
+                account = account_pairs[idx]
+                wallet_address = account["address"]
+                private_key = account["private_key"]
+                
+                # Only assign if user doesn't already have a wallet
+                if not user.wallet_address:
+                    user.wallet_address = wallet_address
+                    
+                    # Store private key in profile_data (encrypted)
+                    if private_key:
+                        # Initialize profile_data if it doesn't exist
+                        if not user.profile_data:
+                            user.profile_data = {}
+                        
+                        # Store private key securely in profile_data
+                        if isinstance(user.profile_data, dict):
+                            user.profile_data["blockchain_private_key"] = private_key
+                        else:
+                            # If profile_data is not a dict, create a new one
+                            user.profile_data = {"blockchain_private_key": private_key}
+                        
+                        logger.info(f"Assigned wallet {wallet_address[:10]}... with private key to user {user.email}")
+                    else:
+                        logger.info(f"Assigned wallet {wallet_address[:10]}... (no private key) to user {user.email}")
+                    
+                    wallets_assigned += 1
+        
+        if wallets_assigned > 0:
+            self.db.commit()
+            logger.info(f"Assigned {wallets_assigned} blockchain wallets to demo users")
+    
+    def _create_demo_subscriptions_and_credits(self) -> None:
+        """
+        Create subscriptions and credit balances for demo users.
+        
+        Assigns different subscription tiers based on user roles:
+        - ADMIN, BANKER, LAW_OFFICER: PREMIUM tier
+        - ANALYST, ACCOUNTANT, REVIEWER: PRO tier
+        - APPLICANT: FREE tier (with some credits)
+        """
+        from app.db.models import UserSubscription, CreditBalance, SubscriptionTier, SubscriptionType
+        from app.core.config import settings
+        from decimal import Decimal
+        
+        # Get all demo users
+        from scripts.dev.seed_demo_users import DEMO_USERS
+        demo_user_emails = [u["email"] for u in DEMO_USERS]
+        users = self.db.query(User).filter(User.email.in_(demo_user_emails)).all()
+        
+        subscriptions_created = 0
+        credits_created = 0
+        
+        for user in users:
+            try:
+                # Determine subscription tier based on role
+                if user.role in [UserRole.ADMIN.value, UserRole.BANKER.value, UserRole.LAW_OFFICER.value]:
+                    tier = SubscriptionTier.PREMIUM.value
+                    subscription_type = SubscriptionType.YEARLY.value
+                    credit_amount = Decimal("10000.0")  # 10,000 credits
+                elif user.role in [UserRole.ANALYST.value, UserRole.ACCOUNTANT.value, UserRole.REVIEWER.value]:
+                    tier = SubscriptionTier.PRO.value
+                    subscription_type = SubscriptionType.MONTHLY.value
+                    credit_amount = Decimal("5000.0")  # 5,000 credits
+                else:
+                    tier = SubscriptionTier.FREE.value
+                    subscription_type = SubscriptionType.PAY_AS_YOU_GO.value
+                    credit_amount = Decimal("1000.0")  # 1,000 credits
+                
+                # Update user subscription tier
+                user.subscription_tier = tier
+                
+                # Create or update subscription
+                existing_subscription = self.db.query(UserSubscription).filter(
+                    UserSubscription.user_id == user.id,
+                    UserSubscription.is_active == True
+                ).first()
+                
+                if not existing_subscription:
+                    # Create new subscription
+                    subscription = UserSubscription(
+                        user_id=user.id,
+                        tier=tier,
+                        subscription_type=subscription_type,
+                        is_active=True,
+                        started_at=datetime.utcnow(),
+                        expires_at=None if tier == SubscriptionTier.LIFETIME.value else datetime.utcnow() + timedelta(days=365),
+                        auto_renew=True if tier != SubscriptionTier.FREE.value else False
+                    )
+                    self.db.add(subscription)
+                    subscriptions_created += 1
+                else:
+                    # Update existing subscription
+                    existing_subscription.tier = tier
+                    existing_subscription.subscription_type = subscription_type
+                
+                # Create or update credit balance
+                existing_balance = self.db.query(CreditBalance).filter(
+                    CreditBalance.user_id == user.id
+                ).first()
+                
+                if not existing_balance:
+                    # Create new credit balance
+                    credit_balance = CreditBalance(
+                        user_id=user.id,
+                        balances={"universal": float(credit_amount)},
+                        total_balance=credit_amount,
+                        lifetime_earned={"universal": float(credit_amount)},
+                        lifetime_spent={"universal": 0.0},
+                        blockchain_registered=False
+                    )
+                    self.db.add(credit_balance)
+                    credits_created += 1
+                else:
+                    # Update existing balance if it's too low
+                    if existing_balance.total_balance < credit_amount:
+                        existing_balance.total_balance = credit_amount
+                        existing_balance.balances = {"universal": float(credit_amount)}
+                        if not existing_balance.lifetime_earned:
+                            existing_balance.lifetime_earned = {"universal": float(credit_amount)}
+                
+            except Exception as e:
+                logger.warning(f"Failed to create subscription/credits for user {user.email}: {e}")
+                continue
+        
+        if subscriptions_created > 0 or credits_created > 0:
+            self.db.commit()
+            logger.info(f"Created {subscriptions_created} subscriptions and {credits_created} credit balances for demo users")
     
     def seed_templates(self, dry_run: bool = False) -> Dict[str, Any]:
         """
@@ -664,25 +955,92 @@ The document contains placeholder content representing a credit agreement.
         self._update_status("deals", status="completed", completed_at=datetime.utcnow())
         return deals
     
-    def create_demo_deals(self, count: int = 12, seed_securitization: bool = False) -> List[Deal]:
+    def create_demo_deals(
+        self, 
+        count: int = 12, 
+        seed_securitization: bool = False,
+        config: Optional[DemoDataConfig] = None,
+        force: bool = False
+    ) -> List[Deal]:
         """
         Create complete demo deals with full data flow: Applications → Deals → Documents → Workflows.
         
-        Only creates new deals if the requested count exceeds existing demo deals.
+        Only creates new deals if the requested count exceeds existing demo deals, unless force=True.
         
         Args:
             count: Number of deals to have (not number to create)
             seed_securitization: Whether to create securitization pools
+            config: Optional configuration for demo data generation
+            force: If True, delete existing demo deals and recreate from scratch
             
         Returns:
-            List of created Deal objects (empty if count satisfied by existing)
+            List of created Deal objects (empty if count satisfied by existing and force=False)
         """
+        # Use default config if not provided
+        if config is None:
+            config = DemoDataConfig()
+        
+        # Store config for use in helper methods
+        self._demo_config = config
+        
         # Check existing demo deals
         existing_demo_deals = self.db.query(Deal).filter(Deal.is_demo == True).count()
         
-        # If we already have enough demo deals, skip creation
-        if existing_demo_deals >= count:
-            logger.info(f"Skipping deal creation: {existing_demo_deals} demo deals exist, {count} requested")
+        # If force=True, delete all existing demo deals first
+        if force and existing_demo_deals > 0:
+            logger.info(f"Force mode: Deleting {existing_demo_deals} existing demo deals and related data...")
+            existing_deals = self.db.query(Deal).filter(Deal.is_demo == True).all()
+            deleted_count = 0
+            for deal in existing_deals:
+                try:
+                    # Delete related documents first (they have SET NULL, not CASCADE)
+                    documents = self.db.query(Document).filter(Document.deal_id == deal.id).all()
+                    for doc in documents:
+                        # Delete document versions
+                        versions = self.db.query(DocumentVersion).filter(DocumentVersion.document_id == doc.id).all()
+                        for version in versions:
+                            self.db.delete(version)
+                        # Delete workflows
+                        workflows = self.db.query(Workflow).filter(Workflow.document_id == doc.id).all()
+                        for workflow in workflows:
+                            self.db.delete(workflow)
+                        # Delete document signatures
+                        signatures = self.db.query(DocumentSignature).filter(DocumentSignature.document_id == doc.id).all()
+                        for sig in signatures:
+                            self.db.delete(sig)
+                        # Delete document filings
+                        filings = self.db.query(DocumentFiling).filter(DocumentFiling.document_id == doc.id).all()
+                        for filing in filings:
+                            self.db.delete(filing)
+                        # Delete the document
+                        self.db.delete(doc)
+                    
+                    # Delete deal notes (cascade should handle, but being explicit)
+                    notes = self.db.query(DealNote).filter(DealNote.deal_id == deal.id).all()
+                    for note in notes:
+                        self.db.delete(note)
+                    
+                    # Delete the deal (cascade will handle notes, filings, loan_defaults)
+                    self.db.delete(deal)
+                    deleted_count += 1
+                except Exception as e:
+                    logger.error(f"Error deleting deal {deal.id}: {e}", exc_info=True)
+                    self.db.rollback()
+                    continue
+            
+            try:
+                self.db.commit()
+                logger.info(f"Successfully deleted {deleted_count} demo deals and related data. Creating {count} new deals...")
+            except Exception as e:
+                logger.error(f"Error committing deal deletions: {e}", exc_info=True)
+                self.db.rollback()
+                raise
+            
+            existing_demo_deals = 0
+        
+        # If we already have enough demo deals and not forcing, skip creation
+        if existing_demo_deals >= count and not force:
+            logger.info(f"Skipping deal creation: {existing_demo_deals} demo deals exist, {count} requested. Use force=True to regenerate.")
             self._update_status("deals", status="completed", completed_at=datetime.utcnow(), 
                               total=count, current=count, progress=1.0)
             return []
@@ -767,6 +1125,30 @@ The document contains placeholder content representing a credit agreement.
         
         # Step 8: Create deal notes
         deal_notes = self.create_deal_notes([d.id for d in deals])
+        
+        # Step 8b: Generate timeline events (if enabled)
+        if self._demo_config and self._demo_config.generate_timeline_events:
+            try:
+                timeline_events_count = self.create_timeline_events_for_deals([d.id for d in deals])
+                logger.info(f"Created {timeline_events_count} timeline events for deals")
+            except Exception as e:
+                logger.warning(f"Failed to create timeline events: {e}")
+        
+        # Step 8c: Assign deals to users (if enabled)
+        if self._demo_config and self._demo_config.assign_users_to_deals:
+            try:
+                assignment_stats = self.assign_deals_to_users([d.id for d in deals])
+                logger.info(f"Assigned deals to users: {assignment_stats}")
+            except Exception as e:
+                logger.warning(f"Failed to assign deals to users: {e}")
+        
+        # Step 8d: Generate document filings (if enabled)
+        if self._demo_config and self._demo_config.generate_document_filings:
+            try:
+                filings = self.create_document_filings_for_deals([d.id for d in deals])
+                logger.info(f"Created {len(filings)} document filings for deals")
+            except Exception as e:
+                logger.warning(f"Failed to create document filings: {e}")
         
         # Step 9: Create policy decisions for documents
         policy_decisions = self.create_policy_decisions_for_documents([d.id for d in documents])
@@ -1025,6 +1407,18 @@ The document contains placeholder content representing a credit agreement.
                 
                 sustainability_linked = random.random() < 0.30  # 30% sustainability-linked
                 
+                # Select jurisdiction, currency, and governing law
+                jurisdiction, currency, governing_law = self._select_jurisdiction_currency_governing_law()
+                
+                # Extract borrower info from application
+                borrower_info = self._extract_borrower_info_from_application(application)
+                
+                # Generate lender info
+                lender_info = self._generate_lender_info()
+                
+                # Generate guarantor info (30% of deals have guarantors)
+                guarantor_info = self._generate_guarantor_info() if random.random() < 0.30 else None
+                
                 # Enhanced deal_data with comprehensive metadata
                 deal_data = {
                     "loan_amount": loan_amount,
@@ -1047,7 +1441,15 @@ The document contains placeholder content representing a credit agreement.
                     },
                     "risk_rating": random.choice(["A", "BBB", "BB", "B", "CCC"]),
                     "syndication_status": random.choice(["Sole lender", "Syndicated", "Club deal"]),
-                    "currency": "USD"
+                    "jurisdiction": jurisdiction,
+                    "currency": currency,
+                    "governing_law": governing_law,
+                    "borrower_name": borrower_info.get("name"),
+                    "borrower_lei": borrower_info.get("lei"),
+                    "borrower_address": borrower_info.get("address"),
+                    "borrower_type": borrower_info.get("type"),
+                    "lender_info": lender_info,
+                    "guarantor_info": guarantor_info
                 }
                 
                 # Calculate maturity date if term_years is set
@@ -1096,7 +1498,7 @@ The document contains placeholder content representing a credit agreement.
                     applicant_id=application.user_id,
                     application_id=application.id,
                     status=deal_status,
-                    deal_type=DealType.LOAN_APPLICATION.value,
+                    deal_type=self._select_deal_type(),
                     is_demo=True,  # Mark as demo deal
                     deal_data=deal_data,
                     folder_path=folder_path,
@@ -1123,6 +1525,162 @@ The document contains placeholder content representing a credit agreement.
         self._update_status("deals_creation", status="completed", completed_at=datetime.utcnow())
         
         return deals
+    
+    def _select_deal_type(self) -> str:
+        """
+        Select deal type with weighted distribution.
+        
+        Uses config if available, otherwise defaults.
+        
+        Returns:
+            Deal type string value
+        """
+        if self._demo_config and self._demo_config.deal_type_distribution:
+            deal_type_weights = self._demo_config.deal_type_distribution
+        else:
+            # Default distribution
+            deal_type_weights = {
+                DealType.LOAN_APPLICATION.value: 0.60,  # 60% loan applications
+                DealType.REFINANCING.value: 0.15,       # 15% refinancing
+                DealType.RESTRUCTURING.value: 0.10,     # 10% restructuring
+                DealType.DEBT_SALE.value: 0.10,         # 10% debt sale
+                DealType.LOAN_PURCHASE.value: 0.05      # 5% loan purchase
+            }
+        return random.choices(
+            list(deal_type_weights.keys()),
+            weights=list(deal_type_weights.values())
+        )[0]
+    
+    def _select_jurisdiction_currency_governing_law(self) -> tuple[str, str, str]:
+        """
+        Select jurisdiction, currency, and governing law with weighted distribution.
+        
+        Uses config if available, otherwise defaults.
+        
+        Returns:
+            Tuple of (jurisdiction, currency, governing_law)
+        """
+        # Jurisdiction distribution
+        if self._demo_config and self._demo_config.jurisdiction_distribution:
+            jurisdiction_weights = self._demo_config.jurisdiction_distribution
+        else:
+            # Default distribution
+            jurisdiction_weights = {
+                "US": 0.40,      # 40% US
+                "UK": 0.25,      # 25% UK
+                "EU": 0.20,      # 20% EU
+                "CA": 0.10,      # 10% Canada
+                "AU": 0.05       # 5% Australia
+            }
+        jurisdiction = random.choices(
+            list(jurisdiction_weights.keys()),
+            weights=list(jurisdiction_weights.values())
+        )[0]
+        
+        # Map jurisdiction to currency and governing law
+        jurisdiction_map = {
+            "US": ("USD", "NY"),      # New York law
+            "UK": ("GBP", "English"), # English law
+            "EU": ("EUR", "DE"),      # German law (EU representative)
+            "CA": ("CAD", "Ontario"), # Ontario law
+            "AU": ("AUD", "NSW")      # New South Wales law
+        }
+        currency, governing_law = jurisdiction_map[jurisdiction]
+        return jurisdiction, currency, governing_law
+    
+    def _generate_synthetic_lei(self) -> str:
+        """
+        Generate a synthetic Legal Entity Identifier (LEI).
+        
+        LEI format: 20 characters, alphanumeric
+        Example: 5493000X0ABCDEFGH12
+        
+        Returns:
+            Synthetic LEI string
+        """
+        # LEI format: 4 digits + 2 chars + 12 alphanumeric + 2 check digits
+        # For demo purposes, we'll generate a simpler format
+        import string
+        chars = string.ascii_uppercase + string.digits
+        # Generate 20-character LEI
+        lei = "549300"  # Common prefix for demo
+        lei += ''.join(random.choices(chars, k=14))
+        return lei
+    
+    def _extract_borrower_info_from_application(self, application: Application) -> Dict[str, Any]:
+        """
+        Extract borrower info from application.
+        
+        Args:
+            application: Application object
+            
+        Returns:
+            Dictionary with borrower info (name, lei, address, type)
+        """
+        borrower_info = {}
+        if application.business_data:
+            borrower_info["name"] = application.business_data.get("company_name", "Unknown Company")
+            borrower_info["lei"] = application.business_data.get("lei") or self._generate_synthetic_lei()
+            borrower_info["address"] = application.business_data.get("business_address")
+            borrower_info["type"] = "business"
+        elif application.individual_data:
+            first = application.individual_data.get("first_name", "")
+            last = application.individual_data.get("last_name", "")
+            borrower_info["name"] = f"{first} {last}".strip() or "Unknown Individual"
+            borrower_info["lei"] = self._generate_synthetic_lei()  # Individuals don't have LEI typically
+            borrower_info["address"] = application.individual_data.get("residential_address")
+            borrower_info["type"] = "individual"
+        else:
+            borrower_info["name"] = "Unknown Borrower"
+            borrower_info["lei"] = self._generate_synthetic_lei()
+            borrower_info["type"] = "unknown"
+        return borrower_info
+    
+    def _generate_lender_info(self) -> Dict[str, Any]:
+        """
+        Generate lender info from demo users with BANKER role.
+        
+        Returns:
+            Dictionary with lender info (name, lei, role, user_id)
+        """
+        # Get users with BANKER role
+        bankers = self.db.query(User).filter(User.role == UserRole.BANKER.value).all()
+        
+        if bankers:
+            banker = random.choice(bankers)
+            lender_name = f"{banker.display_name or banker.email.split('@')[0]} Bank"
+        else:
+            # Fallback if no bankers exist
+            lender_name = "Demo Bank"
+            banker = None
+        
+        return {
+            "name": lender_name,
+            "lei": self._generate_synthetic_lei(),
+            "role": "Lender",
+            "user_id": banker.id if banker else None
+        }
+    
+    def _generate_guarantor_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Generate guarantor info.
+        
+        Returns:
+            Dictionary with guarantor info (name, lei) or None
+        """
+        # Generate synthetic guarantor names
+        guarantor_names = [
+            "Global Guarantee Corp",
+            "International Surety Ltd",
+            "Credit Assurance Group",
+            "Financial Guaranty Inc",
+            "Surety Solutions LLC"
+        ]
+        
+        return {
+            "name": random.choice(guarantor_names),
+            "lei": self._generate_synthetic_lei()
+        }
     
     def _assign_realistic_deal_status(self, application: Application, deal_index: int) -> str:
         """
@@ -1263,14 +1821,15 @@ The document contains placeholder content representing a credit agreement.
                         seed=deal.id + doc_idx
                     )
                     
-                    # Extract borrower info from CDM
+                    # Extract borrower info from CDM, with fallback to deal_data
                     borrower = next((p for p in cdm.parties if p.role == "Borrower"), None) if cdm.parties else None
-                    borrower_name = borrower.name if borrower else f"Borrower {deal.deal_id}"
-                    borrower_lei = borrower.lei if borrower else None
+                    borrower_name = borrower.name if borrower else (deal.deal_data.get("borrower_name") if deal.deal_data else f"Borrower {deal.deal_id}")
+                    borrower_lei = borrower.lei if borrower else (deal.deal_data.get("borrower_lei") if deal.deal_data else None)
                     
                     # Calculate total commitment
                     total_commitment = Decimal(0)
-                    currency = "USD"
+                    # Use deal's currency as fallback, then default to USD
+                    currency = deal.deal_data.get("currency", "USD") if deal.deal_data else "USD"
                     if cdm.facilities:
                         for facility in cdm.facilities:
                             if facility.commitment_amount:
@@ -1342,11 +1901,14 @@ The document contains placeholder content representing a credit agreement.
                             else:
                                 source_cdm_data = None
                     
+                    # Use deal's governing_law as fallback if CDM doesn't have it
+                    governing_law = cdm.governing_law or (deal.deal_data.get("governing_law", "NY") if deal.deal_data else "NY")
+                    
                     document = Document(
                         title=title,
                         borrower_name=borrower_name,
                         borrower_lei=borrower_lei,
-                        governing_law=cdm.governing_law or "NY",
+                        governing_law=governing_law,
                         total_commitment=total_commitment,
                         currency=currency,
                         agreement_date=cdm.agreement_date,
@@ -2562,7 +3124,8 @@ The borrower agrees to maintain the specified NDVI threshold and will be subject
         
         # Get available templates
         from app.db.models import LMATemplate
-        templates = self.db.query(LMATemplate).filter(LMATemplate.is_active == True).all()
+        # LMATemplate doesn't have is_active field, so just get all templates
+        templates = self.db.query(LMATemplate).all()
         
         if not templates:
             logger.warning("No active templates found for document generation")
@@ -2718,7 +3281,10 @@ The borrower agrees to maintain the specified NDVI threshold and will be subject
                     continue
                 
                 # Create 2-5 notes per deal
-                note_count = random.randint(2, 5)
+                # Use config values if available
+                min_notes = self._demo_config.min_notes_per_deal if self._demo_config else 2
+                max_notes = self._demo_config.max_notes_per_deal if self._demo_config else 5
+                note_count = random.randint(min_notes, max_notes)
                 
                 for i in range(note_count):
                     # Select user role based on distribution
@@ -2790,6 +3356,753 @@ The borrower agrees to maintain the specified NDVI threshold and will be subject
         self._update_status("deal_notes", status="completed", completed_at=datetime.utcnow())
         
         return deal_notes
+    
+    def create_timeline_events_for_deals(self, deal_ids: List[int]) -> int:
+        """
+        Create timeline events for deals including status changes, verifications, 
+        notarizations, policy decisions, and workflow transitions.
+        
+        Args:
+            deal_ids: List of deal IDs to create timeline events for
+            
+        Returns:
+            Count of events created
+        """
+        if not deal_ids:
+            return 0
+        
+        total_events = 0
+        
+        try:
+            # Generate status change events
+            total_events += self._generate_status_change_events(deal_ids)
+            
+            # Generate verification events
+            total_events += self._generate_verification_events(deal_ids)
+            
+            # Generate notarization events
+            total_events += self._generate_notarization_events(deal_ids)
+            
+            # Generate policy decision events
+            total_events += self._generate_policy_decision_events(deal_ids)
+            
+            # Generate workflow events
+            total_events += self._generate_workflow_events(deal_ids)
+            
+            logger.info(f"Created {total_events} timeline events for {len(deal_ids)} deals")
+        except Exception as e:
+            logger.error(f"Error creating timeline events: {e}", exc_info=True)
+        
+        return total_events
+    
+    def _generate_status_change_events(self, deal_ids: List[int]) -> int:
+        """
+        Generate status change events for deals.
+        
+        Creates events: draft → submitted → under_review → approved → active
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            Count of events created
+        """
+        events_created = 0
+        
+        for deal_id in deal_ids:
+            try:
+                deal = self.db.query(Deal).filter(Deal.id == deal_id).first()
+                if not deal:
+                    continue
+                
+                # Determine status progression based on current status
+                status_sequence = {
+                    DealStatus.DRAFT.value: [DealStatus.DRAFT.value],
+                    DealStatus.PENDING.value: [DealStatus.DRAFT.value, DealStatus.PENDING.value],
+                    DealStatus.UNDER_REVIEW.value: [DealStatus.DRAFT.value, DealStatus.PENDING.value, DealStatus.UNDER_REVIEW.value],
+                    DealStatus.APPROVED.value: [DealStatus.DRAFT.value, DealStatus.PENDING.value, DealStatus.UNDER_REVIEW.value, DealStatus.APPROVED.value],
+                    DealStatus.ACTIVE.value: [DealStatus.DRAFT.value, DealStatus.PENDING.value, DealStatus.UNDER_REVIEW.value, DealStatus.APPROVED.value, DealStatus.ACTIVE.value],
+                    DealStatus.CLOSED.value: [DealStatus.DRAFT.value, DealStatus.PENDING.value, DealStatus.UNDER_REVIEW.value, DealStatus.APPROVED.value, DealStatus.ACTIVE.value, DealStatus.CLOSED.value]
+                }
+                
+                statuses = status_sequence.get(deal.status, [deal.status])
+                
+                # Generate events for each status transition
+                base_time = deal.created_at or datetime.utcnow()
+                for idx, status in enumerate(statuses):
+                    event_time = base_time + timedelta(days=idx * 2 + random.randint(0, 3))
+                    
+                    # Create timeline event
+                    from app.models.cdm_events import generate_cdm_observation
+                    
+                    timeline_event = generate_cdm_observation(
+                        trade_id=deal.deal_id,
+                        satellite_hash="",
+                        ndvi_score=0.0,
+                        status="COMPLETED"
+                    )
+                    timeline_event["eventType"] = "TimelineEvent"
+                    timeline_event["timelineEvent"] = {
+                        "eventType": "status_change",
+                        "eventData": {
+                            "deal_id": deal.deal_id,
+                            "old_status": statuses[idx - 1] if idx > 0 else None,
+                            "new_status": status,
+                            "changed_by": deal.applicant_id
+                        },
+                        "userId": deal.applicant_id
+                    }
+                    timeline_event["eventDate"] = event_time.isoformat()
+                    
+                    # Store event
+                    event_id = f"STATUS_{status}_{event_time.strftime('%Y%m%d%H%M%S')}"
+                    self.file_storage.store_cdm_event(
+                        user_id=deal.applicant_id,
+                        deal_id=deal.deal_id,
+                        event_id=event_id,
+                        event_data=timeline_event
+                    )
+                    events_created += 1
+                    
+            except Exception as e:
+                logger.warning(f"Failed to generate status change events for deal {deal_id}: {e}")
+                continue
+        
+        return events_created
+    
+    def _generate_verification_events(self, deal_ids: List[int]) -> int:
+        """
+        Generate verification events for deals with verification_required=True.
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            Count of events created
+        """
+        events_created = 0
+        
+        for deal_id in deal_ids:
+            try:
+                deal = self.db.query(Deal).filter(Deal.id == deal_id).filter(Deal.verification_required == True).first()
+                if not deal:
+                    continue
+                
+                from app.models.cdm_events import generate_cdm_observation
+                
+                # Verification initiated event
+                init_time = deal.created_at + timedelta(days=random.randint(1, 7)) if deal.created_at else datetime.utcnow()
+                
+                init_event = generate_cdm_observation(
+                    trade_id=deal.deal_id,
+                    satellite_hash=f"VERIFY_{deal.deal_id}_{random.randint(1000, 9999)}",
+                    ndvi_score=random.uniform(0.65, 0.95),
+                    status="IN_PROGRESS"
+                )
+                init_event["eventType"] = "TimelineEvent"
+                init_event["timelineEvent"] = {
+                    "eventType": "verification_initiated",
+                    "eventData": {
+                        "deal_id": deal.deal_id,
+                        "verification_type": "satellite_verification",
+                        "initiated_by": deal.applicant_id
+                    },
+                    "userId": deal.applicant_id
+                }
+                init_event["eventDate"] = init_time.isoformat()
+                
+                event_id = f"VERIFY_INIT_{init_time.strftime('%Y%m%d%H%M%S')}"
+                self.file_storage.store_cdm_event(
+                    user_id=deal.applicant_id,
+                    deal_id=deal.deal_id,
+                    event_id=event_id,
+                    event_data=init_event
+                )
+                events_created += 1
+                
+                # Verification completed event (if verification_completed_at exists)
+                if deal.verification_completed_at:
+                    complete_event = generate_cdm_observation(
+                        trade_id=deal.deal_id,
+                        satellite_hash=f"VERIFY_{deal.deal_id}_{random.randint(1000, 9999)}",
+                        ndvi_score=random.uniform(0.70, 0.95),
+                        status="COMPLETED"
+                    )
+                    complete_event["eventType"] = "TimelineEvent"
+                    complete_event["timelineEvent"] = {
+                        "eventType": "verification_completed",
+                        "eventData": {
+                            "deal_id": deal.deal_id,
+                            "verification_status": "PASSED",
+                            "ndvi_score": random.uniform(0.70, 0.95),
+                            "risk_status": random.choice(["LOW", "MEDIUM", "HIGH"])
+                        },
+                        "userId": deal.applicant_id
+                    }
+                    complete_event["eventDate"] = deal.verification_completed_at.isoformat()
+                    
+                    event_id = f"VERIFY_COMPLETE_{deal.verification_completed_at.strftime('%Y%m%d%H%M%S')}"
+                    self.file_storage.store_cdm_event(
+                        user_id=deal.applicant_id,
+                        deal_id=deal.deal_id,
+                        event_id=event_id,
+                        event_data=complete_event
+                    )
+                    events_created += 1
+                    
+            except Exception as e:
+                logger.warning(f"Failed to generate verification events for deal {deal_id}: {e}")
+                continue
+        
+        return events_created
+    
+    def _generate_notarization_events(self, deal_ids: List[int]) -> int:
+        """
+        Generate notarization events for deals with notarization_required=True.
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            Count of events created
+        """
+        events_created = 0
+        
+        for deal_id in deal_ids:
+            try:
+                deal = self.db.query(Deal).filter(Deal.id == deal_id).filter(Deal.notarization_required == True).first()
+                if not deal:
+                    continue
+                
+                from app.models.cdm_events import generate_cdm_notarization_event
+                
+                # Notarization completed event (if notarization_completed_at exists)
+                if deal.notarization_completed_at:
+                    notarization_hash = f"0x{''.join([random.choice('0123456789abcdef') for _ in range(64)])}"
+                    blockchain_tx_hash = f"0x{''.join([random.choice('0123456789abcdef') for _ in range(64)])}"
+                    
+                    notarization_event = generate_cdm_notarization_event(
+                        notarization_id=f"NOTAR_{deal.deal_id}",
+                        deal_id=deal.deal_id,
+                        signers=[{"wallet_address": f"0x{''.join([random.choice('0123456789abcdef') for _ in range(40)])}", "signature": f"0x{''.join([random.choice('0123456789abcdef') for _ in range(128)])}"}],
+                        notarization_hash=notarization_hash,
+                        blockchain_tx_hash=blockchain_tx_hash
+                    )
+                    notarization_event["eventType"] = "TimelineEvent"
+                    notarization_event["timelineEvent"] = {
+                        "eventType": "notarization_completed",
+                        "eventData": {
+                            "deal_id": deal.deal_id,
+                            "notarization_hash": notarization_hash,
+                            "blockchain_tx_hash": blockchain_tx_hash
+                        },
+                        "userId": deal.applicant_id
+                    }
+                    notarization_event["eventDate"] = deal.notarization_completed_at.isoformat()
+                    
+                    event_id = f"NOTAR_COMPLETE_{deal.notarization_completed_at.strftime('%Y%m%d%H%M%S')}"
+                    self.file_storage.store_cdm_event(
+                        user_id=deal.applicant_id,
+                        deal_id=deal.deal_id,
+                        event_id=event_id,
+                        event_data=notarization_event
+                    )
+                    events_created += 1
+                    
+            except Exception as e:
+                logger.warning(f"Failed to generate notarization events for deal {deal_id}: {e}")
+                continue
+        
+        return events_created
+    
+    def _generate_policy_decision_events(self, deal_ids: List[int]) -> int:
+        """
+        Generate policy decision events from PolicyDecision records.
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            Count of events created
+        """
+        events_created = 0
+        
+        # Get all documents for these deals
+        documents = self.db.query(Document).filter(Document.deal_id.in_(deal_ids)).all()
+        document_ids = [d.id for d in documents]
+        
+        if not document_ids:
+            return 0
+        
+        # Get policy decisions for these documents
+        policy_decisions = self.db.query(PolicyDecision).filter(
+            PolicyDecision.document_id.in_(document_ids)
+        ).all()
+        
+        for policy_decision in policy_decisions:
+            try:
+                document = self.db.query(Document).filter(Document.id == policy_decision.document_id).first()
+                if not document or not document.deal:
+                    continue
+                
+                deal = document.deal
+                
+                # Create timeline event from policy decision
+                from app.models.cdm_events import generate_cdm_policy_evaluation
+                
+                policy_event = generate_cdm_policy_evaluation(
+                    transaction_id=deal.deal_id,
+                    transaction_type="facility_creation",
+                    decision=policy_decision.decision,
+                    rule_applied=policy_decision.rule_applied or "unknown_rule",
+                    related_event_identifiers=[],
+                    evaluation_trace=policy_decision.evaluation_trace or [],
+                    matched_rules=[policy_decision.rule_applied] if policy_decision.rule_applied else []
+                )
+                policy_event["eventType"] = "TimelineEvent"
+                policy_event["timelineEvent"] = {
+                    "eventType": "policy_decision",
+                    "eventData": {
+                        "deal_id": deal.deal_id,
+                        "document_id": document.id,
+                        "decision": policy_decision.decision,
+                        "rule_applied": policy_decision.rule_applied,
+                        "reasoning": policy_decision.reasoning
+                    },
+                    "userId": deal.applicant_id
+                }
+                policy_event["eventDate"] = (policy_decision.created_at or datetime.utcnow()).isoformat()
+                
+                event_id = f"POLICY_{policy_decision.decision}_{policy_decision.id}"
+                self.file_storage.store_cdm_event(
+                    user_id=deal.applicant_id,
+                    deal_id=deal.deal_id,
+                    event_id=event_id,
+                    event_data=policy_event
+                )
+                events_created += 1
+                
+            except Exception as e:
+                logger.warning(f"Failed to generate policy decision event for policy_decision {policy_decision.id}: {e}")
+                continue
+        
+        return events_created
+    
+    def _generate_workflow_events(self, deal_ids: List[int]) -> int:
+        """
+        Generate workflow state change events.
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            Count of events created
+        """
+        events_created = 0
+        
+        # Get all documents for these deals
+        documents = self.db.query(Document).filter(Document.deal_id.in_(deal_ids)).all()
+        document_ids = [d.id for d in documents]
+        
+        if not document_ids:
+            return 0
+        
+        # Get workflows for these documents
+        workflows = self.db.query(Workflow).filter(
+            Workflow.document_id.in_(document_ids)
+        ).all()
+        
+        for workflow in workflows:
+            try:
+                document = self.db.query(Document).filter(Document.id == workflow.document_id).first()
+                if not document or not document.deal:
+                    continue
+                
+                deal = document.deal
+                
+                # Determine state transitions - WorkflowState enum has: DRAFT, UNDER_REVIEW, APPROVED, PUBLISHED, ARCHIVED, GENERATED
+                # Handle both enum values and string values, normalize to lowercase for comparison
+                workflow_state_str = workflow.state.lower() if isinstance(workflow.state, str) else (workflow.state.value.lower() if hasattr(workflow.state, 'value') else str(workflow.state).lower())
+                
+                state_transitions = {
+                    WorkflowState.DRAFT.value: [WorkflowState.DRAFT.value],
+                    WorkflowState.UNDER_REVIEW.value: [WorkflowState.DRAFT.value, WorkflowState.UNDER_REVIEW.value],
+                    WorkflowState.APPROVED.value: [WorkflowState.DRAFT.value, WorkflowState.UNDER_REVIEW.value, WorkflowState.APPROVED.value],
+                    WorkflowState.PUBLISHED.value: [WorkflowState.DRAFT.value, WorkflowState.UNDER_REVIEW.value, WorkflowState.APPROVED.value, WorkflowState.PUBLISHED.value],
+                    WorkflowState.ARCHIVED.value: [WorkflowState.DRAFT.value, WorkflowState.UNDER_REVIEW.value, WorkflowState.APPROVED.value, WorkflowState.ARCHIVED.value],
+                    WorkflowState.GENERATED.value: [WorkflowState.GENERATED.value]
+                }
+                
+                # Try to get states using normalized string, fallback to current state if not found
+                states = state_transitions.get(workflow_state_str, state_transitions.get(workflow.state, [workflow.state]))
+                
+                # Ensure states is a list of strings
+                if not isinstance(states, list):
+                    states = [states]
+                states = [str(s) for s in states]
+                
+                # Generate events for each state transition
+                base_time = workflow.created_at or datetime.utcnow()
+                for idx, state in enumerate(states):
+                    event_time = base_time + timedelta(days=idx + random.randint(0, 2))
+                    
+                    from app.models.cdm_events import generate_cdm_observation
+                    
+                    workflow_event = generate_cdm_observation(
+                        trade_id=deal.deal_id,
+                        satellite_hash="",
+                        ndvi_score=0.0,
+                        status="COMPLETED"
+                    )
+                    workflow_event["eventType"] = "TimelineEvent"
+                    workflow_event["timelineEvent"] = {
+                        "eventType": "workflow_state_change",
+                        "eventData": {
+                            "deal_id": deal.deal_id,
+                            "document_id": document.id,
+                            "workflow_id": workflow.id,
+                            "old_state": states[idx - 1] if idx > 0 else None,
+                            "new_state": state
+                        },
+                        "userId": deal.applicant_id
+                    }
+                    workflow_event["eventDate"] = event_time.isoformat()
+                    
+                    event_id = f"WORKFLOW_{state}_{workflow.id}_{event_time.strftime('%Y%m%d%H%M%S')}"
+                    self.file_storage.store_cdm_event(
+                        user_id=deal.applicant_id,
+                        deal_id=deal.deal_id,
+                        event_id=event_id,
+                        event_data=workflow_event
+                    )
+                    events_created += 1
+                    
+            except Exception as e:
+                logger.warning(f"Failed to generate workflow events for workflow {workflow.id}: {e}")
+                continue
+        
+        return events_created
+    
+    def assign_deals_to_users(self, deal_ids: List[int]) -> Dict[str, Any]:
+        """
+        Assign deals to appropriate users based on roles (bankers, law officers).
+        
+        Args:
+            deal_ids: List of deal IDs to assign
+            
+        Returns:
+            Dictionary with assignment statistics
+        """
+        if not deal_ids:
+            return {"deal_managers": 0, "document_reviewers": 0, "total_assignments": 0}
+        
+        try:
+            # Assign deal managers (bankers)
+            manager_assignments = self._assign_deal_managers(deal_ids)
+            
+            # Assign document reviewers (law officers)
+            reviewer_assignments = self._assign_document_reviewers(deal_ids)
+            
+            # Update deal_data with assignments
+            for deal_id in deal_ids:
+                deal = self.db.query(Deal).filter(Deal.id == deal_id).first()
+                if not deal:
+                    continue
+                
+                # Get assignments for this deal
+                managers = manager_assignments.get(deal_id, [])
+                reviewers = reviewer_assignments.get(deal_id, [])
+                
+                # Update deal_data
+                if not deal.deal_data:
+                    deal.deal_data = {}
+                
+                deal.deal_data["assigned_users"] = {
+                    "deal_managers": [{"user_id": m["user_id"], "name": m["name"], "role": "BANKER"} for m in managers],
+                    "document_reviewers": [{"user_id": r["user_id"], "name": r["name"], "role": "LAW_OFFICER"} for r in reviewers]
+                }
+            
+            self.db.commit()
+            
+            total_managers = sum(len(managers) for managers in manager_assignments.values())
+            total_reviewers = sum(len(reviewers) for reviewers in reviewer_assignments.values())
+            
+            return {
+                "deal_managers": total_managers,
+                "document_reviewers": total_reviewers,
+                "total_assignments": total_managers + total_reviewers
+            }
+            
+        except Exception as e:
+            logger.error(f"Error assigning deals to users: {e}", exc_info=True)
+            return {"deal_managers": 0, "document_reviewers": 0, "total_assignments": 0}
+    
+    def _assign_deal_managers(self, deal_ids: List[int]) -> Dict[int, List[Dict[str, Any]]]:
+        """
+        Assign deal managers (bankers) to deals.
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            Dictionary mapping deal_id to list of manager assignments
+        """
+        # Get users with BANKER role
+        bankers = self.db.query(User).filter(User.role == UserRole.BANKER.value).all()
+        
+        if not bankers:
+            logger.warning("No bankers found for deal assignment")
+            return {}
+        
+        assignments = {}
+        
+        # Distribute deals evenly across bankers
+        for idx, deal_id in enumerate(deal_ids):
+            # Assign 1-2 bankers per deal
+            num_managers = random.randint(1, 2)
+            selected_bankers = random.sample(bankers, min(num_managers, len(bankers)))
+            
+            assignments[deal_id] = [
+                {
+                    "user_id": banker.id,
+                    "name": banker.display_name or banker.email.split("@")[0],
+                    "role": "BANKER"
+                }
+                for banker in selected_bankers
+            ]
+        
+        return assignments
+    
+    def _assign_document_reviewers(self, deal_ids: List[int]) -> Dict[int, List[Dict[str, Any]]]:
+        """
+        Assign document reviewers (law officers) to deals.
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            Dictionary mapping deal_id to list of reviewer assignments
+        """
+        # Get users with LAW_OFFICER role
+        law_officers = self.db.query(User).filter(User.role == UserRole.LAW_OFFICER.value).all()
+        
+        if not law_officers:
+            logger.warning("No law officers found for document review assignment")
+            return {}
+        
+        assignments = {}
+        
+        # Distribute deals evenly across law officers
+        for idx, deal_id in enumerate(deal_ids):
+            # Assign 1 law officer per deal (for document review)
+            selected_officer = random.choice(law_officers)
+            
+            assignments[deal_id] = [
+                {
+                    "user_id": selected_officer.id,
+                    "name": selected_officer.display_name or selected_officer.email.split("@")[0],
+                    "role": "LAW_OFFICER"
+                }
+            ]
+        
+        return assignments
+    
+    def create_document_filings_for_deals(self, deal_ids: List[int]) -> List[DocumentFiling]:
+        """
+        Create DocumentFiling records for deals that require regulatory filings.
+        
+        Args:
+            deal_ids: List of deal IDs
+            
+        Returns:
+            List of DocumentFiling objects
+        """
+        filings = []
+        
+        for deal_id in deal_ids:
+            try:
+                deal = self.db.query(Deal).filter(Deal.id == deal_id).first()
+                if not deal:
+                    continue
+                
+                # Determine filing requirements
+                filing_requirements = self._determine_filing_requirements(deal)
+                
+                if not filing_requirements:
+                    continue
+                
+                # Get documents for this deal
+                documents = self.db.query(Document).filter(Document.deal_id == deal_id).all()
+                if not documents:
+                    continue
+                
+                # Generate filings for each requirement
+                for requirement in filing_requirements:
+                    filing_data = self._generate_filing_data(deal, requirement, documents[0])
+                    
+                    filing = DocumentFiling(
+                        document_id=documents[0].id,
+                        deal_id=deal.id,
+                        agreement_type=requirement.get("agreement_type", "facility_agreement"),
+                        jurisdiction=requirement.get("jurisdiction", deal.deal_data.get("jurisdiction", "US") if deal.deal_data else "US"),
+                        filing_authority=requirement.get("authority"),
+                        filing_system=requirement.get("filing_system", "manual_ui"),
+                        filing_status=random.choice(["pending", "submitted", "accepted"]),
+                        filing_payload=filing_data,
+                        deadline=filing_data.get("deadline"),
+                        filed_at=filing_data.get("filed_at"),
+                        created_at=deal.created_at + timedelta(days=random.randint(30, 90)) if deal.created_at else datetime.utcnow()
+                    )
+                    
+                    self.db.add(filing)
+                    filings.append(filing)
+                    
+            except Exception as e:
+                logger.warning(f"Failed to create document filings for deal {deal_id}: {e}")
+                continue
+        
+        self.db.commit()
+        return filings
+    
+    def _determine_filing_requirements(self, deal: Deal) -> List[Dict[str, Any]]:
+        """
+        Determine filing requirements based on jurisdiction, deal type, and deal amount.
+        
+        Args:
+            deal: Deal object
+            
+        Returns:
+            List of filing requirement dictionaries
+        """
+        requirements = []
+        
+        # Get jurisdiction from deal_data
+        jurisdiction = deal.deal_data.get("jurisdiction", "US") if deal.deal_data else "US"
+        deal_amount = deal.deal_data.get("loan_amount", 0) if deal.deal_data else 0
+        
+        # US filings
+        if jurisdiction == "US":
+            # SEC filings for larger deals
+            if deal_amount > 10000000:  # $10M threshold
+                requirements.append({
+                    "authority": "SEC",
+                    "jurisdiction": "US",
+                    "filing_system": "manual_ui",
+                    "agreement_type": "facility_agreement",
+                    "form_type": "Form 8-K"
+                })
+            # State-level filings for medium deals
+            if deal_amount > 1000000:  # $1M threshold
+                requirements.append({
+                    "authority": "State Securities Regulator",
+                    "jurisdiction": "US",
+                    "filing_system": "manual_ui",
+                    "agreement_type": "facility_agreement",
+                    "form_type": "State Filing"
+                })
+        
+        # UK filings
+        elif jurisdiction == "UK":
+            if deal_amount > 5000000:  # £5M threshold
+                requirements.append({
+                    "authority": "Companies House",
+                    "jurisdiction": "UK",
+                    "filing_system": "companies_house_api",
+                    "agreement_type": "facility_agreement",
+                    "form_type": "Charge Registration"
+                })
+            if deal_amount > 1000000:  # £1M threshold
+                requirements.append({
+                    "authority": "FCA",
+                    "jurisdiction": "UK",
+                    "filing_system": "manual_ui",
+                    "agreement_type": "disclosure",
+                    "form_type": "FCA Disclosure"
+                })
+        
+        # EU filings
+        elif jurisdiction == "EU":
+            if deal_amount > 5000000:  # €5M threshold
+                requirements.append({
+                    "authority": "ESMA",
+                    "jurisdiction": "EU",
+                    "filing_system": "manual_ui",
+                    "agreement_type": "facility_agreement",
+                    "form_type": "ESMA Filing"
+                })
+            # Country-specific filings
+            requirements.append({
+                "authority": "National Regulator",
+                "jurisdiction": "EU",
+                "filing_system": "manual_ui",
+                "agreement_type": "facility_agreement",
+                "form_type": "National Filing"
+            })
+        
+        # Canada filings
+        elif jurisdiction == "CA":
+            if deal_amount > 5000000:  # CAD $5M threshold
+                requirements.append({
+                    "authority": "OSC",
+                    "jurisdiction": "CA",
+                    "filing_system": "manual_ui",
+                    "agreement_type": "facility_agreement",
+                    "form_type": "OSC Filing"
+                })
+        
+        # Australia filings
+        elif jurisdiction == "AU":
+            if deal_amount > 5000000:  # AUD $5M threshold
+                requirements.append({
+                    "authority": "ASIC",
+                    "jurisdiction": "AU",
+                    "filing_system": "manual_ui",
+                    "agreement_type": "facility_agreement",
+                    "form_type": "ASIC Filing"
+                })
+        
+        return requirements
+    
+    def _generate_filing_data(self, deal: Deal, requirement: Dict[str, Any], document: Document) -> Dict[str, Any]:
+        """
+        Generate filing form data based on jurisdiction and requirement.
+        
+        Args:
+            deal: Deal object
+            requirement: Filing requirement dictionary
+            document: Document object
+            
+        Returns:
+            Filing data dictionary
+        """
+        # Generate filing dates (within 30-90 days of deal creation)
+        base_date = deal.created_at or datetime.utcnow()
+        filing_date = base_date + timedelta(days=random.randint(30, 90))
+        deadline = filing_date + timedelta(days=random.randint(7, 30))
+        
+        # Get deal metadata
+        borrower_name = deal.deal_data.get("borrower_name", "Unknown Borrower") if deal.deal_data else "Unknown Borrower"
+        lender_name = deal.deal_data.get("lender_info", {}).get("name", "Unknown Lender") if deal.deal_data else "Unknown Lender"
+        deal_amount = deal.deal_data.get("loan_amount", 0) if deal.deal_data else 0
+        
+        filing_data = {
+            "form_type": requirement.get("form_type", "Standard Filing"),
+            "deal_id": deal.deal_id,
+            "borrower_name": borrower_name,
+            "borrower_lei": deal.deal_data.get("borrower_lei") if deal.deal_data else None,
+            "lender_name": lender_name,
+            "deal_amount": deal_amount,
+            "currency": deal.deal_data.get("currency", "USD") if deal.deal_data else "USD",
+            "deal_type": deal.deal_type,
+            "jurisdiction": requirement.get("jurisdiction", "US"),
+            "filing_authority": requirement.get("authority"),
+            "filed_at": filing_date.isoformat(),
+            "deadline": deadline.isoformat(),
+            "document_title": document.title,
+            "document_id": document.id
+        }
+        
+        return filing_data
     
     def create_policy_decisions_for_documents(self, document_ids: List[int]) -> List[PolicyDecision]:
         """
@@ -3876,27 +5189,14 @@ The borrower agrees to maintain the specified NDVI threshold and will be subject
                 needs_completion = False
                 
                 # Check for missing critical fields
+                # Note: Document model doesn't have document_type or status attributes
                 if not document.title:
-                    needs_completion = True
-                if not document.document_type:
-                    needs_completion = True
-                if not document.status:
                     needs_completion = True
                 
                 if needs_completion:
                     # Complete title if missing
                     if not document.title:
                         document.title = f"Document for Deal {document.deal_id}"
-                    
-                    # Complete document_type if missing
-                    if not document.document_type:
-                        document.document_type = random.choice([
-                            "credit_agreement", "term_sheet", "amendment", "notice", "certificate"
-                        ])
-                    
-                    # Complete status if missing
-                    if not document.status:
-                        document.status = "draft"
                     
                     self.db.add(document)
                     completed_count += 1

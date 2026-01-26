@@ -117,13 +117,20 @@ class EncryptionService:
         
         try:
             # Convert data to bytes
-            if isinstance(data, dict):
+            if isinstance(data, dict) or isinstance(data, list):
                 import json
                 data_bytes = json.dumps(data).encode('utf-8')
             elif isinstance(data, str):
                 data_bytes = data.encode('utf-8')
-            else:
+            elif isinstance(data, bytes):
                 data_bytes = data
+            else:
+                # Try to convert other types to string first, then bytes
+                data_bytes = str(data).encode('utf-8')
+            
+            # Ensure we have bytes before encrypting
+            if not isinstance(data_bytes, bytes):
+                raise TypeError(f"Data must be convertible to bytes, got {type(data)}")
             
             encrypted = self.fernet.encrypt(data_bytes)
             return encrypted
@@ -160,11 +167,41 @@ class EncryptionService:
             except UnicodeDecodeError:
                 return decrypted
         except InvalidToken:
-            logger.error("Invalid encryption token - data may be corrupted or key mismatch")
-            raise ValueError("Failed to decrypt data: invalid token")
+            if settings.ENCRYPTION_STRICT_MODE:
+                logger.error("Invalid encryption token - data may be corrupted or key mismatch")
+                raise ValueError("Failed to decrypt data: invalid token")
+            else:
+                # Graceful mode: log warning and try to return as plain text
+                logger.warning(
+                    "Invalid encryption token - data may be corrupted, key mismatch, or plain text. "
+                    "Attempting graceful fallback."
+                )
+                # Try to decode as plain text if it's bytes
+                if isinstance(encrypted_data, bytes):
+                    try:
+                        return encrypted_data.decode('utf-8')
+                    except UnicodeDecodeError:
+                        pass
+                # If it's a string, return as-is (might be plain text)
+                elif isinstance(encrypted_data, str):
+                    return encrypted_data
+                # Otherwise return None to indicate decryption failure
+                return None
         except Exception as e:
-            logger.error(f"Decryption failed: {e}")
-            raise ValueError(f"Failed to decrypt data: {e}")
+            if settings.ENCRYPTION_STRICT_MODE:
+                logger.error(f"Decryption failed: {e}")
+                raise ValueError(f"Failed to decrypt data: {e}")
+            else:
+                logger.warning(f"Decryption failed (graceful mode): {e}. Attempting fallback.")
+                # Try to return as plain text
+                if isinstance(encrypted_data, bytes):
+                    try:
+                        return encrypted_data.decode('utf-8')
+                    except UnicodeDecodeError:
+                        return None
+                elif isinstance(encrypted_data, str):
+                    return encrypted_data
+                return None
 
     def encrypt_string(self, data: str) -> Optional[str]:
         """

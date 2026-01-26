@@ -281,9 +281,12 @@ class EncryptedText(TypeDecorator):
                             if isinstance(decrypted, bytes):
                                 return decrypted.decode('utf-8')
                             return str(decrypted)
-                    except Exception:
-                        # If decryption fails, it might be plain text
-                        pass
+                    except (ValueError, Exception) as e:
+                        # If decryption fails in strict mode, re-raise
+                        if settings.ENCRYPTION_STRICT_MODE:
+                            raise
+                        # Otherwise, assume it's plain text
+                        logger.warning(f"Decryption failed for string value (graceful mode): {e}")
                 return value
             
             # Try to decrypt bytes directly
@@ -291,12 +294,16 @@ class EncryptedText(TypeDecorator):
             
             if decrypted is None:
                 # Decryption failed, might be plain text from before encryption
-                logger.warning("Decryption returned None, attempting to decode as plain text")
-                try:
-                    return value.decode('utf-8')
-                except (UnicodeDecodeError, AttributeError):
-                    logger.error("Failed to decrypt and failed to decode as plain text")
-                    raise ValueError("Failed to decrypt value and not valid UTF-8")
+                if settings.ENCRYPTION_STRICT_MODE:
+                    logger.error("Decryption returned None in strict mode")
+                    raise ValueError("Failed to decrypt value: decryption returned None")
+                else:
+                    logger.warning("Decryption returned None, attempting to decode as plain text")
+                    try:
+                        return value.decode('utf-8')
+                    except (UnicodeDecodeError, AttributeError):
+                        logger.warning("Failed to decrypt and failed to decode as plain text, returning empty string")
+                        return ""  # Return empty string instead of raising error
             
             if isinstance(decrypted, str):
                 return decrypted
@@ -305,15 +312,34 @@ class EncryptedText(TypeDecorator):
             else:
                 return str(decrypted)
                 
+        except ValueError as e:
+            # Handle decryption errors based on strict mode
+            if settings.ENCRYPTION_STRICT_MODE:
+                logger.error(f"Failed to decrypt text value: {e}")
+                raise
+            else:
+                logger.warning(f"Failed to decrypt text value (graceful mode): {e}. Attempting fallback.")
+                # Grace period: try to decode as plain text
+                try:
+                    if isinstance(value, bytes):
+                        return value.decode('utf-8')
+                    return str(value)
+                except Exception:
+                    logger.warning("Fallback decoding also failed, returning empty string")
+                    return ""
         except Exception as e:
-            logger.error(f"Failed to decrypt text value: {e}")
-            # Grace period: try to decode as plain text
-            try:
-                if isinstance(value, bytes):
-                    return value.decode('utf-8')
-                return str(value)
-            except Exception:
+            if settings.ENCRYPTION_STRICT_MODE:
+                logger.error(f"Failed to decrypt text value: {e}")
                 raise ValueError(f"Failed to decrypt value: {e}")
+            else:
+                logger.warning(f"Failed to decrypt text value (graceful mode): {e}. Attempting fallback.")
+                try:
+                    if isinstance(value, bytes):
+                        return value.decode('utf-8')
+                    return str(value)
+                except Exception:
+                    logger.warning("Fallback decoding also failed, returning empty string")
+                    return ""
     
     def load_dialect_impl(self, dialect) -> TypeEngine:
         """Return the underlying database type.
@@ -427,8 +453,12 @@ class EncryptedJSON(TypeDecorator):
                 decrypted = encryption_service.decrypt(encrypted_bytes)
                 
                 if decrypted is None:
-                    logger.error("Failed to decrypt JSON value")
-                    raise ValueError("Decryption returned None")
+                    if settings.ENCRYPTION_STRICT_MODE:
+                        logger.error("Failed to decrypt JSON value")
+                        raise ValueError("Decryption returned None")
+                    else:
+                        logger.warning("Decryption returned None for JSON value (graceful mode), returning empty dict")
+                        return {}
                 
                 # Decrypted value should be a dict/list or JSON string
                 if isinstance(decrypted, (dict, list)):
@@ -463,7 +493,11 @@ class EncryptedJSON(TypeDecorator):
                             return decrypted
                     except Exception:
                         pass
-                    raise ValueError("Value is not valid JSON and decryption failed")
+                    if settings.ENCRYPTION_STRICT_MODE:
+                        raise ValueError("Value is not valid JSON and decryption failed")
+                    else:
+                        logger.warning("Value is not valid JSON and decryption failed (graceful mode), returning empty dict")
+                        return {}
             elif isinstance(value, bytes):
                 # Try to decrypt bytes directly
                 decrypted = encryption_service.decrypt(value)
@@ -473,16 +507,45 @@ class EncryptedJSON(TypeDecorator):
                 try:
                     return json.loads(value.decode('utf-8'))
                 except Exception:
-                    raise ValueError("Failed to decrypt or parse as JSON")
+                    if settings.ENCRYPTION_STRICT_MODE:
+                        raise ValueError("Failed to decrypt or parse as JSON")
+                    else:
+                        logger.warning("Failed to decrypt or parse as JSON (graceful mode), returning empty dict")
+                        return {}
             
             return value
                 
+        except ValueError as e:
+            # Handle decryption errors based on strict mode
+            if settings.ENCRYPTION_STRICT_MODE:
+                logger.error(f"Failed to decrypt JSON value: {e}")
+                raise
+            else:
+                logger.warning(f"Failed to decrypt JSON value (graceful mode): {e}. Attempting fallback.")
+                # Grace period: try to return as plain JSON
+                if isinstance(value, (dict, list)):
+                    return value
+                elif isinstance(value, str):
+                    try:
+                        return json.loads(value)
+                    except json.JSONDecodeError:
+                        return {}
+                return {}
         except Exception as e:
-            logger.error(f"Failed to decrypt JSON value: {e}")
-            # Grace period: try to return as-is if it's already a dict/list
-            if isinstance(value, (dict, list)):
-                return value
-            raise ValueError(f"Failed to decrypt value: {e}")
+            if settings.ENCRYPTION_STRICT_MODE:
+                logger.error(f"Failed to decrypt JSON value: {e}")
+                raise ValueError(f"Failed to decrypt value: {e}")
+            else:
+                logger.warning(f"Failed to decrypt JSON value (graceful mode): {e}. Attempting fallback.")
+                # Grace period: try to return as plain JSON
+                if isinstance(value, (dict, list)):
+                    return value
+                elif isinstance(value, str):
+                    try:
+                        return json.loads(value)
+                    except json.JSONDecodeError:
+                        return {}
+                return {}
     
     def load_dialect_impl(self, dialect) -> TypeEngine:
         """Return the underlying database type.

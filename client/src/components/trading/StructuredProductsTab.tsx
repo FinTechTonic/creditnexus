@@ -120,7 +120,12 @@ function BuildBundleSection({
   const doAdd = () => {
     if (addKind === 'deal' && selDealId !== '') {
       const d = deals.find((x) => x.id === selDealId);
-      onAdd({ kind: 'deal', deal_id: selDealId, label: d ? `${d.deal_id} (${d.total_commitment ?? '?'})` : `Deal ${selDealId}` });
+      onAdd({ 
+        kind: 'deal', 
+        deal_id: selDealId, 
+        value: d?.total_commitment ?? undefined,
+        label: d ? `${d.deal_id} (${d.total_commitment ?? '?'})` : `Deal ${selDealId}` 
+      });
       setSelDealId('');
     } else if (addKind === 'loan_asset' && selLoanId !== '') {
       const l = loans.find((x) => x.id === selLoanId);
@@ -586,9 +591,15 @@ export function StructuredProductsTab() {
     try {
       const underlying_asset_ids = basket.map((a) => {
         const base: Record<string, unknown> = { asset_type: a.kind, allocation_percentage: 0 };
-        if (a.kind === 'deal' && a.deal_id) base.deal_id = a.deal_id;
-        else if (a.kind === 'loan_asset' && a.loan_asset_id != null) base.loan_asset_id = a.loan_asset_id;
-        else if (a.kind === 'equity' && a.equity_symbol) {
+        if (a.kind === 'deal' && a.deal_id) {
+          base.deal_id = a.deal_id;
+          // Include value if provided, otherwise backend will try to extract from deal
+          if (a.value != null) base.value = a.value;
+        } else if (a.kind === 'loan_asset' && a.loan_asset_id != null) {
+          base.loan_asset_id = a.loan_asset_id;
+          // Include value if provided, otherwise backend will try to extract from loan_asset
+          if (a.value != null) base.value = a.value;
+        } else if (a.kind === 'equity' && a.equity_symbol) {
           base.equity_symbol = a.equity_symbol;
           if (a.value != null) base.value = a.value;
           else if (a.quantity != null && a.unit_price != null) { base.quantity = a.quantity; base.unit_price = a.unit_price; }

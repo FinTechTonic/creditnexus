@@ -874,8 +874,8 @@ async def login(request: Request, credentials: UserLogin, db: Session = Depends(
     if not user:
         logger.warning("Login failed: user not found", extra={"email": credentials.email})
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
         )
     
     try:

@@ -2,6 +2,8 @@
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Dict, Any
+import math
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Numeric, Date, Float, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import relationship
@@ -2826,6 +2828,64 @@ class PaymentEvent(Base):
 
 
 # ============================================================================
+# Trade Execution Models
+# ============================================================================
+
+class TradeExecution(Base):
+    """Trade execution model for LMA trade storage and settlement lookup."""
+    
+    __tablename__ = "trade_executions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trade_id = Column(String(255), unique=True, nullable=False, index=True)  # Trade identifier (e.g., "TRADE-MC-2024-TLA-1769110045402")
+    
+    # User and deal information
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    credit_agreement_id = Column(Integer, ForeignKey("deals.id"), nullable=True, index=True)
+    facility_id = Column(String(255), nullable=True, index=True)
+    
+    # Trade details
+    trade_price = Column(Numeric(20, 8), nullable=True)
+    trade_amount = Column(Numeric(20, 2), nullable=True)
+    settlement_date = Column(Date, nullable=True)
+    
+    # Status tracking
+    status = Column(String(50), nullable=False, default="executed", index=True)  # executed, settled, cancelled
+    
+    # CDM event storage
+    cdm_event = Column(JSONB, nullable=False)  # Full CDM TradeExecution event
+    policy_decision = Column(JSONB, nullable=True)  # Policy evaluation result
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    settled_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User", backref="trade_executions")
+    credit_agreement = relationship("Deal", foreign_keys=[credit_agreement_id])
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "trade_id": self.trade_id,
+            "user_id": self.user_id,
+            "credit_agreement_id": self.credit_agreement_id,
+            "facility_id": self.facility_id,
+            "trade_price": float(self.trade_price) if self.trade_price else None,
+            "trade_amount": float(self.trade_amount) if self.trade_amount else None,
+            "settlement_date": self.settlement_date.isoformat() if self.settlement_date else None,
+            "status": self.status,
+            "cdm_event": self.cdm_event,
+            "policy_decision": self.policy_decision,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "settled_at": self.settled_at.isoformat() if self.settled_at else None,
+        }
+
+
+# ============================================================================
 # Credit Models (Rolling Credits)
 # ============================================================================
 
@@ -2942,6 +3002,12 @@ class StockPrediction(Base):
     user = relationship("User", foreign_keys=[user_id])
 
     def to_dict(self):
+        # Extract forecast array from stored dict
+        forecast_data = self.forecast if isinstance(self.forecast, dict) else {}
+        forecast_array = forecast_data.get("forecast", []) if isinstance(forecast_data, dict) else (self.forecast if isinstance(self.forecast, list) else [])
+        if not isinstance(forecast_array, list):
+            forecast_array = []
+        
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -2949,7 +3015,7 @@ class StockPrediction(Base):
             "timeframe": self.timeframe,
             "model_id": self.model_id,
             "strategy": self.strategy,
-            "forecast": self.forecast,
+            "forecast": forecast_array,  # Return as array for API compatibility
             "lookback_days": self.lookback_days,
             "horizon": self.horizon,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -3018,6 +3084,10 @@ class PredictionOrderRecommendation(Base):
     prediction = relationship("StockPrediction", foreign_keys=[prediction_id])
 
     def to_dict(self):
+        # Ensure confidence is a valid float, defaulting to 0.5 if None or NaN
+        confidence_val = self.confidence
+        if confidence_val is None or (isinstance(confidence_val, float) and math.isnan(confidence_val)):
+            confidence_val = 0.5
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -3025,7 +3095,7 @@ class PredictionOrderRecommendation(Base):
             "symbol": self.symbol,
             "action": self.action,
             "size": float(self.size) if self.size is not None else None,
-            "confidence": self.confidence,
+            "confidence": float(confidence_val) if confidence_val is not None else 0.5,
             "strategy": self.strategy,
             "reasoning": self.reasoning,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -3912,6 +3982,55 @@ class Watchlist(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     user = relationship("User", backref="watchlists")
+
+
+class PriceAlert(Base):
+    """Price alert for monitoring symbol price movements."""
+    
+    __tablename__ = "price_alerts"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    symbol = Column(String(50), nullable=False, index=True)
+    
+    # Alert conditions
+    alert_type = Column(String(20), nullable=False, index=True)  # "above", "below", "change_percent"
+    target_price = Column(Numeric(20, 8), nullable=True)  # For above/below alerts
+    change_percent = Column(Numeric(5, 2), nullable=True)  # For change_percent alerts (e.g., 5.0 for 5%)
+    
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    triggered_at = Column(DateTime, nullable=True, index=True)
+    triggered_price = Column(Numeric(20, 8), nullable=True)
+    
+    # Notification settings
+    notify_email = Column(Boolean, default=False, nullable=False)
+    notify_in_app = Column(Boolean, default=True, nullable=False)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", backref="price_alerts")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "symbol": self.symbol,
+            "alert_type": self.alert_type,
+            "target_price": float(self.target_price) if self.target_price else None,
+            "change_percent": float(self.change_percent) if self.change_percent else None,
+            "is_active": self.is_active,
+            "triggered_at": self.triggered_at.isoformat() if self.triggered_at else None,
+            "triggered_price": float(self.triggered_price) if self.triggered_price else None,
+            "notify_email": self.notify_email,
+            "notify_in_app": self.notify_in_app,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 # Document Review Models

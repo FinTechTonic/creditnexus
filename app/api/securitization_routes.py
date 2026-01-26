@@ -122,10 +122,13 @@ async def create_securitization_pool(
         # Convert request format to service format
         underlying_assets = []
         for asset in request.underlying_asset_ids:
+            # Get value from request - use None if not provided (not "0" default)
+            # This allows the service to distinguish between "value not provided" vs "value is 0"
+            request_value = asset.get("value")
             asset_dict = {
                 "asset_type": asset.get("asset_type"),
                 "asset_id": asset.get("asset_id"),
-                "value": asset.get("value", "0"),
+                "value": request_value if request_value is not None else None,  # Pass None if not provided
                 "currency": asset.get("currency", "USD")
             }
             # Extract deal_id or loan_asset_id from asset_id if needed
@@ -148,10 +151,6 @@ async def create_securitization_pool(
                     except (ValueError, TypeError):
                         loan_asset_id = None
                 asset_dict["loan_asset_id"] = loan_asset_id
-            elif asset.get("asset_type") == "equity":
-                asset_dict["equity_symbol"] = asset.get("equity_symbol")
-            elif asset.get("asset_type") == "commodity":
-                asset_dict["commodity_code"] = asset.get("commodity_code")
             underlying_assets.append(asset_dict)
         
         # Convert tranche data format; support auto_tranche for bundle builder
@@ -201,9 +200,20 @@ async def create_securitization_pool(
             "created_at": pool.created_at.isoformat()
         }
     except ValueError as e:
+        logger.warning(f"Validation error creating securitization pool: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to create securitization pool: {e}", exc_info=True)
+        logger.error(
+            f"Failed to create securitization pool: {e}",
+            exc_info=True,
+            extra={
+                "pool_name": request.pool_name,
+                "pool_type": request.pool_type,
+                "asset_count": len(request.underlying_asset_ids),
+                "tranche_count": len(request.tranche_data) if not request.auto_tranche else 1,
+                "user_id": current_user.id,
+            }
+        )
         raise HTTPException(status_code=500, detail=f"Failed to create pool: {str(e)}")
 
 
@@ -259,14 +269,29 @@ async def list_securitization_pools(
 
 @router.get("/pools/{pool_id}")
 async def get_securitization_pool(
-    pool_id: int,
+    pool_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get securitization pool details in CDM-compliant format."""
+    """Get securitization pool details in CDM-compliant format.
+    
+    Accepts either integer id or string pool_id (e.g., "POOL-20260122223906").
+    """
     try:
         service = SecuritizationService(db)
-        pool_details = await service.get_pool_details(str(pool_id))
+        
+        # Try to parse as integer first (for backward compatibility)
+        pool = None
+        try:
+            pool_id_int = int(pool_id)
+            pool = db.query(SecuritizationPool).filter(SecuritizationPool.id == pool_id_int).first()
+            if pool:
+                pool_details = await service.get_pool_details(pool.pool_id)
+            else:
+                pool_details = None
+        except ValueError:
+            # Not an integer, use as string pool_id directly
+            pool_details = await service.get_pool_details(pool_id)
         
         if not pool_details:
             raise HTTPException(status_code=404, detail="Securitization pool not found")
@@ -305,9 +330,10 @@ async def get_pool_underlying_assets(
             item["loan_asset_id"] = a.loan_asset_id
             item["loan_id"] = loan.loan_id if loan else None
         elif a.asset_type == "deal" and a.deal_id:
+            # a.deal_id is integer (FK), query by id
             deal = db.query(Deal).filter(Deal.id == a.deal_id).first()
-            item["deal_id"] = a.deal_id
-            item["deal_id_str"] = deal.deal_id if deal else None
+            item["deal_id"] = deal.id if deal else None  # Integer id
+            item["deal_id_str"] = deal.deal_id if deal else None  # String deal_id
         elif a.asset_type == "equity":
             item["equity_symbol"] = a.equity_symbol
         elif a.asset_type == "commodity":
@@ -835,19 +861,33 @@ async def distribute_payments(
 
 @router.post("/pools/{pool_id}/notarize")
 async def notarize_securitization_pool(
-    pool_id: int,
+    pool_id: str,
     request: NotarizeSecuritizationRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
     """Create notarization request for a securitization pool.
     
+    Accepts either integer id or string pool_id (e.g., "POOL-20260122223906").
+    
     Returns 402 Payment Required if payment_payload not provided (unless admin).
     """
     try:
         service = SecuritizationService(db)
         
-        pool = db.query(SecuritizationPool).filter(SecuritizationPool.id == pool_id).first()
+        # Try to parse as integer first (for backward compatibility)
+        pool = None
+        try:
+            pool_id_int = int(pool_id)
+            pool = db.query(SecuritizationPool).filter(SecuritizationPool.id == pool_id_int).first()
+        except ValueError:
+            # Not an integer, try string pool_id
+            pass
+        
+        # If not found by integer id, try string pool_id
+        if not pool:
+            pool = db.query(SecuritizationPool).filter(SecuritizationPool.pool_id == pool_id).first()
+        
         if not pool:
             raise HTTPException(status_code=404, detail="Securitization pool not found")
         

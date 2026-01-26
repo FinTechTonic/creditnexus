@@ -9,17 +9,28 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.db.models import User, Order, OrderStatus, OrderSide, OrderType, ManualHolding, Watchlist
+from app.db.models import User, Order, OrderStatus, OrderSide, OrderType, ManualHolding, Watchlist, PriceAlert
 from app.auth.jwt_auth import get_current_user, require_auth
 from app.core.permissions import has_permission, PERMISSION_TRADE_VIEW, PERMISSION_TRADE_EXECUTE
 from app.services.order_service import OrderService, OrderValidationError
 from app.services.trading_api_service import TradingAPIService, TradingAPIError, MockTradingAPIService, AlpacaTradingAPIService
 from app.services.commission_service import CommissionService
+from app.services.market_data_service import get_historical_data, is_valid_symbol
 from app.core.config import settings
+from app.utils.rate_limiter import APIRateLimitManager
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/trades", tags=["trading"])
+
+# Rate limiter for OHLCV endpoint to prevent excessive autocomplete queries
+# Allow 30 requests per minute per user (reasonable for autocomplete)
+OHLCV_RATE_LIMITER = APIRateLimitManager.get_limiter(
+    api_name="ohlcv_autocomplete",
+    max_requests=30,
+    time_window_seconds=60  # 1 minute
+)
 
 
 # ============================================================================
@@ -240,6 +251,40 @@ async def list_orders(
     except Exception as e:
         logger.error(f"Failed to list orders: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to list orders: {str(e)}")
+
+
+@router.get("/orders/history", response_model=List[OrderResponse])
+async def get_order_history(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    order_service: OrderService = Depends(get_order_service)
+):
+    """Get order history for the current user.
+    
+    Alias for GET /api/trades/orders with default filters for completed orders.
+    Requires PERMISSION_TRADE_VIEW permission.
+    """
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    
+    # Default to showing filled/cancelled orders if no status specified
+    if not status:
+        # Get all orders and filter client-side, or use a default filter
+        pass
+    
+    return await list_orders(
+        status=status,
+        symbol=symbol,
+        limit=limit,
+        offset=offset,
+        db=db,
+        current_user=current_user,
+        order_service=order_service
+    )
 
 
 @router.get("/orders/{order_id}", response_model=OrderResponse)
@@ -512,8 +557,8 @@ async def get_market_data_dashboard(
             "prices": [{
                 "symbol": data.get("symbol", symbol),
                 "price": price,
-                "bid": bid or None,
-                "ask": ask or None,
+                "bid": bid if bid > 0 else 0,
+                "ask": ask if ask > 0 else 0,
                 "change": 0,
                 "change_percent": 0,
                 "volume": 0,
@@ -522,7 +567,9 @@ async def get_market_data_dashboard(
             "orderBook": [],
             "recentTrades": [],
         }
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to get market data for {symbol}: {e}")
+        # Return empty data instead of mock data
         return {"prices": [], "orderBook": [], "recentTrades": []}
 
 
@@ -550,44 +597,6 @@ async def get_market_data(
     except Exception as e:
         logger.error(f"Failed to get market data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get market data: {str(e)}")
-
-
-# ============================================================================
-# Order History Endpoint (alias for list_orders)
-# ============================================================================
-
-@router.get("/orders/history", response_model=List[OrderResponse])
-async def get_order_history(
-    status: Optional[str] = Query(None, description="Filter by status"),
-    symbol: Optional[str] = Query(None, description="Filter by symbol"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of results"),
-    offset: int = Query(0, ge=0, description="Offset for pagination"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    order_service: OrderService = Depends(get_order_service)
-):
-    """Get order history for the current user.
-    
-    Alias for GET /api/trades/orders with default filters for completed orders.
-    Requires PERMISSION_TRADE_VIEW permission.
-    """
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
-    
-    # Default to showing filled/cancelled orders if no status specified
-    if not status:
-        # Get all orders and filter client-side, or use a default filter
-        pass
-    
-    return await list_orders(
-        status=status,
-        symbol=symbol,
-        limit=limit,
-        offset=offset,
-        db=db,
-        current_user=current_user,
-        order_service=order_service
-    )
 
 
 # ============================================================================
@@ -720,3 +729,258 @@ async def delete_watchlist(
     db.delete(w)
     db.commit()
     return None
+
+
+# ============================================================================
+# Price Alerts
+# ============================================================================
+
+class PriceAlertCreate(BaseModel):
+    symbol: str = Field(..., description="Stock symbol (e.g., 'AAPL')")
+    alert_type: str = Field(..., description="Alert type: 'above', 'below', or 'change_percent'")
+    target_price: Optional[Decimal] = Field(None, description="Target price for above/below alerts")
+    change_percent: Optional[Decimal] = Field(None, description="Percentage change for change_percent alerts")
+    notify_email: bool = Field(False, description="Send email notification when triggered")
+    notify_in_app: bool = Field(True, description="Show in-app notification when triggered")
+
+
+class PriceAlertResponse(BaseModel):
+    id: int
+    user_id: int
+    symbol: str
+    alert_type: str
+    target_price: Optional[float] = None
+    change_percent: Optional[float] = None
+    is_active: bool
+    triggered_at: Optional[str] = None
+    triggered_price: Optional[float] = None
+    notify_email: bool
+    notify_in_app: bool
+    created_at: str
+    updated_at: str
+
+
+@router.get("/price-alerts", response_model=List[PriceAlertResponse])
+async def list_price_alerts(
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    symbol: Optional[str] = Query(None, description="Filter by symbol"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List price alerts for the current user. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    
+    query = db.query(PriceAlert).filter(PriceAlert.user_id == current_user.id)
+    
+    if is_active is not None:
+        query = query.filter(PriceAlert.is_active == is_active)
+    if symbol:
+        query = query.filter(PriceAlert.symbol == symbol.upper())
+    
+    alerts = query.order_by(PriceAlert.created_at.desc()).all()
+    
+    return [
+        PriceAlertResponse(
+            id=a.id,
+            user_id=a.user_id,
+            symbol=a.symbol,
+            alert_type=a.alert_type,
+            target_price=float(a.target_price) if a.target_price else None,
+            change_percent=float(a.change_percent) if a.change_percent else None,
+            is_active=a.is_active,
+            triggered_at=a.triggered_at.isoformat() if a.triggered_at else None,
+            triggered_price=float(a.triggered_price) if a.triggered_price else None,
+            notify_email=a.notify_email,
+            notify_in_app=a.notify_in_app,
+            created_at=a.created_at.isoformat() if a.created_at else "",
+            updated_at=a.updated_at.isoformat() if a.updated_at else "",
+        )
+        for a in alerts
+    ]
+
+
+@router.post("/price-alerts", response_model=PriceAlertResponse)
+async def create_price_alert(
+    body: PriceAlertCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a price alert. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    
+    # Validate alert type and required fields
+    if body.alert_type not in ["above", "below", "change_percent"]:
+        raise HTTPException(status_code=400, detail="alert_type must be 'above', 'below', or 'change_percent'")
+    
+    if body.alert_type in ["above", "below"] and not body.target_price:
+        raise HTTPException(status_code=400, detail="target_price is required for above/below alerts")
+    
+    if body.alert_type == "change_percent" and not body.change_percent:
+        raise HTTPException(status_code=400, detail="change_percent is required for change_percent alerts")
+    
+    alert = PriceAlert(
+        user_id=current_user.id,
+        symbol=body.symbol.upper().strip(),
+        alert_type=body.alert_type,
+        target_price=body.target_price,
+        change_percent=body.change_percent,
+        notify_email=body.notify_email,
+        notify_in_app=body.notify_in_app,
+        is_active=True,
+    )
+    
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    
+    return PriceAlertResponse(
+        id=alert.id,
+        user_id=alert.user_id,
+        symbol=alert.symbol,
+        alert_type=alert.alert_type,
+        target_price=float(alert.target_price) if alert.target_price else None,
+        change_percent=float(alert.change_percent) if alert.change_percent else None,
+        is_active=alert.is_active,
+        triggered_at=alert.triggered_at.isoformat() if alert.triggered_at else None,
+        triggered_price=float(alert.triggered_price) if alert.triggered_price else None,
+        notify_email=alert.notify_email,
+        notify_in_app=alert.notify_in_app,
+        created_at=alert.created_at.isoformat() if alert.created_at else "",
+        updated_at=alert.updated_at.isoformat() if alert.updated_at else "",
+    )
+
+
+@router.delete("/price-alerts/{alert_id}", status_code=204)
+async def delete_price_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a price alert. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    
+    alert = db.query(PriceAlert).filter(
+        PriceAlert.id == alert_id,
+        PriceAlert.user_id == current_user.id
+    ).first()
+    
+    if not alert:
+        raise HTTPException(status_code=404, detail="Price alert not found")
+    
+    db.delete(alert)
+    db.commit()
+    return None
+
+
+@router.put("/price-alerts/{alert_id}/toggle", response_model=PriceAlertResponse)
+async def toggle_price_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle price alert active status. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    
+    alert = db.query(PriceAlert).filter(
+        PriceAlert.id == alert_id,
+        PriceAlert.user_id == current_user.id
+    ).first()
+    
+    if not alert:
+        raise HTTPException(status_code=404, detail="Price alert not found")
+    
+    alert.is_active = not alert.is_active
+    db.commit()
+    db.refresh(alert)
+    
+    return PriceAlertResponse(
+        id=alert.id,
+        user_id=alert.user_id,
+        symbol=alert.symbol,
+        alert_type=alert.alert_type,
+        target_price=float(alert.target_price) if alert.target_price else None,
+        change_percent=float(alert.change_percent) if alert.change_percent else None,
+        is_active=alert.is_active,
+        triggered_at=alert.triggered_at.isoformat() if alert.triggered_at else None,
+        triggered_price=float(alert.triggered_price) if alert.triggered_price else None,
+        notify_email=alert.notify_email,
+        notify_in_app=alert.notify_in_app,
+        created_at=alert.created_at.isoformat() if alert.created_at else "",
+        updated_at=alert.updated_at.isoformat() if alert.updated_at else "",
+    )
+
+
+@router.get("/ohlcv/{symbol}")
+async def get_ohlcv_data(
+    symbol: str,
+    timeframe: str = Query("1D", description="Timeframe: 1D, 1H, 15Min"),
+    days: int = Query(30, ge=1, le=365, description="Number of days of history"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get OHLCV (candlestick) data for a symbol.
+    
+    Requires PERMISSION_TRADE_VIEW permission.
+    Returns array of {timestamp, open, high, low, close, volume}.
+    
+    Rate limited to 30 requests per minute to prevent excessive autocomplete queries.
+    """
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view trades")
+    
+    # Rate limiting: Check if request can proceed
+    if not OHLCV_RATE_LIMITER.acquire(timeout=0):
+        wait_time = OHLCV_RATE_LIMITER.get_wait_time()
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds before trying again."
+        )
+    
+    # Validate symbol early to avoid unnecessary processing
+    if not is_valid_symbol(symbol):
+        logger.debug("Invalid symbol format in OHLCV request: %s", symbol)
+        return {"data": [], "symbol": symbol, "timeframe": timeframe, "error": "Invalid symbol format"}
+    
+    # Normalize symbol (is_valid_symbol already checks format, but we normalize here for consistency)
+    symbol = symbol.strip().upper()
+    
+    try:
+        # For Alpaca free accounts: cannot query data from last 15 minutes
+        # Set end time to at least 15 minutes ago to avoid subscription limitations
+        now = datetime.now(timezone.utc)
+        # Subtract 16 minutes to ensure we're outside the 15-minute restriction window
+        end = now - timedelta(minutes=16)
+        start = end - timedelta(days=days)
+        
+        df = get_historical_data(symbol, start, end, timeframe, db=db)
+        
+        if df is None or df.empty:
+            return {"data": [], "symbol": symbol, "timeframe": timeframe}
+        
+        # Convert DataFrame to array format
+        data = []
+        for idx, row in df.iterrows():
+            timestamp = idx
+            if hasattr(timestamp, 'to_pydatetime'):
+                timestamp = timestamp.to_pydatetime()
+            elif hasattr(timestamp, 'timestamp'):
+                timestamp = datetime.fromtimestamp(timestamp.timestamp(), tz=timezone.utc)
+            
+            data.append({
+                "timestamp": timestamp.isoformat(),
+                "open": float(row.get("Open", 0)),
+                "high": float(row.get("High", 0)),
+                "low": float(row.get("Low", 0)),
+                "close": float(row.get("Close", 0)),
+                "volume": float(row.get("Volume", 0)),
+            })
+        
+        return {"data": data, "symbol": symbol, "timeframe": timeframe}
+        
+    except Exception as e:
+        logger.error(f"Failed to get OHLCV data for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch OHLCV data: {str(e)}")

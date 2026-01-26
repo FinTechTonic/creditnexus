@@ -18,6 +18,7 @@ import { TrendingUp, TrendingDown, Loader2, CheckCircle2, AlertTriangle } from '
 import { fetchWithAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import { resolveApiUrl } from '@/utils/apiBase';
+import { CandleChart } from './CandleChart';
 
 function symbolFromFdc3Context(ctx: { type?: string; symbol?: string; id?: { ticker?: string; symbol?: string }; symbols?: string[] } | null): string | undefined {
   if (!ctx) return undefined;
@@ -142,8 +143,12 @@ export function OrderForm() {
   };
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <Card>
+    <div className="space-y-6">
+      {orderData.symbol && (
+        <CandleChart symbol={orderData.symbol} timeframe="1D" days={30} height={300} />
+      )}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
         <CardHeader>
           <CardTitle>Place Order</CardTitle>
           <CardDescription>
@@ -326,6 +331,7 @@ export function OrderForm() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

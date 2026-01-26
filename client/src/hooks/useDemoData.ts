@@ -17,6 +17,7 @@ export interface DemoSeedRequest {
   generate_deals?: boolean;
   deal_count?: number;
   dry_run?: boolean;
+  force?: boolean;  // If true, delete existing demo deals and recreate from scratch
   complete_partial_data?: boolean;
 }
 
@@ -185,7 +186,7 @@ export function useDemoData(): UseDemoDataReturn {
   /**
    * Generate demo deals.
    */
-  const generateDeals = useCallback(async (count: number): Promise<DemoSeedResponse> => {
+  const generateDeals = useCallback(async (count: number, force: boolean = false): Promise<DemoSeedResponse> => {
     setLoading(true);
     setError(null);
     
@@ -203,6 +204,7 @@ export function useDemoData(): UseDemoDataReturn {
           generate_deals: true,
           deal_count: count,
           dry_run: false,
+          force: force,
         }),
       });
       

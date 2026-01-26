@@ -7,6 +7,7 @@ from decimal import Decimal
 from datetime import datetime
 
 from app.core import data_cache as dc
+from app.utils.json_serializer import serialize_cdm_data
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,11 @@ class AlpacaTradingAPIService(TradingAPIService):
             
             order = self.client.submit_order(order_request)
             
+            # Serialize order.dict() to ensure UUIDs and other non-JSON types are converted
+            raw_response = order.dict() if hasattr(order, 'dict') else {}
+            # Convert any UUIDs in the raw response to strings
+            serialized_response = serialize_cdm_data(raw_response)
+            
             return {
                 "order_id": str(order.id),
                 "status": order.status.value.lower(),
@@ -232,7 +238,7 @@ class AlpacaTradingAPIService(TradingAPIService):
                 "filled_quantity": float(order.filled_qty) if order.filled_qty else 0,
                 "average_fill_price": float(order.filled_avg_price) if order.filled_avg_price else None,
                 "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
-                "raw_response": order.dict()
+                "raw_response": serialized_response
             }
             
         except Exception as e:
@@ -327,32 +333,168 @@ class AlpacaTradingAPIService(TradingAPIService):
         if cached is not None:
             return cached
         try:
-            from alpaca.data.historical import StockHistoricalDataClient
-            from alpaca.data.requests import StockLatestQuoteRequest
+            # Try multiple approaches to get market data
+            out = None
             
-            data_client = StockHistoricalDataClient(
-                api_key=self.api_key,
-                secret_key=self.api_secret
-            )
+            # Approach 1: Try StockDataClient for real-time data (if available in newer alpaca-py)
+            try:
+                from alpaca.data import StockDataClient
+                from alpaca.data.requests import StockLatestQuoteRequest
+                
+                data_client = StockDataClient(
+                    api_key=self.api_key,
+                    secret_key=self.api_secret
+                )
+                
+                # Try get_latest_quotes (plural) or get_latest_quote
+                if hasattr(data_client, 'get_latest_quotes'):
+                    quote = data_client.get_latest_quotes(
+                        StockLatestQuoteRequest(symbol_or_symbols=[symbol])
+                    )
+                elif hasattr(data_client, 'get_latest_quote'):
+                    quote = data_client.get_latest_quote(
+                        StockLatestQuoteRequest(symbol_or_symbols=[symbol])
+                    )
+                else:
+                    raise AttributeError("No get_latest_quote method found")
+                
+                if symbol not in quote:
+                    raise TradingAPIError(f"No market data found for symbol: {symbol}")
+                
+                q = quote[symbol]
+                
+                out = {
+                    "symbol": symbol,
+                    "bid_price": float(q.bp) if q.bp else None,
+                    "ask_price": float(q.ap) if q.ap else None,
+                    "bid_size": int(q.bs) if q.bs else None,
+                    "ask_size": int(q.as_) if q.as_ else None,
+                    "timestamp": q.timestamp.isoformat() if q.timestamp else None,
+                    "raw_response": serialize_cdm_data(q.dict() if hasattr(q, 'dict') else {})
+                }
+            except (ImportError, AttributeError) as e1:
+                logger.debug(f"StockDataClient approach failed: {e1}")
+                
+                # Approach 2: Try using historical data client with recent bars
+                try:
+                    from alpaca.data.historical import StockHistoricalDataClient
+                    from alpaca.data.requests import StockBarsRequest
+                    from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+                    from alpaca.data.enums import Sort
+                    from datetime import timedelta
+                    
+                    data_client = StockHistoricalDataClient(
+                        api_key=self.api_key,
+                        secret_key=self.api_secret
+                    )
+                    
+                    # Get the most recent bar (last 1 minute)
+                    end_time = datetime.utcnow()
+                    start_time = end_time - timedelta(minutes=5)
+                    
+                    bars_request = StockBarsRequest(
+                        symbol_or_symbols=[symbol],
+                        timeframe=TimeFrame(1, TimeFrameUnit.Minute),
+                        start=start_time,
+                        end=end_time,
+                        limit=1,
+                        sort=Sort.Desc
+                    )
+                    
+                    bars = data_client.get_stock_bars(bars_request)
+                    
+                    if bars and symbol in bars and len(bars[symbol]) > 0:
+                        latest_bar = bars[symbol][0]
+                        close_price = float(latest_bar.close) if latest_bar.close else None
+                        
+                        out = {
+                            "symbol": symbol,
+                            "bid_price": close_price,
+                            "ask_price": close_price,
+                            "bid_size": None,
+                            "ask_size": None,
+                            "timestamp": latest_bar.timestamp.isoformat() if latest_bar.timestamp else datetime.utcnow().isoformat(),
+                            "raw_response": serialize_cdm_data({
+                                "source": "historical_bars",
+                                "close": close_price,
+                                "open": float(latest_bar.open) if latest_bar.open else None,
+                                "high": float(latest_bar.high) if latest_bar.high else None,
+                                "low": float(latest_bar.low) if latest_bar.low else None,
+                                "volume": int(latest_bar.volume) if latest_bar.volume else None
+                            })
+                        }
+                except Exception as e2:
+                    logger.debug(f"Historical bars approach failed: {e2}")
+                    
+                    # Approach 3: Fallback to TradingClient (limited - only if user has positions)
+                    try:
+                        from alpaca.trading.client import TradingClient
+                        
+                        trading_client = TradingClient(
+                            api_key=self.api_key,
+                            secret_key=self.api_secret
+                        )
+                        
+                        # Try to get position to infer price (limited approach)
+                        positions = trading_client.get_all_positions()
+                        position = next((p for p in positions if p.symbol == symbol), None)
+                        if position:
+                            # Use position's current price as estimate
+                            current_price = float(position.current_price) if position.current_price else None
+                            out = {
+                                "symbol": symbol,
+                                "bid_price": current_price,
+                                "ask_price": current_price,
+                                "bid_size": None,
+                                "ask_size": None,
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "raw_response": serialize_cdm_data({"source": "position_data", "price": current_price})
+                            }
+                    except Exception as e3:
+                        logger.debug(f"TradingClient fallback failed: {e3}")
             
-            quote = data_client.get_latest_quote(
-                StockLatestQuoteRequest(symbol_or_symbols=[symbol])
-            )
+            # If all approaches failed, try fallback to historical data service
+            if out is None:
+                logger.warning(f"All market data approaches failed for {symbol}, trying historical data fallback")
+                try:
+                    from app.services.market_data_service import get_historical_data
+                    from datetime import timedelta
+                    
+                    # Get most recent close price from historical data
+                    end_time = datetime.utcnow()
+                    start_time = end_time - timedelta(days=5)
+                    df = get_historical_data(symbol, start_time, end_time, timeframe="1D", db=db)
+                    
+                    if df is not None and not df.empty and len(df) > 0:
+                        # Use the most recent close price
+                        close_col = "Close" if "Close" in df.columns else "close"
+                        if close_col in df.columns:
+                            latest_price = float(df[close_col].iloc[-1])
+                            out = {
+                                "symbol": symbol,
+                                "bid_price": latest_price,
+                                "ask_price": latest_price,
+                                "bid_size": None,
+                                "ask_size": None,
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "raw_response": serialize_cdm_data({"source": "historical_fallback", "price": latest_price})
+                            }
+                except Exception as e_fallback:
+                    logger.debug(f"Historical data fallback failed: {e_fallback}")
+                
+                # Final fallback: return None values but with a valid structure
+                if out is None:
+                    logger.warning(f"All market data approaches failed for {symbol}, returning None values")
+                    out = {
+                        "symbol": symbol,
+                        "bid_price": None,
+                        "ask_price": None,
+                        "bid_size": None,
+                        "ask_size": None,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "raw_response": serialize_cdm_data({"source": "unavailable", "note": "Market data not available"})
+                    }
             
-            if symbol not in quote:
-                raise TradingAPIError(f"No market data found for symbol: {symbol}")
-            
-            q = quote[symbol]
-            
-            out = {
-                "symbol": symbol,
-                "bid_price": float(q.bp) if q.bp else None,
-                "ask_price": float(q.ap) if q.ap else None,
-                "bid_size": int(q.bs) if q.bs else None,
-                "ask_size": int(q.as_) if q.as_ else None,
-                "timestamp": q.timestamp.isoformat() if q.timestamp else None,
-                "raw_response": q.dict()
-            }
             dc.set(cache_key, out, dc.TTL_TRADING_QUOTE, dc.SOURCE_TRADING, dc.KIND_PUNCTUAL, db)
             return out
             

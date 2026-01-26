@@ -17,6 +17,12 @@ export function resolveApiUrl(url: string): string {
 export function getWsBase(): string {
   if (typeof window === 'undefined') return 'ws://localhost:8000';
   if (window.location.protocol === 'file:') return 'ws://localhost:8000';
+
   const host = window.location.host;
+  // In development, Vite runs on port 5000 but backend is on 8000
+  if (host.includes(':5000') || host === 'localhost:5000') {
+    return 'ws://localhost:8000';
+  }
+
   return window.location.protocol === 'https:' ? `wss://${host}` : `ws://${host}`;
 }

@@ -471,8 +471,11 @@ class BlockchainService:
             
             signed_txn = self.deployer_account.sign_transaction(transaction)
             
-            # Send transaction
-            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            # Send transaction (web3 v7 uses raw_transaction instead of rawTransaction)
+            raw_tx = getattr(signed_txn, 'raw_transaction', getattr(signed_txn, 'rawTransaction', None))
+            if not raw_tx:
+                raise ValueError("Signed transaction missing raw_transaction attribute")
+            tx_hash = self.web3.eth.send_raw_transaction(raw_tx)
             logger.info(f"Token minting transaction sent: {tx_hash.hex()}")
             
             # Wait for transaction receipt
@@ -617,7 +620,11 @@ class BlockchainService:
             signed_txn = self.deployer_account.sign_transaction(transaction)
             
             # Send transaction
-            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            # web3 v7 uses raw_transaction instead of rawTransaction
+            raw_tx = getattr(signed_txn, 'raw_transaction', getattr(signed_txn, 'rawTransaction', None))
+            if not raw_tx:
+                raise ValueError("Signed transaction missing raw_transaction attribute")
+            tx_hash = self.web3.eth.send_raw_transaction(raw_tx)
             logger.info(f"Payment distribution transaction sent: {tx_hash.hex()}")
             
             # Wait for transaction receipt
@@ -696,7 +703,11 @@ class BlockchainService:
                 "nonce": self.web3.eth.get_transaction_count(self.deployer_account.address),
             })
             signed = self.deployer_account.sign_transaction(tx)
-            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            # web3 v7 uses raw_transaction instead of rawTransaction
+            raw_tx = getattr(signed, 'raw_transaction', getattr(signed, 'rawTransaction', None))
+            if not raw_tx:
+                raise ValueError("Signed transaction missing raw_transaction attribute")
+            tx_hash = self.web3.eth.send_raw_transaction(raw_tx)
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
             if receipt.status != 1:
                 return {"status": "error", "message": f"Transaction reverted (status {receipt.status})"}
@@ -757,7 +768,11 @@ class BlockchainService:
                 "nonce": self.web3.eth.get_transaction_count(self.deployer_account.address),
             })
             signed = self.deployer_account.sign_transaction(tx)
-            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            # web3 v7 uses raw_transaction instead of rawTransaction
+            raw_tx = getattr(signed, 'raw_transaction', getattr(signed, 'rawTransaction', None))
+            if not raw_tx:
+                raise ValueError("Signed transaction missing raw_transaction attribute")
+            tx_hash = self.web3.eth.send_raw_transaction(raw_tx)
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
             if receipt.status != 1:
                 return {"status": "error", "message": f"Transaction reverted (status {receipt.status})"}
@@ -831,7 +846,11 @@ class BlockchainService:
                 "nonce": self.web3.eth.get_transaction_count(self.deployer_account.address),
             })
             signed = self.deployer_account.sign_transaction(tx)
-            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            # web3 v7 uses raw_transaction instead of rawTransaction
+            raw_tx = getattr(signed, 'raw_transaction', getattr(signed, 'rawTransaction', None))
+            if not raw_tx:
+                raise ValueError("Signed transaction missing raw_transaction attribute")
+            tx_hash = self.web3.eth.send_raw_transaction(raw_tx)
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
             if receipt.status != 1:
                 return {
