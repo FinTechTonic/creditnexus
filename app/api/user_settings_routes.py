@@ -1,12 +1,3 @@
-# #region agent log
-# """
-# import json
-# import os
-# log_path = r'c:\Users\MeMyself\creditnexus\.cursor\debug.log'
-# with open(log_path, 'a') as f:
-#     f.write(json.dumps({'id':f'log_{int(__import__("time").time()*1000)}_abc','timestamp':int(__import__("time").time()*1000),'location':'app/api/user_settings_routes.py:start','message':'Creating user settings API endpoints','data':{'todoId':'phase1-issue005-015'},'sessionId':'debug-session','runId':'run1','hypothesisId':'A'})+'\n')
-# """
-# #endregion
 """User settings API routes for preferences and API key management."""
 
 import logging
@@ -18,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.db.models import User
-from app.auth.dependencies import get_current_user
+from app.auth.jwt_auth import require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +43,10 @@ class APIKeyResponse(BaseModel):
 
 @router.get("/preferences")
 async def get_user_preferences(
-    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get user preferences."""
-    current_user = await get_current_user(request, db)
     
     # Get preferences from user model
     # For now, use profile_data if preferences field doesn't exist yet
@@ -83,11 +73,10 @@ async def get_user_preferences(
 @router.put("/preferences")
 async def update_user_preferences(
     preferences: UserPreferencesUpdate,
-    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Update user preferences."""
-    current_user = await get_current_user(request, db)
     
     # Update preferences
     if hasattr(current_user, 'preferences'):
@@ -110,11 +99,10 @@ async def update_user_preferences(
 
 @router.get("/api-keys", response_model=List[APIKeyResponse])
 async def get_user_api_keys(
-    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get user API keys (metadata only, not the actual keys)."""
-    current_user = await get_current_user(request, db)
     
     # Get API keys from user model
     api_keys = []
@@ -139,11 +127,10 @@ async def get_user_api_keys(
 @router.post("/api-keys")
 async def create_api_key(
     key_data: APIKeyCreate,
-    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Create new API key (encrypted storage)."""
-    current_user = await get_current_user(request, db)
     
     # For now, store in plain text (will be encrypted when encryption utility is available)
     # TODO: Use encryption utility when available
@@ -197,11 +184,10 @@ async def create_api_key(
 @router.delete("/api-keys/{key_id}")
 async def delete_api_key(
     key_id: int,
-    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Delete API key by ID."""
-    current_user = await get_current_user(request, db)
     
     # Get existing keys
     api_keys = []
@@ -241,11 +227,10 @@ class UserProfileUpdate(BaseModel):
 
 @router.get("/profile")
 async def get_user_profile(
-    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get user profile information."""
-    current_user = await get_current_user(request, db)
     
     return {
         "display_name": current_user.display_name,
@@ -257,11 +242,10 @@ async def get_user_profile(
 @router.put("/profile")
 async def update_user_profile(
     profile: UserProfileUpdate,
-    request: Request,
+    current_user: User = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Update user profile information."""
-    current_user = await get_current_user(request, db)
     
     if profile.display_name is not None:
         current_user.display_name = profile.display_name

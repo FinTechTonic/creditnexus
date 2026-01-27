@@ -16,6 +16,7 @@ import { DealDashboard } from '@/components/DealDashboard';
 import { DealDetail } from '@/components/DealDetail';
 import { LoginForm } from '@/components/LoginForm';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { QuickAccessSettings } from '@/components/QuickAccessSettings';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/button';
 import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2, TrendingUp, BarChart3, PieChart, PenTool, FileCheck, DollarSign, Calendar, Users, Settings, Layers, FileSearch } from 'lucide-react';
@@ -1059,6 +1060,7 @@ export function DesktopAppLayout() {
           {/* Top menu removed - all apps moved to sidebar */}
 
           <div className="flex items-center gap-4">
+            <QuickAccessSettings variant="inline" />
             <ThemeToggle />
 
             <div className="flex items-center gap-2 text-sm text-slate-400" title={isAvailable ? 'FDC3 Desktop Agent Connected' : 'FDC3 Mock Mode (No Desktop Agent)'}>

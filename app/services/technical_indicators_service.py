@@ -134,14 +134,23 @@ class TechnicalIndicatorsService:
         days: int = 30
     ) -> Dict[str, Any]:
         """Get technical indicators for user's portfolio."""
-        from app.services.trading_api_service import get_trading_api_service, TradingAPIError
+        from app.api.trading_routes import get_trading_api_service
+        from app.services.trading_api_service import TradingAPIError
         
         try:
             # Get portfolio positions
             trading_api = get_trading_api_service()
-            positions = trading_api.get_positions()
+            if not trading_api:
+                return {
+                    "rsi": None,
+                    "macd": None,
+                    "bollinger_bands": None,
+                    "moving_averages": {}
+                }
+            positions = list(trading_api.get_positions())
             
             if not positions:
+                # Return empty indicators if no positions
                 return {
                     "rsi": None,
                     "macd": None,
@@ -179,8 +188,9 @@ class TechnicalIndicatorsService:
             
             return indicators
             
-        except (TradingAPIError, Exception) as e:
-            logger.error(f"Error calculating portfolio technical indicators: {e}")
+        except Exception as e:
+            logger.warning(f"Error calculating portfolio technical indicators: {e}. Returning empty indicators.")
+            # Return empty indicators on any error
             return {
                 "rsi": None,
                 "macd": None,

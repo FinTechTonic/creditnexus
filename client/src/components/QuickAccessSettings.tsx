@@ -1,14 +1,9 @@
-// #region agent log
-/*
-fetch('http://127.0.0.1:7242/ingest/b4962ed0-f261-4fa9-86f3-a557335b330a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client/src/components/QuickAccessSettings.tsx:start',message:'Creating QuickAccessSettings component',data:{todoId:'phase1-issue005-022'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-*/
-// #endregion
 import { useState, useEffect } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Mic, TrendingUp, Building2, DollarSign } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { Mic, TrendingUp, Building2, DollarSign, BarChart3 } from 'lucide-react';
+import { useAuth, fetchWithAuth } from '@/context/AuthContext';
 
 interface UserPreferences {
   audio_input_mode: boolean;
@@ -18,7 +13,11 @@ interface UserPreferences {
   trading_mode: boolean;
 }
 
-export function QuickAccessSettings() {
+interface QuickAccessSettingsProps {
+  variant?: 'card' | 'inline';
+}
+
+export function QuickAccessSettings({ variant = 'card' }: QuickAccessSettingsProps) {
   const { user } = useAuth();
   const [preferences, setPreferences] = useState<UserPreferences>({
     audio_input_mode: false,
@@ -33,7 +32,7 @@ export function QuickAccessSettings() {
     // Load preferences from API
     const loadPreferences = async () => {
       try {
-        const response = await fetch('/api/user-settings/preferences');
+        const response = await fetchWithAuth('/api/user-settings/preferences');
         if (response.ok) {
           const data = await response.json();
           setPreferences({
@@ -61,7 +60,7 @@ export function QuickAccessSettings() {
     setPreferences(newPrefs);
     
     try {
-      await fetch('/api/user-settings/preferences', {
+      await fetchWithAuth('/api/user-settings/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPrefs)
@@ -73,8 +72,60 @@ export function QuickAccessSettings() {
     }
   };
 
-  if (loading) {
+  if (!user || loading) {
     return null;
+  }
+
+  if (variant === 'inline') {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1" title="Audio Input Mode">
+          <Mic className="h-3.5 w-3.5 text-slate-400" />
+          <Switch
+            id="audio-input-inline"
+            checked={preferences.audio_input_mode}
+            onCheckedChange={(checked) => updatePreference('audio_input_mode', checked)}
+            className="scale-75"
+          />
+        </div>
+        <div className="flex items-center gap-1" title="Investment Mode">
+          <TrendingUp className="h-3.5 w-3.5 text-slate-400" />
+          <Switch
+            id="investment-mode-inline"
+            checked={preferences.investment_mode}
+            onCheckedChange={(checked) => updatePreference('investment_mode', checked)}
+            className="scale-75"
+          />
+        </div>
+        <div className="flex items-center gap-1" title="Loan Mode">
+          <Building2 className="h-3.5 w-3.5 text-slate-400" />
+          <Switch
+            id="loan-mode-inline"
+            checked={preferences.loan_mode}
+            onCheckedChange={(checked) => updatePreference('loan_mode', checked)}
+            className="scale-75"
+          />
+        </div>
+        <div className="flex items-center gap-1" title="Bank Mode">
+          <DollarSign className="h-3.5 w-3.5 text-slate-400" />
+          <Switch
+            id="bank-mode-inline"
+            checked={preferences.bank_mode}
+            onCheckedChange={(checked) => updatePreference('bank_mode', checked)}
+            className="scale-75"
+          />
+        </div>
+        <div className="flex items-center gap-1" title="Trading Mode">
+          <BarChart3 className="h-3.5 w-3.5 text-slate-400" />
+          <Switch
+            id="trading-mode-inline"
+            checked={preferences.trading_mode}
+            onCheckedChange={(checked) => updatePreference('trading_mode', checked)}
+            className="scale-75"
+          />
+        </div>
+      </div>
+    );
   }
 
   return (

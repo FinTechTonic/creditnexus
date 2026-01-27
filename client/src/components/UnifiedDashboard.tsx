@@ -12,7 +12,6 @@ import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
 import { BridgeBuilder } from '@/components/BridgeBuilder';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
-import { QuickAccessSettings } from '@/components/QuickAccessSettings';
 import { UnifiedInvestmentDashboard } from '@/components/investment/UnifiedInvestmentDashboard';
 import {
   LayoutDashboard,
@@ -217,9 +216,6 @@ export function UnifiedDashboard() {
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      {/* Quick Access Settings at top */}
-      <QuickAccessSettings />
-      
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <TabsList className="w-full justify-start border-b rounded-none">
           {dashboardTabs.map(tab => (

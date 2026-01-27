@@ -293,14 +293,13 @@ async def get_technical_indicators(
     """
     if not has_permission(current_user, PERMISSION_TRADE_VIEW):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    
+
     try:
         service = TechnicalIndicatorsService(db)
         indicators = service.get_portfolio_technical_indicators(
             user_id=current_user.id,
             days=days
         )
-        
         return indicators
     except Exception as e:
         logger.error(f"Failed to calculate technical indicators: {e}", exc_info=True)

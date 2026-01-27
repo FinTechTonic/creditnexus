@@ -143,8 +143,9 @@ async def banking_balances(
     """Get balances for the linked Plaid Item. Requires PERMISSION_TRADE_VIEW."""
     if not has_permission(current_user, PERMISSION_TRADE_VIEW):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    _plaid_ok()
 
+    _plaid_ok()
+    
     conn = get_plaid_connection(db, current_user.id)
     if not conn or not conn.connection_data or not isinstance(conn.connection_data, dict):
         raise HTTPException(status_code=404, detail="No Plaid connection. Link a bank first.")
