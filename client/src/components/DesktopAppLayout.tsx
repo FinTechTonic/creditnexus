@@ -40,10 +40,13 @@ import { WorkflowShareInterface } from '@/components/WorkflowShareInterface';
 import { WorkflowProcessingPage } from '@/components/WorkflowProcessingPage';
 import { LoanRecoverySidebar } from '@/components/LoanRecoverySidebar';
 import { AgentDashboard } from '@/apps/agent-dashboard/AgentDashboard';
-import { LinkAccounts } from '@/apps/link-accounts/LinkAccounts';
+import { LinkAccounts } from '@/components/LinkAccounts';
 import { AssetAlertsView } from '@/apps/asset-alerts/AssetAlertsView';
 import { PortfolioRiskView } from '@/apps/portfolio-risk/PortfolioRiskView';
 import { FilingStatusDashboard } from '@/components/FilingStatusDashboard';
+import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
+import { BridgeBuilder } from '@/components/BridgeBuilder';
+import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { UserSettings } from '@/pages/UserSettings';
 import { AdminSettings } from '@/pages/AdminSettings';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -135,7 +138,7 @@ const sidebarApps: AppConfig[] = [
     name: 'Trading',
     icon: <TrendingUp className="h-5 w-5" />,
     description: 'Execute trades and manage positions',
-    path: '/dashboard?tab=trading',
+    path: '/app/trading',
     category: 'trading',
     requiredPermission: PERMISSION_TRADE_VIEW,
     subscriptionTier: 'pro',
@@ -145,7 +148,7 @@ const sidebarApps: AppConfig[] = [
     name: 'Polymarket',
     icon: <BarChart3 className="h-5 w-5" />,
     description: 'Credit event prediction markets',
-    path: '/dashboard?tab=polymarket',
+    path: '/app/polymarket',
     category: 'trading',
     requiredPermission: PERMISSION_MARKET_VIEW,
     subscriptionTier: 'pro',
@@ -155,7 +158,7 @@ const sidebarApps: AppConfig[] = [
     name: 'Bridge',
     icon: <ArrowLeftRight className="h-5 w-5" />,
     description: 'Cross-chain asset transfers',
-    path: '/dashboard?tab=bridge',
+    path: '/app/bridge',
     category: 'trading',
     requiredPermission: PERMISSION_TRADE_VIEW,
     subscriptionTier: 'free',
@@ -409,6 +412,25 @@ const sidebarApps: AppConfig[] = [
     category: 'admin',
     subscriptionTier: 'free',
   },
+  // Settings
+  {
+    id: 'settings',
+    name: 'User Settings',
+    icon: <Settings className="h-5 w-5" />,
+    description: 'Manage your account preferences',
+    path: '/settings',
+    category: 'core',
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'admin-settings',
+    name: 'Admin Settings',
+    icon: <Settings className="h-5 w-5" />,
+    description: 'System and organization settings',
+    path: '/admin-settings',
+    category: 'admin',
+    subscriptionTier: 'free',
+  },
 ];
 
 interface PolicyDecision {
@@ -442,41 +464,39 @@ interface TradeBlotterState {
   paymentStatus: 'idle' | 'requested' | 'processing' | 'completed' | 'failed';
 }
 
+interface QuickAccessPreferences {
+  audio_input_mode?: boolean;
+  investment_mode?: boolean;
+  loan_mode?: boolean;
+  bank_mode?: boolean;
+  trading_mode?: boolean;
+}
+
+function pickAppFromPreferences(prefs: QuickAccessPreferences | null): AppView | null {
+  if (!prefs) return null;
+  // Trading / investment modes should take the user
+  // directly to a trading-focused view.
+  if (prefs.trading_mode || prefs.investment_mode) return 'portfolio-risk';
+  // Loan mode should emphasize loan applications and
+  // related workflows.
+  if (prefs.loan_mode) return 'applications';
+  // Bank mode should surface bank account connectivity.
+  if (prefs.bank_mode) return 'link-accounts';
+  return null;
+}
+
 export function DesktopAppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const classes = useThemeClasses();
   
-  // Track component instance to detect re-mounts
-  // const _componentInstanceRef = useRef<string>(Math.random().toString(36).substring(7)); // Commented out - unused
-  // const _mountCountRef = useRef(0); // Commented out - unused
-  const previousPathnameRef = useRef<string>(location.pathname);
-  
-  // Track unexpected route changes
-  // NOTE: This useEffect is moved after activeApp declaration to avoid TDZ error
+  // Intentionally start blank so the first sync effect run can reconcile route → activeApp.
+  const previousPathnameRef = useRef<string>('');
   
   // Initialize activeApp from current route to avoid mismatches
   // CRITICAL: Persist activeApp in sessionStorage to survive component re-mounts
   const getInitialApp = (): AppView => {
-    // Valid app names for validation
-    const validApps: AppView[] = [
-      'dashboard', 'applications', 'admin-signups', 'calendar', 'deals',
-      'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
-      'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
-      'policy-editor', 'library', 'auditor', 'securitization', 'verification-config', 'whitelisting-dashboard',
-      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk',
-      'trading', 'polymarket', 'bridge', 'signatures', 'compliance', 'billing', 'settings', 'admin-settings'
-    ];
-    
-    // Try to restore from sessionStorage first
-    if (typeof window !== 'undefined') {
-      const persisted = sessionStorage.getItem('creditnexus_activeApp');
-      if (persisted && validApps.includes(persisted as AppView)) {
-        return persisted as AppView;
-      }
-    }
-    
-    // Fall back to route-based detection
+    // Route-based detection (preferred over persisted state)
     const pathToApp: Record<string, AppView> = {
       '/dashboard': 'dashboard',
       '/dashboard/applications': 'applications',
@@ -486,9 +506,13 @@ export function DesktopAppLayout() {
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
+      '/app/trading': 'trading',
       '/app/link-accounts': 'link-accounts',
       '/app/asset-alerts': 'asset-alerts',
       '/app/portfolio-risk': 'portfolio-risk',
+      '/app/polymarket': 'polymarket',
+      '/app/bridge': 'bridge',
+      '/app/securitization': 'securitization',
       '/app/workflow/share': 'workflow-share',
       '/app/workflow/process': 'workflow-processor',
       '/app/green-lens': 'green-lens',
@@ -506,6 +530,15 @@ export function DesktopAppLayout() {
       '/settings': 'settings',
       '/admin-settings': 'admin-settings',
     };
+
+    const basePathname = location.pathname.split('?')[0];
+
+    // Handle special route prefixes
+    if (basePathname.startsWith('/app/policy-editor')) return 'policy-editor';
+    if (basePathname.startsWith('/dashboard/deals/')) return 'deals';
+    if (basePathname.startsWith('/auditor')) return 'auditor';
+    if (basePathname.startsWith('/app/securitization')) return 'securitization';
+
     // Handle policy-editor routes with policyId parameter
     if (location.pathname.startsWith('/app/policy-editor')) {
       return 'policy-editor';
@@ -528,8 +561,27 @@ export function DesktopAppLayout() {
     if (tab === 'compliance') return 'compliance';
     if (tab === 'billing') return 'billing';
     
-    const result = pathToApp[location.pathname] || 'dashboard';
-    return result;
+    const routeApp = pathToApp[basePathname] || pathToApp[location.pathname];
+    if (routeApp) return routeApp;
+
+    // Fall back to persisted state only if we couldn't infer from the route.
+    const validApps: AppView[] = [
+      'dashboard', 'applications', 'admin-signups', 'calendar', 'deals',
+      'document-parser', 'document-generator', 'trade-blotter', 'green-lens',
+      'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
+      'policy-editor', 'library', 'auditor', 'securitization', 'verification-config', 'whitelisting-dashboard',
+      'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk',
+      'trading', 'polymarket', 'bridge', 'signatures', 'compliance', 'billing', 'settings', 'admin-settings'
+    ];
+
+    if (typeof window !== 'undefined') {
+      const persisted = sessionStorage.getItem('creditnexus_activeApp');
+      if (persisted && validApps.includes(persisted as AppView)) {
+        return persisted as AppView;
+      }
+    }
+
+    return 'dashboard';
   };
   
   const [activeAppState, setActiveAppState] = useState<AppView>(getInitialApp());
@@ -625,6 +677,11 @@ export function DesktopAppLayout() {
       if (app.isInstanceAdminOnly && !isInstanceAdmin) {
         return false;
       }
+
+      // Admins (org or instance) can always access non-instance-admin-only apps.
+      if (isInstanceAdmin || isOrgAdmin) {
+        return true;
+      }
       
       // Permission checks
       if (app.requiredPermission && !hasPermission(app.requiredPermission)) {
@@ -651,7 +708,7 @@ export function DesktopAppLayout() {
       
       return true;
     });
-  }, [hasPermission, hasAnyPermission, hasAllPermissions, user, isInstanceAdmin]);
+  }, [hasPermission, hasAnyPermission, hasAllPermissions, user, isInstanceAdmin, isOrgAdmin]);
 
   // Keep refs in sync with current values
   useEffect(() => {
@@ -665,6 +722,16 @@ export function DesktopAppLayout() {
     const appConfig = allApps.find(a => a.id === appId);
     if (!appConfig) {
       return false;
+    }
+
+    // Instance-admin-only apps require instance admin.
+    if (appConfig.isInstanceAdminOnly && !isInstanceAdmin) {
+      return false;
+    }
+
+    // Admins (org or instance) can access all non-instance-admin-only apps.
+    if (isInstanceAdmin || isOrgAdmin) {
+      return true;
     }
     
     if (!appConfig.requiredPermission && !appConfig.requiredPermissions) {
@@ -687,7 +754,7 @@ export function DesktopAppLayout() {
     }
     
     return false;
-  }, [hasPermission, hasAnyPermission, hasAllPermissions]);
+  }, [hasPermission, hasAnyPermission, hasAllPermissions, isInstanceAdmin, isOrgAdmin]);
 
   // Sync activeApp with route
   useEffect(() => {
@@ -704,13 +771,16 @@ export function DesktopAppLayout() {
       '/dashboard/applications': 'applications',
       '/dashboard/admin-signups': 'admin-signups',
       '/dashboard/calendar': 'calendar',
-      '/dashboard/deals': 'deals',  // Add explicit mapping for deals list
+      '/dashboard/deals': 'deals',
       '/app/document-parser': 'document-parser',
       '/app/document-generator': 'document-generator',
       '/app/trade-blotter': 'trade-blotter',
+      '/app/trading': 'trading',
       '/app/link-accounts': 'link-accounts',
       '/app/asset-alerts': 'asset-alerts',
       '/app/portfolio-risk': 'portfolio-risk',
+      '/app/polymarket': 'polymarket',
+      '/app/bridge': 'bridge',
       '/app/green-lens': 'green-lens',
       '/app/ground-truth': 'ground-truth',
       '/app/verification-demo': 'verification-demo',
@@ -723,10 +793,32 @@ export function DesktopAppLayout() {
       '/app/loan-recovery': 'loan-recovery',
       '/library': 'library',
       '/auditor': 'auditor',
+      '/settings': 'settings',
+      '/admin-settings': 'admin-settings',
     };
     
     // Get base pathname (without query parameters)
     const basePathname = location.pathname.split('?')[0];
+
+    // Legacy dashboard tab URLs: redirect to real app routes.
+    // This ensures old tab-style nav still works (and updates URL).
+    if (basePathname === '/dashboard' && location.search) {
+      const params = new URLSearchParams(location.search);
+      const tab = params.get('tab');
+      const tabRedirects: Record<string, string> = {
+        trading: '/app/trading',
+        polymarket: '/app/polymarket',
+        bridge: '/app/bridge',
+        applications: '/dashboard/applications',
+      };
+      const redirectTo = tab ? tabRedirects[tab] : undefined;
+      if (redirectTo && redirectTo !== location.pathname) {
+        isNavigatingRef.current = true;
+        lastNavigatedPathRef.current = redirectTo;
+        navigate(redirectTo, { replace: true });
+        return;
+      }
+    }
     
     // Handle policy-editor routes with policyId parameter
     let app = pathToApp[basePathname];
@@ -906,8 +998,6 @@ export function DesktopAppLayout() {
   };
 
   const processIntent = (intent: IntentName, context: unknown) => {
-    console.log('[DesktopAppLayout] Processing FDC3 intent:', intent, context);
-
     switch (intent) {
       case 'GenerateLMATemplate': {
         const cdmData = context as CreditAgreementData;
@@ -964,18 +1054,13 @@ export function DesktopAppLayout() {
       case 'ShareWorkflowLink': {
         const workflowCtx = context as WorkflowLinkContext;
         if (workflowCtx && workflowCtx.linkPayload) {
-          // Display link sharing UI or copy to clipboard
-          console.log('[DesktopAppLayout] ShareWorkflowLink intent received:', workflowCtx);
-          // TODO: Open link sharing dialog or copy link to clipboard
-          // For now, just log - will be handled by WorkflowLinkSharer component
+          // Will be handled by the workflow share interface.
         }
         break;
       }
       case 'ProcessWorkflowLink': {
         const workflowCtx = context as WorkflowLinkContext;
         if (workflowCtx && workflowCtx.linkPayload) {
-          // Navigate to workflow processing page with the link payload
-          console.log('[DesktopAppLayout] ProcessWorkflowLink intent received:', workflowCtx);
           // Navigate to workflow processing page
           navigate(`/app/workflow/process?payload=${encodeURIComponent(workflowCtx.linkPayload)}`);
           handleAppChange('workflow-processor' as AppView);
@@ -983,7 +1068,7 @@ export function DesktopAppLayout() {
         break;
       }
       default:
-        console.warn('[DesktopAppLayout] Unknown intent:', intent);
+        // ignore unknown intents
     }
   };
 
@@ -996,7 +1081,6 @@ export function DesktopAppLayout() {
   useEffect(() => {
     if (pendingIntent) {
       const { intent, context } = pendingIntent;
-      console.log('[DesktopAppLayout] Processing pending intent:', intent, context);
       clearPendingIntent();
       processIntent(intent, context);
     }
@@ -1045,6 +1129,26 @@ export function DesktopAppLayout() {
     handleAppChange('dashboard');
   };
 
+  // Listen for quick-access mode changes and route to the
+  // appropriate app instead of using nested dashboard tabs.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<QuickAccessPreferences>).detail;
+      if (!detail) return;
+
+      const targetApp = pickAppFromPreferences(detail);
+      if (!targetApp) return;
+      handleAppChange(targetApp);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('userPreferencesUpdated', handler as EventListener);
+      return () => {
+        window.removeEventListener('userPreferencesUpdated', handler as EventListener);
+      };
+    }
+  }, [handleAppChange]);
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       <header className="sticky top-0 z-50 border-b border-slate-700 bg-slate-900/95 backdrop-blur-sm">
@@ -1058,8 +1162,6 @@ export function DesktopAppLayout() {
               <p className="text-xs text-slate-400">FINOS CDM Compliant</p>
             </div>
           </div>
-
-          {/* Top menu removed - all apps moved to sidebar */}
 
           <div className="flex items-center gap-4">
             <QuickAccessSettings variant="inline" />
@@ -1146,12 +1248,15 @@ export function DesktopAppLayout() {
           {activeApp === 'link-accounts' && <LinkAccounts />}
           {activeApp === 'asset-alerts' && <AssetAlertsView />}
           {activeApp === 'portfolio-risk' && <PortfolioRiskView />}
+          {activeApp === 'trading' && <TradingDashboard />}
+          {activeApp === 'polymarket' && <MarketDashboard />}
+          {activeApp === 'bridge' && <BridgeBuilder />}
           {activeApp === 'green-lens' && <GreenLens />}
           {activeApp === 'document-generator' && (
             <DocumentGenerator
               initialCdmData={viewData || undefined}
               onDocumentGenerated={(doc) => {
-                console.log('Document generated:', doc);
+                void doc;
               }}
             />
           )}

@@ -115,6 +115,8 @@ export function SidebarNavigation() {
   
   // Check if user is instance admin
   const isInstanceAdmin = user?.role === 'admin' && (user as any)?.is_instance_admin === true;
+  // Check if user is organization/admin-level (but not necessarily instance admin)
+  const isOrgAdmin = user?.role === 'admin' || (user as any)?.organization_role === 'admin';
   
   const sidebarApps: SidebarApp[] = useMemo(() => {
     const apps: SidebarApp[] = [
@@ -125,6 +127,15 @@ export function SidebarNavigation() {
         icon: <LayoutDashboard className="h-5 w-5" />,
         description: 'Portfolio overview & analytics',
         path: '/dashboard',
+        category: 'core',
+        subscriptionTier: 'free'
+      },
+      {
+        id: 'settings',
+        name: 'User Settings',
+        icon: <Settings className="h-5 w-5" />,
+        description: 'Profile, preferences, and linked accounts',
+        path: '/settings',
         category: 'core',
         subscriptionTier: 'free'
       },
@@ -165,7 +176,7 @@ export function SidebarNavigation() {
         name: 'Trading',
         icon: <TrendingUp className="h-5 w-5" />,
         description: 'Execute trades and manage positions',
-        path: '/dashboard?tab=trading',
+        path: '/app/trading',
         category: 'trading',
         requiredPermission: PERMISSION_TRADE_VIEW,
         subscriptionTier: 'pro'
@@ -175,7 +186,7 @@ export function SidebarNavigation() {
         name: 'Polymarket',
         icon: <BarChart3 className="h-5 w-5" />,
         description: 'Credit event prediction markets',
-        path: '/dashboard?tab=polymarket',
+        path: '/app/polymarket',
         category: 'trading',
         requiredPermission: PERMISSION_MARKET_VIEW,
         subscriptionTier: 'pro'
@@ -185,7 +196,7 @@ export function SidebarNavigation() {
         name: 'Bridge',
         icon: <ArrowLeftRight className="h-5 w-5" />,
         description: 'Cross-chain asset transfers',
-        path: '/dashboard?tab=bridge',
+        path: '/app/bridge',
         category: 'trading',
         requiredPermission: PERMISSION_TRADE_VIEW,
         subscriptionTier: 'free'
@@ -266,7 +277,7 @@ export function SidebarNavigation() {
         name: 'Applications',
         icon: <FileCheck className="h-5 w-5" />,
         description: 'Loan and credit applications',
-        path: '/dashboard?tab=applications',
+        path: '/dashboard/applications',
         category: 'compliance',
         requiredPermission: PERMISSION_APPLICATION_VIEW,
         subscriptionTier: 'free'
@@ -469,10 +480,11 @@ export function SidebarNavigation() {
       }
       
       // Admin only apps
-      if (app.isAdminOnly && user?.role !== 'admin' && !(user as any)?.organization_role) return false;
+      if (app.isAdminOnly && !isOrgAdmin) return false;
       
-      // Instance admins bypass permission and subscription checks for non-instance-admin-only apps
-      if (isInstanceAdmin) {
+      // Admins (organization or instance) bypass permission and subscription checks
+      // for non-instance-admin-only apps, so they always see the full console.
+      if (isInstanceAdmin || isOrgAdmin) {
         return true;
       }
       
@@ -499,9 +511,13 @@ export function SidebarNavigation() {
 
   const handleAppClick = useCallback((app: SidebarApp) => {
     if (app.path) {
+      if (typeof window !== 'undefined' && window.localStorage?.getItem('cn_nav_debug') === '1') {
+        // eslint-disable-next-line no-console
+        console.debug('[cn_nav_debug] sidebar click', { id: app.id, path: app.path, from: location.pathname + location.search });
+      }
       navigate(app.path);
     }
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   return (
     <aside className={cn(

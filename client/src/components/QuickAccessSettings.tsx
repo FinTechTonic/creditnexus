@@ -35,13 +35,19 @@ export function QuickAccessSettings({ variant = 'card' }: QuickAccessSettingsPro
         const response = await fetchWithAuth('/api/user-settings/preferences');
         if (response.ok) {
           const data = await response.json();
-          setPreferences({
+          const loadedPrefs: UserPreferences = {
             audio_input_mode: data.audio_input_mode || false,
             investment_mode: data.investment_mode || false,
             loan_mode: data.loan_mode || false,
             bank_mode: data.bank_mode || false,
             trading_mode: data.trading_mode || false,
-          });
+          };
+          setPreferences(loadedPrefs);
+
+          // Broadcast preferences so dashboard can react
+          if (variant === 'inline' && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('userPreferencesUpdated', { detail: loadedPrefs }));
+          }
         }
       } catch (error) {
         console.error('Failed to load preferences:', error);
@@ -58,6 +64,11 @@ export function QuickAccessSettings({ variant = 'card' }: QuickAccessSettingsPro
   const updatePreference = async (key: keyof UserPreferences, value: boolean) => {
     const newPrefs = { ...preferences, [key]: value };
     setPreferences(newPrefs);
+
+    // Broadcast updated preferences so dashboard can react immediately
+    if (variant === 'inline' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('userPreferencesUpdated', { detail: newPrefs }));
+    }
     
     try {
       await fetchWithAuth('/api/user-settings/preferences', {

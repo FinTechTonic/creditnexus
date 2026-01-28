@@ -1,43 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { usePermissions } from '@/hooks/usePermissions';
-import { useAuth } from '@/context/AuthContext';
+import React from 'react';
 import { Dashboard } from '@/components/Dashboard';
-import { DocumentHistory } from '@/components/DocumentHistory';
-import { ApplicationDashboard } from '@/components/ApplicationDashboard';
-import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
-import type { CreditAgreementData } from '@/context/FDC3Context';
-import { SignaturePad } from '@/components/ui/SignaturePad';
-import { SignatureButton } from '@/components/SignatureButton';
-import { SignatureStatus } from '@/components/SignatureStatus';
 import { MyPendingSignatures } from '@/components/dashboard-tabs/MyPendingSignatures';
 import { SignatureCoordinationPanel } from '@/components/dashboard-tabs/SignatureCoordinationPanel';
 import { SignatureAuditTrail } from '@/components/dashboard-tabs/SignatureAuditTrail';
-import { TradingDashboard } from '@/components/trading/TradingDashboard';
-import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
-import { BridgeBuilder } from '@/components/BridgeBuilder';
-import { PortfolioDashboard } from '@/components/PortfolioDashboard';
-import { UnifiedInvestmentDashboard } from '@/components/investment/UnifiedInvestmentDashboard';
 import { GDPRDashboard } from '@/components/dashboard-tabs/GDPRDashboard';
 import {
-  LayoutDashboard,
-  TrendingUp,
-  BarChart3,
-  FileText,
   PenTool,
   Shield,
-  PieChart,
-  FileCheck,
   DollarSign,
-  ArrowLeftRight,
   ExternalLink,
 } from 'lucide-react';
-import {
-  PERMISSION_DOCUMENT_VIEW,
-  PERMISSION_APPLICATION_VIEW,
-} from '@/utils/permissions';
 
-function SignatureDashboard() {
+export function SignatureDashboard() {
   const [activeTab, setActiveTab] = React.useState('pending');
 
   return (
@@ -109,7 +83,7 @@ function SignatureDashboard() {
   );
 }
 
-function ComplianceDashboard() {
+export function ComplianceDashboard() {
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold mb-4">Compliance Dashboard</h2>
@@ -118,7 +92,7 @@ function ComplianceDashboard() {
   );
 }
 
-function BillingDashboard() {
+export function BillingDashboard() {
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold mb-4">Billing Dashboard</h2>
@@ -127,168 +101,18 @@ function BillingDashboard() {
   );
 }
 
-interface DashboardTab {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  component: React.ComponentType;
-  requiredPermission?: string;
-  requiredPermissions?: string[];
-  requireAll?: boolean;
-  subscriptionTier?: 'free' | 'pro' | 'premium' | 'lifetime';
-}
-
 export function UnifiedDashboard() {
-  const { user } = useAuth();
-  const { hasPermission, hasAllPermissions } = usePermissions();
-  const [activeTab, setActiveTab] = useState<string>('overview');
-  
-  // Get user subscription tier (from user model or API)
-  // TODO: Update User interface to include subscription_tier when subscription system is implemented
-  const subscriptionTier = (user as any)?.subscription_tier || 'free';
-  
-  const dashboardTabs: DashboardTab[] = useMemo(() => {
-    const tabs: DashboardTab[] = [
-      {
-        id: 'overview',
-        label: 'Overview',
-        icon: <LayoutDashboard className="h-4 w-4" />,
-        component: Dashboard,
-        subscriptionTier: 'free'
-      },
-      {
-        id: 'trading',
-        label: 'Trading',
-        icon: <TrendingUp className="h-4 w-4" />,
-        component: () => <UnifiedInvestmentDashboard />,
-        // requiredPermission removed: tab always visible; UnifiedInvestmentDashboard gates content
-        subscriptionTier: 'free'
-      },
-      {
-        id: 'polymarket',
-        label: 'Polymarket',
-        icon: <BarChart3 className="h-4 w-4" />,
-        component: () => <MarketDashboard />,
-        requiredPermission: 'MARKET_VIEW',
-        subscriptionTier: 'pro'
-      },
-      {
-        id: 'bridge',
-        label: 'Bridge',
-        icon: <ArrowLeftRight className="h-4 w-4" />,
-        component: () => <BridgeBuilder />,
-        requiredPermission: 'TRADE_VIEW',
-        subscriptionTier: 'free'
-      },
-      {
-        id: 'documents',
-        label: 'Documents',
-        icon: <FileText className="h-4 w-4" />,
-        component: () => <DocumentHistory />,
-        requiredPermission: PERMISSION_DOCUMENT_VIEW,
-        subscriptionTier: 'free'
-      },
-      {
-        id: 'signatures',
-        label: 'Signatures',
-        icon: <PenTool className="h-4 w-4" />,
-        component: SignatureDashboard,
-        requiredPermission: 'SIGNATURE_VIEW', // Will be added to permissions.ts
-        subscriptionTier: 'free'
-      },
-      {
-        id: 'compliance',
-        label: 'Compliance',
-        icon: <Shield className="h-4 w-4" />,
-        component: ComplianceDashboard,
-        requiredPermission: 'COMPLIANCE_VIEW', // Will be added to permissions.ts
-        subscriptionTier: 'premium'
-      },
-      // Portfolio tab removed - now integrated into Trading tab (UnifiedInvestmentDashboard)
-      {
-        id: 'applications',
-        label: 'Applications',
-        icon: <FileCheck className="h-4 w-4" />,
-        component: ApplicationDashboard,
-        requiredPermission: PERMISSION_APPLICATION_VIEW,
-        subscriptionTier: 'free'
-      },
-      {
-        id: 'billing',
-        label: 'Billing',
-        icon: <DollarSign className="h-4 w-4" />,
-        component: BillingDashboard,
-        requiredPermission: 'BILLING_VIEW', // Will be added to permissions.ts
-        subscriptionTier: 'free'  // All tiers can view their billing
-      },
-      {
-        id: 'privacy',
-        label: 'Privacy',
-        icon: <Shield className="h-4 w-4" />,
-        component: GDPRDashboard,
-        subscriptionTier: 'free'
-      }
-    ];
-    
-    // Filter tabs based on permissions and subscription
-    return tabs.filter(tab => {
-      // Check subscription tier
-      const tierLevels: Record<string, number> = { free: 0, pro: 1, premium: 2, lifetime: 3 };
-      const userTierLevel = tierLevels[subscriptionTier as string] || 0;
-      const tabTierLevel = tierLevels[tab.subscriptionTier || 'free'];
-      if (userTierLevel < tabTierLevel) {
-        return false;
-      }
-      
-      // Check permissions (admin bypass: always allow if role is admin)
-      if (tab.requiredPermission) {
-        const isAdmin = (user?.role || '').toLowerCase() === 'admin';
-        if (!isAdmin && !hasPermission(tab.requiredPermission)) {
-          return false;
-        }
-      }
-      if (tab.requiredPermissions) {
-        if (!hasAllPermissions(tab.requiredPermissions)) {
-          return false;
-        }
-      }
-      
-      return true;
-    });
-  }, [user, subscriptionTier, hasPermission, hasAllPermissions]);
-  
-  // Set active tab to first available tab if current tab is not available
-  useEffect(() => {
-    if (dashboardTabs.length > 0 && !dashboardTabs.find(tab => tab.id === activeTab)) {
-      setActiveTab(dashboardTabs[0].id);
-    }
-  }, [dashboardTabs, activeTab]);
-
+  // Phase 2 requirement: Dashboard should no longer render
+  // its own nested top-level tabs. All major sections
+  // (Trading, Bridge, Documents, Signatures, Applications,
+  // Billing, Privacy) are now accessed via the sidebar.
+  //
+  // The unified dashboard is now a single overview view.
   return (
     <div className="flex flex-col h-full space-y-4">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="w-full justify-start border-b rounded-none">
-          {dashboardTabs.map(tab => (
-            <TabsTrigger
-              key={tab.id}
-              value={tab.id}
-              className="flex items-center gap-2"
-            >
-              {tab.icon}
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        
-        {dashboardTabs.map(tab => {
-          const TabComponent = tab.component;
-          return (
-            <TabsContent key={tab.id} value={tab.id} className="flex-1 overflow-auto mt-0">
-              <TabComponent />
-            </TabsContent>
-          );
-        })}
-      </Tabs>
+      <Dashboard />
     </div>
   );
 }
+
+export { GDPRDashboard };

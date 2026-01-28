@@ -140,6 +140,14 @@ export const router = createAppRouter([
     ),
   },
   {
+    path: '/app/trading',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/app/link-accounts',
     element: (
       <ProtectedRoute>
@@ -157,6 +165,22 @@ export const router = createAppRouter([
   },
   {
     path: '/app/portfolio-risk',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/polymarket',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/bridge',
     element: (
       <ProtectedRoute>
         <DesktopAppLayout />

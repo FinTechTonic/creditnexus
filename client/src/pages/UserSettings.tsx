@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
-import { User, Key, Bell, Shield, Mic, TrendingUp, Building2, DollarSign } from 'lucide-react';
+import { User, Key, Bell, Shield, Mic, TrendingUp, Building2, DollarSign, Link2 } from 'lucide-react';
+import { LinkAccounts } from '@/components/LinkAccounts';
 
 interface UserPreferences {
   audio_input_mode: boolean;
@@ -149,6 +150,7 @@ export function UserSettings() {
       if (response.ok) {
         const data = await response.json();
         const key: APIKey = {
+          id: data.id,
           name: data.name,
           key: '', // Don't store the actual key in state
           created_at: data.created_at,
@@ -206,6 +208,10 @@ export function UserSettings() {
         <TabsList>
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
+          <TabsTrigger value="link-accounts">
+            <Link2 className="h-4 w-4 mr-2" />
+            Link Accounts
+          </TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="api-keys">API Keys</TabsTrigger>
         </TabsList>
@@ -339,6 +345,10 @@ export function UserSettings() {
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+        
+        <TabsContent value="link-accounts">
+          <LinkAccounts />
         </TabsContent>
         
         <TabsContent value="notifications">
