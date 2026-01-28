@@ -43,6 +43,9 @@ from app.utils.audit import log_audit_action
 from fastapi import Request
 
 from app.utils import get_debug_log_path
+from app.services.signature_provider import SignatureRequestContext, get_signature_provider
+from app.api.signature_routes import signature_router
+from app.api.kyc_routes import kyc_router
 logger = logging.getLogger(__name__)
 
 # Deep Tech Components (Loaded on startup)
@@ -172,6 +175,12 @@ def extract_text_from_file(file_content: bytes, filename: Optional[str] = None) 
         raise ValueError(f"Unsupported file type: {extension}. Supported types: PDF, TXT")
 
 router = APIRouter(prefix="/api")
+
+# Mount native signature routes
+router.include_router(signature_router)
+
+# Mount KYC routes
+router.include_router(kyc_router)
 
 
 class ExtractionRequest(BaseModel):
@@ -12534,39 +12543,135 @@ async def request_document_signature(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Request signatures for a document via DigiSigner."""
-    from app.services.signature_service import SignatureService
-    
+    """Request signatures for a document via configured provider (internal by default)."""
+
+    # #region agent log
     try:
-        signature_service = SignatureService(db)
-        signature = signature_service.request_signature(
-            document_id=document_id,
-            signers=request.signers,
-            auto_detect_signers=request.auto_detect_signers,
-            expires_in_days=request.expires_in_days,
-            subject=request.subject,
-            message=request.message,
-            urgency=request.urgency
-        )
-        
+        import json, time as _time
+
+        with open(
+            "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
+        ) as f:
+            f.write(
+                json.dumps(
+                    {
+                        "sessionId": "debug-session",
+                        "runId": "pre-fix",
+                        "hypothesisId": "S1",
+                        "location": "app/api/routes.py:request_document_signature",
+                        "message": "request_document_signature called",
+                        "data": {
+                            "document_id": document_id,
+                            "has_signers": bool(request.signers),
+                            "auto_detect_signers": request.auto_detect_signers,
+                            "expires_in_days": request.expires_in_days,
+                            "urgency": request.urgency,
+                        },
+                        "timestamp": _time.time(),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # #endregion
+
+    provider = get_signature_provider(db)
+    ctx = SignatureRequestContext(
+        document_id=document_id,
+        signers=request.signers,
+        auto_detect_signers=request.auto_detect_signers,
+        expires_in_days=request.expires_in_days,
+        subject=request.subject,
+        message=request.message,
+        urgency=request.urgency,
+        requested_by_user_id=current_user.id,
+    )
+
+    try:
+        signature = await provider.request_signature(ctx)
+
         log_audit_action(
             db=db,
             action=AuditAction.CREATE,
             target_type="signature_request",
             target_id=signature.id,
             user_id=current_user.id,
-            metadata={"document_id": document_id, "signature_request_id": signature.signature_request_id}
+            metadata={
+                "document_id": document_id,
+                "signature_provider": getattr(signature, "signature_provider", None),
+                "signature_request_id": getattr(signature, "signature_request_id", None),
+            },
         )
-        
+
+        # #region agent log
+        try:
+            import json, time as _time
+
+            with open(
+                "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
+            ) as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "sessionId": "debug-session",
+                            "runId": "pre-fix",
+                            "hypothesisId": "S2",
+                            "location": "app/api/routes.py:request_document_signature",
+                            "message": "request_document_signature succeeded",
+                            "data": {
+                                "document_id": document_id,
+                                "signature_id": getattr(signature, "id", None),
+                                "provider": getattr(signature, "signature_provider", None),
+                            },
+                            "timestamp": _time.time(),
+                        }
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
+
         return {
             "status": "success",
-            "signature": signature.to_dict()
+            "signature": signature.to_dict() if hasattr(signature, "to_dict") else None,
         }
     except Exception as e:
         logger.error(f"Error requesting signature: {e}")
+
+        # #region agent log
+        try:
+            import json, time as _time
+
+            with open(
+                "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
+            ) as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "sessionId": "debug-session",
+                            "runId": "pre-fix",
+                            "hypothesisId": "S3",
+                            "location": "app/api/routes.py:request_document_signature",
+                            "message": "request_document_signature failed",
+                            "data": {
+                                "document_id": document_id,
+                                "error": str(e),
+                                "error_type": type(e).__name__,
+                            },
+                            "timestamp": _time.time(),
+                        }
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion
+
         raise HTTPException(
             status_code=500,
-            detail={"status": "error", "message": f"Failed to request signature: {str(e)}"}
+            detail={"status": "error", "message": f"Failed to request signature: {str(e)}"},
         )
 
 
@@ -12636,79 +12741,6 @@ async def get_document_signatures(
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": f"Failed to get document signatures: {str(e)}"}
-        )
-
-
-@router.get("/signatures/{signature_id}/status")
-async def get_signature_status(
-    signature_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get signature status."""
-    from app.services.signature_service import SignatureService
-    from app.db.models import DocumentSignature
-    
-    signature = db.query(DocumentSignature).filter(DocumentSignature.id == signature_id).first()
-    if not signature:
-        raise HTTPException(status_code=404, detail="Signature not found")
-    
-    try:
-        signature_service = SignatureService(db)
-        status = signature_service.check_signature_status(signature.signature_request_id)
-        
-        # Update local status if changed
-        if status.get("status") != signature.signature_status:
-            signature_service.update_signature_status(
-                signature_id=signature_id,
-                status=status.get("status", signature.signature_status),
-                signed_document_url=status.get("signed_document_url")
-            )
-        
-        return {
-            "status": "success",
-            "signature": signature.to_dict(),
-            "provider_status": status
-        }
-    except Exception as e:
-        logger.error(f"Error checking signature status: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "error", "message": f"Failed to check signature status: {str(e)}"}
-        )
-
-
-@router.get("/signatures/{signature_id}/download")
-async def download_signed_document(
-    signature_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth)
-):
-    """Download signed document."""
-    from app.services.signature_service import SignatureService
-    from app.db.models import DocumentSignature
-    
-    signature = db.query(DocumentSignature).filter(DocumentSignature.id == signature_id).first()
-    if not signature:
-        raise HTTPException(status_code=404, detail="Signature not found")
-    
-    if signature.signature_status != "completed":
-        raise HTTPException(status_code=400, detail="Document not yet signed")
-    
-    try:
-        signature_service = SignatureService(db)
-        content = signature_service.download_signed_document(signature.signature_request_id)
-        
-        return StreamingResponse(
-            io.BytesIO(content),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=signed_document_{signature_id}.pdf"}
-        )
-    except Exception as e:
-        logger.error(f"Error downloading signed document: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "error", "message": f"Failed to download signed document: {str(e)}"}
         )
 
 
@@ -12826,21 +12858,37 @@ async def digisigner_webhook(
 @router.get("/documents/{document_id}/filing/requirements")
 async def get_filing_requirements(
     document_id: int,
-    deal_id: Optional[int] = Query(None, description="Optional deal ID for context"),
+    deal_id: Optional[str] = Query(
+        None,
+        description="Optional deal ID for context (empty or missing will be treated as None)",
+    ),
     agreement_type: str = Query("facility_agreement", description="Type of agreement"),
     use_ai_evaluation: bool = Query(True, description="Use AI for filing requirement evaluation"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get filing requirements for a document."""
     from app.services.filing_service import FilingService
     
     try:
         filing_service = FilingService(db)
+
+        # Gracefully handle empty or invalid deal_id query values.
+        parsed_deal_id: Optional[int]
+        if deal_id is None or (isinstance(deal_id, str) and not deal_id.strip()):
+            parsed_deal_id = None
+        else:
+            try:
+                parsed_deal_id = int(deal_id)
+            except (TypeError, ValueError):
+                # Log and fall back to no deal context instead of raising 422
+                logger.warning("Received non-numeric deal_id '%s' for document %s; treating as None", deal_id, document_id)
+                parsed_deal_id = None
+
         requirements = filing_service.determine_filing_requirements(
             document_id=document_id,
             agreement_type=agreement_type,
-            deal_id=deal_id,
+            deal_id=parsed_deal_id,
             use_ai_evaluation=use_ai_evaluation,
             user_id=current_user.id
         )

@@ -31,7 +31,13 @@ module.exports = {
       args: useVenv ? ['scripts/run_dev.py'] : (isWindows ? ['/c', 'python', 'scripts/run_dev.py'] : ['scripts/run_dev.py']),
       cwd: projectRoot,
       interpreter: 'none',
-      env: { NODE_ENV: 'development', PYTHONUNBUFFERED: '1', PM2: '1' },
+      env: {
+        NODE_ENV: 'development',
+        PYTHONUNBUFFERED: '1',
+        PM2: '1',
+        // Ensure Python can import the top-level `app` package and `server` module
+        PYTHONPATH: projectRoot,
+      },
       out_file: path.join(logsDir, 'backend-dev-out.log'),
       error_file: path.join(logsDir, 'backend-dev-error.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS',

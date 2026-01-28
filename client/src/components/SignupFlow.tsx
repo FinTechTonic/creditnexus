@@ -7,6 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { ProfileEnrichment } from '@/components/ProfileEnrichment';
 import { MultimodalInputTabs } from '@/apps/docu-digitizer/MultimodalInputTabs';
+import { KYCVerificationStep } from '@/components/onboarding/KYCVerificationStep';
+import { LicenseUploadStep } from '@/components/onboarding/LicenseUploadStep';
+import { ConsentCollectionStep } from '@/components/onboarding/ConsentCollectionStep';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -47,8 +50,10 @@ const STEPS = [
   { id: 2, title: 'Organization', description: 'Select your organization' },
   { id: 3, title: 'Implementations', description: 'Connect to services (optional)' },
   { id: 4, title: 'Profile Enrichment', description: 'Complete your profile information' },
-  { id: 5, title: 'Document Upload', description: 'Upload supporting documents (optional)' },
-  { id: 6, title: 'Review & Submit', description: 'Review your information and complete signup' },
+  { id: 5, title: 'Identity Verification', description: 'Complete KYC requirements' },
+  { id: 6, title: 'Professional Licenses', description: 'Upload role-specific certifications' },
+  { id: 7, title: 'Privacy & Consent', description: 'Review privacy policy and provide consent' },
+  { id: 8, title: 'Review & Submit', description: 'Review your information and complete signup' },
 ];
 
 function OrganizationSelectionStep({
@@ -639,19 +644,68 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
 
       case 5:
         return (
-          <div className="space-y-6">
-            <div className="text-center py-8">
-              <p className="text-slate-400">
-                Document upload will be implemented in the next task.
-              </p>
-              <p className="text-sm text-slate-500 mt-2">
-                Upload business cards, resumes, or company documents to automatically extract profile data.
-              </p>
-            </div>
-          </div>
+          <KYCVerificationStep
+            role={formData.role || 'applicant'}
+            onComplete={(data) => {
+              console.log('KYC Completed:', data);
+              handleNext();
+            }}
+          />
         );
 
       case 6:
+        return (
+          <LicenseUploadStep
+            role={formData.role || 'applicant'}
+            onComplete={(data) => {
+              console.log('Licenses Completed:', data);
+              handleNext();
+            }}
+          />
+        );
+
+      case 7:
+        return (
+          <ConsentCollectionStep
+            onConsentChange={async (consents) => {
+              // Record consents via API
+              try {
+                for (const [consentType, given] of Object.entries(consents)) {
+                  if (consentType !== 'essential') {
+                    const consentConfig = {
+                      essential: { purpose: 'Required for account functionality', basis: 'contract' },
+                      analytics: { purpose: 'Improving application performance and UX', basis: 'consent' },
+                      marketing: { purpose: 'Sending newsletters and product updates', basis: 'consent' },
+                      third_party: { purpose: 'Sharing non-essential data with partners', basis: 'consent' }
+                    };
+                    
+                    const config = consentConfig[consentType as keyof typeof consentConfig];
+                    if (config) {
+                      await fetchWithAuth('/api/gdpr/consents', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          consent_type: consentType,
+                          consent_purpose: config.purpose,
+                          legal_basis: config.basis,
+                          consent_given: given,
+                          consent_source: 'signup'
+                        })
+                      });
+                    }
+                  }
+                }
+                handleNext();
+              } catch (e) {
+                console.error('Failed to record consents:', e);
+                // Non-blocking - continue anyway
+                handleNext();
+              }
+            }}
+          />
+        );
+
+      case 8:
         return (
           <div className="space-y-6">
             <div className="bg-slate-800/50 rounded-lg p-6 space-y-4">

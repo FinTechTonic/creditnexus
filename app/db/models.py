@@ -317,6 +317,19 @@ class User(Base):
     credit_balance = relationship("CreditBalance", back_populates="user", uselist=False)
     subscription_tier = Column(String(20), default=SubscriptionTier.FREE.value, nullable=False)
     
+    # Phase 2: KYC relationships
+    # Explicit foreign_keys is required because KYCVerification also has a reviewed_by FK to users,
+    # which would otherwise create multiple FK paths and break mapper configuration.
+    kyc_verification = relationship(
+        "KYCVerification",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="KYCVerification.user_id",
+    )
+    licenses = relationship("UserLicense", back_populates="user", cascade="all, delete-orphan")
+    kyc_documents = relationship("KYCDocument", back_populates="user", cascade="all, delete-orphan")
+    
     # Admin fields
     is_instance_admin = Column(Boolean, default=False, nullable=False, index=True)
     organization_role = Column(String(50), nullable=True, index=True)  # 'admin', 'member', etc.
@@ -324,6 +337,15 @@ class User(Base):
     # User preferences and API keys
     preferences = Column(JSONB, nullable=True)  # User preferences (audio_input_mode, investment_mode, etc.)
     api_keys = Column(JSONB, nullable=True)  # Encrypted API keys for account linking
+    
+    # Phase 3: Structured Product relationships
+    product_templates = relationship("StructuredProductTemplate", back_populates="creator")
+    issued_products = relationship("StructuredProductInstance", back_populates="issuer")
+    product_subscriptions = relationship("ProductSubscription", back_populates="investor")
+    
+    # Phase 7: GDPR relationships
+    consent_records = relationship("ConsentRecord", back_populates="user", cascade="all, delete-orphan")
+    data_processing_requests = relationship("DataProcessingRequest", foreign_keys="DataProcessingRequest.user_id", back_populates="user", cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -387,6 +409,15 @@ class Document(Base):
     )
     source_cdm_data = Column(EncryptedJSON(), nullable=True)  # CDM data used for generation - Encrypted
 
+    # Phase 2: Document Model Enhancements
+    classification = Column(String(50), nullable=True, index=True)  # legal, financial, KYC, collateral
+    status = Column(String(50), server_default="draft", nullable=False, index=True)  # draft, finalized, archived
+    retention_policy = Column(String(100), nullable=True)
+    retention_expires_at = Column(DateTime, nullable=True)
+    parent_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
+    compliance_status = Column(String(50), server_default="pending", nullable=False, index=True)
+    regulatory_check_metadata = Column(JSONB, nullable=True)
+
     # Deal relationship
     deal_id = Column(
         Integer, ForeignKey("deals.id", ondelete="SET NULL"), nullable=True, index=True
@@ -407,6 +438,7 @@ class Document(Base):
     deal = relationship("Deal", back_populates="documents")
     signatures = relationship("DocumentSignature", back_populates="document", cascade="all, delete-orphan")
     filings = relationship("DocumentFiling", back_populates="document", cascade="all, delete-orphan")
+    parent_document = relationship("Document", remote_side=[id], backref="amendments")
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -425,6 +457,14 @@ class Document(Base):
             "is_generated": self.is_generated,
             "template_id": self.template_id,
             "source_cdm_data": self.source_cdm_data,
+            # Phase 2 fields
+            "classification": self.classification,
+            "status": self.status,
+            "retention_policy": self.retention_policy,
+            "retention_expires_at": self.retention_expires_at.isoformat() if self.retention_expires_at else None,
+            "parent_document_id": self.parent_document_id,
+            "compliance_status": self.compliance_status,
+            "regulatory_check_metadata": self.regulatory_check_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -1046,6 +1086,13 @@ class DocumentSignature(Base):
     completed_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True, index=True)
 
+    # Internal/native signature fields (Phase 2)
+    access_token = Column(EncryptedString(255), nullable=True, index=True)
+    coordinates = Column(JSONB, nullable=True)  # {"page": int, "x": float, "y": float, "width": float, "height": float}
+    audit_data = Column(JSONB, nullable=True)  # Structured audit trail payload
+    metamask_signature = Column(String(512), nullable=True)
+    metamask_signed_at = Column(DateTime, nullable=True)
+
     # Legacy fields (for backward compatibility with old signature records)
     signer_name = Column(String(255), nullable=True)  # Changed to nullable for DigiSigner records
     signer_role = Column(String(100), nullable=True)
@@ -1062,10 +1109,18 @@ class DocumentSignature(Base):
 
     def to_dict(self):
         """Convert model to dictionary."""
+        # Get document title from relationship if available
+        document_title = None
+        if self.document:
+            document_title = self.document.title
+        elif self.generated_document:
+            document_title = getattr(self.generated_document, 'title', None) or f"Generated Document {self.generated_document_id}"
+        
         return {
             "id": self.id,
             "document_id": self.document_id,
             "generated_document_id": self.generated_document_id,
+            "document_title": document_title,  # Added for frontend MyPendingSignatures component
             "signature_provider": self.signature_provider,
             "signature_request_id": self.signature_request_id,
             "signature_status": getattr(self, 'signature_status', 'pending'),
@@ -1078,6 +1133,12 @@ class DocumentSignature(Base):
             "requested_at": self.requested_at.isoformat() if self.requested_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            # Phase 2 native fields
+            "access_token": self.access_token,
+            "coordinates": self.coordinates,
+            "audit_data": self.audit_data,
+            "metamask_signature": self.metamask_signature,
+            "metamask_signed_at": self.metamask_signed_at.isoformat() if self.metamask_signed_at else None,
             # Legacy fields
             "signer_name": self.signer_name,
             "signer_role": self.signer_role,
@@ -1304,6 +1365,149 @@ class Inquiry(Base):
             "response_message": self.response_message,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class KYCVerification(Base):
+    """KYC verification record for users."""
+
+    __tablename__ = "kyc_verifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    
+    kyc_status = Column(String(50), default="pending", nullable=False, index=True)  # pending, completed, rejected, expired
+    kyc_level = Column(String(50), default="basic", nullable=False)  # basic, standard, enhanced
+    
+    # Verification checks
+    identity_verified = Column(Boolean, default=False, nullable=False)
+    address_verified = Column(Boolean, default=False, nullable=False)
+    document_verified = Column(Boolean, default=False, nullable=False)
+    license_verified = Column(Boolean, default=False, nullable=False)
+    sanctions_check_passed = Column(Boolean, default=False, nullable=False)
+    pep_check_passed = Column(Boolean, default=False, nullable=False)
+    
+    verification_metadata = Column(JSONB, nullable=True)
+    policy_evaluation_result = Column(JSONB, nullable=True)
+    peoplehub_profile_id = Column(String(255), nullable=True)
+    
+    # Timestamps
+    submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    user = relationship("User", back_populates="kyc_verification", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
+    licenses = relationship("UserLicense", back_populates="kyc_verification", cascade="all, delete-orphan")
+    documents = relationship("KYCDocument", back_populates="kyc_verification", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "kyc_status": self.kyc_status,
+            "kyc_level": self.kyc_level,
+            "identity_verified": self.identity_verified,
+            "address_verified": self.address_verified,
+            "document_verified": self.document_verified,
+            "license_verified": self.license_verified,
+            "sanctions_check_passed": self.sanctions_check_passed,
+            "pep_check_passed": self.pep_check_passed,
+            "verification_metadata": self.verification_metadata,
+            "policy_evaluation_result": self.policy_evaluation_result,
+            "peoplehub_profile_id": self.peoplehub_profile_id,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+            "reviewed_by": self.reviewed_by,
+        }
+
+
+class UserLicense(Base):
+    """Professional licenses and certifications for users."""
+
+    __tablename__ = "user_licenses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kyc_verification_id = Column(Integer, ForeignKey("kyc_verifications.id", ondelete="CASCADE"), nullable=True, index=True)
+    
+    license_type = Column(String(100), nullable=False)  # professional_license, certification, registration
+    license_number = Column(EncryptedString(255), nullable=False)
+    license_category = Column(String(50), nullable=False)  # banking, legal, accounting, etc.
+    
+    issuing_authority = Column(String(255), nullable=False)
+    issue_date = Column(Date, nullable=True)
+    expiration_date = Column(Date, nullable=True)
+    
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    verification_status = Column(String(50), default="pending", nullable=False)  # pending, verified, rejected, expired
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="licenses")
+    kyc_verification = relationship("KYCVerification", back_populates="licenses")
+    document = relationship("Document")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "kyc_verification_id": self.kyc_verification_id,
+            "license_type": self.license_type,
+            "license_number": self.license_number,
+            "license_category": self.license_category,
+            "issuing_authority": self.issuing_authority,
+            "issue_date": self.issue_date.isoformat() if self.issue_date else None,
+            "expiration_date": self.expiration_date.isoformat() if self.expiration_date else None,
+            "document_id": self.document_id,
+            "verification_status": self.verification_status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class KYCDocument(Base):
+    """Identification and supporting documents for KYC."""
+
+    __tablename__ = "kyc_documents"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kyc_verification_id = Column(Integer, ForeignKey("kyc_verifications.id", ondelete="CASCADE"), nullable=True, index=True)
+    
+    document_type = Column(String(100), nullable=False)  # id_document, proof_of_address, bank_statement, tax_document
+    document_category = Column(String(100), nullable=False)  # passport, driver_license, utility_bill, etc.
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    
+    verification_status = Column(String(50), default="pending", nullable=False)
+    extracted_data = Column(JSONB, nullable=True)  # OCR-extracted data
+    ocr_confidence = Column(Float, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="kyc_documents")
+    kyc_verification = relationship("KYCVerification", back_populates="documents")
+    document = relationship("Document")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "kyc_verification_id": self.kyc_verification_id,
+            "document_type": self.document_type,
+            "document_category": self.document_category,
+            "document_id": self.document_id,
+            "verification_status": self.verification_status,
+            "extracted_data": self.extracted_data,
+            "ocr_confidence": self.ocr_confidence,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -4180,3 +4384,210 @@ class ReviewAssignment(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+# Phase 3: Structured Products Models
+# ============================================================================
+
+class StructuredProductTemplate(Base):
+    """Template for generic structured products (ELNs, barrier options, etc.)."""
+    __tablename__ = "structured_product_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    product_type = Column(String(100), nullable=False)  # equity_linked_note, barrier_option, etc.
+    underlying_symbol = Column(String(50), nullable=False)
+    payoff_formula = Column(JSONB, nullable=False)  # Formula definition
+    maturity_days = Column(Integer, nullable=False)
+    principal = Column(Numeric(20, 2), nullable=False)
+    fees = Column(Numeric(20, 2), default=0)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    creator = relationship("User", back_populates="product_templates", foreign_keys=[created_by])
+    instances = relationship("StructuredProductInstance", back_populates="template")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "product_type": self.product_type,
+            "underlying_symbol": self.underlying_symbol,
+            "payoff_formula": self.payoff_formula,
+            "maturity_days": self.maturity_days,
+            "principal": float(self.principal),
+            "fees": float(self.fees),
+            "created_by": self.created_by,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class StructuredProductInstance(Base):
+    """Specific instance of an issued structured product."""
+    __tablename__ = "structured_product_instances"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    template_id = Column(Integer, ForeignKey("structured_product_templates.id"), nullable=False)
+    issuer_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    total_notional = Column(Numeric(20, 2), nullable=False)
+    issue_date = Column(Date, nullable=False)
+    maturity_date = Column(Date, nullable=False)
+    status = Column(String(50), default="active")  # active, matured, cancelled
+    replication_trades = Column(JSONB, nullable=True)  # Alpaca order IDs or similar
+    current_value = Column(Numeric(20, 2), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    template = relationship("StructuredProductTemplate", back_populates="instances")
+    issuer = relationship("User", back_populates="issued_products", foreign_keys=[issuer_user_id])
+    subscriptions = relationship("ProductSubscription", back_populates="instance")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "template_id": self.template_id,
+            "issuer_user_id": self.issuer_user_id,
+            "total_notional": float(self.total_notional),
+            "issue_date": self.issue_date.isoformat() if self.issue_date else None,
+            "maturity_date": self.maturity_date.isoformat() if self.maturity_date else None,
+            "status": self.status,
+            "current_value": float(self.current_value) if self.current_value else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ProductSubscription(Base):
+    """Investor subscription to a structured product instance."""
+    __tablename__ = "product_subscriptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    instance_id = Column(Integer, ForeignKey("structured_product_instances.id"), nullable=False)
+    investor_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    subscription_amount = Column(Numeric(20, 2), nullable=False)
+    subscription_date = Column(Date, nullable=False)
+    status = Column(String(50), default="pending")  # pending, active, matured, cancelled
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    instance = relationship("StructuredProductInstance", back_populates="subscriptions")
+    investor = relationship("User", back_populates="product_subscriptions", foreign_keys=[investor_user_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "instance_id": self.instance_id,
+            "investor_user_id": self.investor_user_id,
+            "subscription_amount": float(self.subscription_amount),
+            "subscription_date": self.subscription_date.isoformat() if self.subscription_date else None,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# Phase 7: GDPR Compliance Models
+# ============================================================================
+
+class ConsentRecord(Base):
+    """GDPR consent record for data processing."""
+    __tablename__ = "consent_records"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Consent details
+    consent_type = Column(String(50), nullable=False, index=True)  # marketing, analytics, essential, third_party
+    consent_purpose = Column(String(255), nullable=False)  # Description of purpose
+    legal_basis = Column(String(50), nullable=False)  # consent, contract, legal_obligation, legitimate_interests
+    
+    # Consent status
+    consent_given = Column(Boolean, default=False, nullable=False)
+    consent_withdrawn = Column(Boolean, default=False, nullable=False)
+    consent_withdrawn_at = Column(DateTime, nullable=True)
+    
+    # Consent metadata
+    consent_method = Column(String(50), nullable=True)  # explicit, opt_in
+    consent_source = Column(String(100), nullable=True)  # signup, settings
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    
+    # Timestamps
+    consent_given_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="consent_records")
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "consent_type": self.consent_type,
+            "consent_purpose": self.consent_purpose,
+            "legal_basis": self.legal_basis,
+            "consent_given": self.consent_given,
+            "consent_withdrawn": self.consent_withdrawn,
+            "consent_withdrawn_at": self.consent_withdrawn_at.isoformat() if self.consent_withdrawn_at else None,
+            "consent_given_at": self.consent_given_at.isoformat() if self.consent_given_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class DataProcessingRequest(Base):
+    """GDPR data processing requests (rectification, restriction, objection)."""
+    __tablename__ = "data_processing_requests"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Request details
+    request_type = Column(String(50), nullable=False, index=True)  # rectification, restriction, objection, portability
+    request_status = Column(String(20), default="pending", nullable=False, index=True)  # pending, completed, rejected
+    
+    # Request data
+    request_description = Column(Text, nullable=False)
+    requested_changes = Column(JSONB, nullable=True)  # For rectification
+    
+    # Processing
+    processed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    processed_at = Column(DateTime, nullable=True)
+    processing_notes = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], back_populates="data_processing_requests")
+    processor = relationship("User", foreign_keys=[processed_by])
+
+
+class BreachRecord(Base):
+    """Data breach record for GDPR Article 33 compliance."""
+    __tablename__ = "breach_records"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Breach details
+    breach_type = Column(String(50), nullable=False)
+    breach_description = Column(Text, nullable=False)
+    breach_discovered_at = Column(DateTime, nullable=False)
+    breach_contained_at = Column(DateTime, nullable=True)
+    
+    # Affected data
+    affected_users_count = Column(Integer, nullable=True)
+    risk_level = Column(String(20), nullable=False)  # low, medium, high, critical
+    
+    # Notification
+    supervisory_authority_notified = Column(Boolean, default=False, nullable=False)
+    users_notified = Column(Boolean, default=False, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

@@ -21,6 +21,8 @@ import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/button';
 import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2, TrendingUp, BarChart3, PieChart, PenTool, FileCheck, DollarSign, Calendar, Users, Settings, Layers, FileSearch } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
+import { SidebarNavigation } from '@/components/SidebarNavigation';
+import { CookieBanner } from '@/components/CookieBanner';
 import { useAuth } from '@/context/AuthContext';
 import { useFDC3 } from '@/context/FDC3Context';
 import type { CreditAgreementData, IntentName, DocumentContext, AgreementContext, WorkflowLinkContext } from '@/context/FDC3Context';
@@ -1095,85 +1097,10 @@ export function DesktopAppLayout() {
 
       <LoginForm isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
 
-      <div className="flex flex-1">
-        <aside className={`${sidebarOpen ? 'w-56' : 'w-14'} bg-slate-800/50 border-r border-slate-700 transition-all duration-200 flex-shrink-0`}>
-          <div className="p-3">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="w-full flex items-center justify-center p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            >
-              {sidebarOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-            </button>
-          </div>
-          <nav className="px-3 space-y-1 overflow-y-auto flex-1">
-            {['core', 'trading', 'compliance', 'tools', 'admin'].map(category => {
-              const categoryApps = visibleSidebarApps.filter(app => app.category === category);
-              if (categoryApps.length === 0) return null;
-              
-              return (
-                <div key={category} className="mb-4">
-                  {sidebarOpen && (
-                    <p className="text-xs text-slate-500 uppercase tracking-wider px-2 py-2">
-                      {category}
-                    </p>
-                  )}
-                  {categoryApps.map((app) => {
-                    // For tab-based apps (trading, polymarket, etc.), activeApp should be 'dashboard'
-                    const isActive = app.id === 'trading' || app.id === 'polymarket' || app.id === 'bridge' || 
-                                   app.id === 'signatures' || app.id === 'compliance' || app.id === 'billing'
-                                   ? activeApp === 'dashboard' && location.search.includes(`tab=${app.id}`)
-                                   : activeApp === app.id;
-                    
-                    return (
-                      <button
-                        key={app.id}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (app.path) {
-                            navigate(app.path);
-                            // For tab-based apps, set activeApp to 'dashboard'
-                            if (app.id === 'trading' || app.id === 'polymarket' || app.id === 'bridge' || 
-                                app.id === 'signatures' || app.id === 'compliance' || app.id === 'billing') {
-                              setActiveApp('dashboard');
-                            } else {
-                              handleAppChange(app.id);
-                            }
-                          } else {
-                            handleAppChange(app.id);
-                          }
-                        }}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive
-                          ? 'bg-emerald-600 text-white'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                          }`}
-                        title={app.description}
-                      >
-                        {app.icon}
-                        {sidebarOpen && <span>{app.name}</span>}
-                        {hasBroadcast && (
-                          <span className="relative flex h-2 w-2 ml-auto">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            <div className={`mt-4 pt-4 border-t border-slate-700 ${!sidebarOpen && 'hidden'}`}>
-              <div className="flex items-center gap-2 px-2 py-2 text-sm text-slate-400" title={isAvailable ? 'FDC3 Desktop Agent Connected' : 'FDC3 Mock Mode'}>
-                <Radio className={`h-4 w-4 ${isAvailable ? 'text-emerald-500' : 'text-slate-500'}`} />
-                {sidebarOpen && <span>FDC3 {isAvailable ? 'Connected' : 'Mock'}</span>}
-              </div>
-            </div>
-          </nav>
-        </aside>
+      <div className="flex flex-1 overflow-hidden">
+        <SidebarNavigation />
 
-        <main className="flex-1 max-w-6xl mx-auto px-6 py-8">
+        <main className="flex-1 max-w-6xl mx-auto px-6 py-8 overflow-y-auto">
           <BreadcrumbContainer>
             <Breadcrumb
               items={breadcrumbItems}
@@ -1265,6 +1192,7 @@ export function DesktopAppLayout() {
           {activeApp === 'admin-settings' && <AdminSettings />}
         </main>
       </div>
+      <CookieBanner />
 
       <footer className={`border-t ${classes.border.default} mt-auto`}>
         <div className={`max-w-7xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm ${classes.text.secondary}`}>

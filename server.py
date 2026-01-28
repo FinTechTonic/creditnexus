@@ -2,16 +2,22 @@
 
 import logging
 import warnings
+import sys
+from pathlib import Path
+
+# Ensure the project root (which contains the `app` package) is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Suppress Pydantic Annotated/Field metadata warnings from deps (e.g. repr=, frozen= in Field())
-warnings.filterwarnings('ignore', message=".*'repr' attribute.*", module='pydantic.*')
-warnings.filterwarnings('ignore', message=".*'frozen' attribute.*", module='pydantic.*')
+warnings.filterwarnings("ignore", message=".*'repr' attribute.*", module="pydantic.*")
+warnings.filterwarnings("ignore", message=".*'frozen' attribute.*", module="pydantic.*")
 
 # Trigger reload
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware

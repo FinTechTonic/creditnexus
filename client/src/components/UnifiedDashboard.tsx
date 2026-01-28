@@ -8,11 +8,17 @@ import { ApplicationDashboard } from '@/components/ApplicationDashboard';
 import { TradeBlotter } from '@/apps/trade-blotter/TradeBlotter';
 import type { CreditAgreementData } from '@/context/FDC3Context';
 import { SignaturePad } from '@/components/ui/SignaturePad';
+import { SignatureButton } from '@/components/SignatureButton';
+import { SignatureStatus } from '@/components/SignatureStatus';
+import { MyPendingSignatures } from '@/components/dashboard-tabs/MyPendingSignatures';
+import { SignatureCoordinationPanel } from '@/components/dashboard-tabs/SignatureCoordinationPanel';
+import { SignatureAuditTrail } from '@/components/dashboard-tabs/SignatureAuditTrail';
 import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
 import { BridgeBuilder } from '@/components/BridgeBuilder';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { UnifiedInvestmentDashboard } from '@/components/investment/UnifiedInvestmentDashboard';
+import { GDPRDashboard } from '@/components/dashboard-tabs/GDPRDashboard';
 import {
   LayoutDashboard,
   TrendingUp,
@@ -24,6 +30,7 @@ import {
   FileCheck,
   DollarSign,
   ArrowLeftRight,
+  ExternalLink,
 } from 'lucide-react';
 import {
   PERMISSION_DOCUMENT_VIEW,
@@ -31,37 +38,73 @@ import {
 } from '@/utils/permissions';
 
 function SignatureDashboard() {
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Signature Dashboard</h2>
-      <p className="text-muted-foreground mb-6">Capture and manage document signatures.</p>
-      <div className="max-w-2xl">
-        <SignaturePadDemo />
-      </div>
-    </div>
-  );
-}
+  const [activeTab, setActiveTab] = React.useState('pending');
 
-function SignaturePadDemo() {
-  const [signature, setSignature] = React.useState<string | null>(null);
-  
   return (
-    <div className="space-y-4">
-      <SignaturePad
-        onSave={(sig: string) => {
-          setSignature(sig);
-          console.log('Signature saved:', sig.substring(0, 50) + '...');
-        }}
-        onClear={() => setSignature(null)}
-        width={600}
-        height={300}
-      />
-      {signature && (
-        <div className="mt-4 p-4 border rounded-lg bg-muted">
-          <h3 className="text-sm font-semibold mb-2">Captured Signature:</h3>
-          <img src={signature} alt="Signature" className="max-w-full h-auto border rounded" />
-        </div>
-      )}
+    <div className="p-6 space-y-6 flex flex-col h-full overflow-hidden">
+      <div>
+        <h2 className="text-2xl font-bold mb-2 text-slate-100">Signature Dashboard</h2>
+        <p className="text-muted-foreground max-w-2xl text-sm">
+          Manage digital signatures for your documents. Open any document from the Documents tab to request a
+          signature, then track its status here or on the deal view.
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+        <TabsList className="bg-slate-900 border-slate-800 self-start">
+          <TabsTrigger value="pending" className="data-[state=active]:bg-slate-800">My Pending</TabsTrigger>
+          <TabsTrigger value="coordinated" className="data-[state=active]:bg-slate-800">Coordination</TabsTrigger>
+          <TabsTrigger value="audit" className="data-[state=active]:bg-slate-800">Global Audit</TabsTrigger>
+          <TabsTrigger value="guide" className="data-[state=active]:bg-slate-800">Help Guide</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="pending" className="flex-1 overflow-auto mt-4 bg-slate-950/20 rounded-xl border border-slate-800/50">
+          <MyPendingSignatures />
+        </TabsContent>
+
+        <TabsContent value="coordinated" className="flex-1 overflow-auto mt-4 bg-slate-950/20 rounded-xl border border-slate-800/50">
+          <SignatureCoordinationPanel />
+        </TabsContent>
+
+        <TabsContent value="audit" className="flex-1 overflow-auto mt-4 p-6 bg-slate-950/20 rounded-xl border border-slate-800/50">
+          <SignatureAuditTrail />
+        </TabsContent>
+
+        <TabsContent value="guide" className="flex-1 overflow-auto mt-4 p-6 bg-slate-950/20 rounded-xl border border-slate-800/50">
+          <div className="grid gap-8 md:grid-cols-2">
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+                <PenTool className="h-5 w-5 text-blue-400" />
+                Workflow Instructions
+              </h3>
+              <ol className="list-decimal list-inside text-sm text-slate-300 space-y-3 leading-relaxed">
+                <li>Go to the <span className="text-blue-400 font-semibold">Documents</span> tab and select any document.</li>
+                <li>Use the <span className="text-emerald-400 font-semibold">“Sign”</span> button in the top toolbar to open the request modal.</li>
+                <li>Verify signer details (names, roles, and emails).</li>
+                <li>Submit the request. Our system will generate a secure, token-based link.</li>
+                <li>The signer receives an email notification with their unique link.</li>
+              </ol>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+                <ExternalLink className="h-5 w-5 text-emerald-400" />
+                Native Signer Portal
+              </h3>
+              <p className="text-sm text-slate-300 leading-relaxed">
+                External signers do not need a CreditNexus account. They can use their secure token links to access
+                the <span className="text-emerald-400 italic">Signer Portal</span>, where they can:
+              </p>
+              <ul className="list-disc list-inside text-sm text-slate-400 space-y-1 ml-2">
+                <li>Preview the document content</li>
+                <li>Draw or type their signature</li>
+                <li>Provide MetaMask verification (if required)</li>
+                <li>Download a signed copy instantly</li>
+              </ul>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -177,6 +220,13 @@ export function UnifiedDashboard() {
         component: BillingDashboard,
         requiredPermission: 'BILLING_VIEW', // Will be added to permissions.ts
         subscriptionTier: 'free'  // All tiers can view their billing
+      },
+      {
+        id: 'privacy',
+        label: 'Privacy',
+        icon: <Shield className="h-4 w-4" />,
+        component: GDPRDashboard,
+        subscriptionTier: 'free'
       }
     ];
     

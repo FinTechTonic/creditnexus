@@ -266,6 +266,8 @@ ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PERMISSION_USER_VIEW,
         PERMISSION_POLICY_VIEW,
         PERMISSION_SATELLITE_VIEW,
+        PERMISSION_SIGNATURE_AUDIT,
+        PERMISSION_SIGNATURE_VIEW,
         # Audit permissions
         PERMISSION_AUDIT_VIEW,
         PERMISSION_AUDIT_EXPORT,
@@ -312,6 +314,8 @@ ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PERMISSION_FINANCIAL_VIEW,
         PERMISSION_POLICY_VIEW,
         PERMISSION_SATELLITE_VIEW,
+        PERMISSION_SIGNATURE_COORDINATE,
+        PERMISSION_SIGNATURE_VIEW,
     ],
     
     # Law Officer: Write/edit for legal documents
@@ -334,6 +338,8 @@ ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PERMISSION_APPLICATION_VIEW,
         PERMISSION_INQUIRY_VIEW,
         PERMISSION_POLICY_VIEW,
+        PERMISSION_SIGNATURE_COORDINATE,
+        PERMISSION_SIGNATURE_VIEW,
     ],
     
     # Accountant: Write/edit for financial data
@@ -357,6 +363,7 @@ ROLE_PERMISSIONS: Dict[str, List[str]] = {
         PERMISSION_APPLICATION_VIEW,
         PERMISSION_INQUIRY_VIEW,
         PERMISSION_TEMPLATE_VIEW,
+        PERMISSION_SIGNATURE_VIEW,
     ],
     
     # Applicant: Apply and track applications
@@ -374,6 +381,8 @@ ROLE_PERMISSIONS: Dict[str, List[str]] = {
         # View permissions
         PERMISSION_DOCUMENT_VIEW,  # Only own documents
         PERMISSION_TEMPLATE_VIEW,
+        PERMISSION_SIGNATURE_EXECUTE,
+        PERMISSION_SIGNATURE_VIEW,
     ],
     
     # Legacy roles for backward compatibility
