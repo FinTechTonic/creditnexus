@@ -2,6 +2,7 @@
 
 import logging
 from datetime import date
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,10 +10,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_auth import get_current_user
+from app.auth.jwt_auth import require_auth
 from app.core.config import settings
 from app.core.permissions import has_permission, PERMISSION_TRADE_VIEW
 from app.db import get_db
-from app.db.models import User, UserImplementationConnection
+from app.db.models import PlaidUsageTracking, User, UserImplementationConnection
+from app.services.payment_gateway_service import PaymentGatewayService
 from app.services.plaid_service import (
     create_link_token,
     exchange_public_token,
@@ -26,6 +29,38 @@ from app.services.plaid_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/banking", tags=["banking"])
+
+def _track_plaid_usage(
+    *,
+    db: Session,
+    user_id: int,
+    organization_id: Optional[int],
+    api_endpoint: str,
+    item_id: Optional[str] = None,
+    account_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    cost_usd: float = 0.0,
+    usage_metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Best-effort Plaid usage tracking for billing/credits. Never store secrets.
+    If tracking fails, do not block the primary request.
+    """
+    try:
+        rec = PlaidUsageTracking(
+            user_id=user_id,
+            organization_id=organization_id,
+            api_endpoint=api_endpoint,
+            request_id=request_id,
+            cost_usd=cost_usd,
+            item_id=item_id,
+            account_id=account_id,
+            usage_metadata=usage_metadata or {},
+        )
+        db.add(rec)
+        db.commit()
+    except Exception as e:
+        logger.warning("Plaid usage tracking failed: %s", e)
 
 
 class ConnectRequest(BaseModel):
@@ -47,11 +82,9 @@ class BankingStatusResponse(BaseModel):
 @router.get("/status", response_model=BankingStatusResponse)
 async def banking_status(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
-    """Get banking status: plaid_enabled (from server config) and connected (user's Plaid link). For client feature flags and Link accounts UI. Requires PERMISSION_TRADE_VIEW."""
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """Get banking status: plaid_enabled (from server config) and connected (user's Plaid link)."""
     plaid_enabled = bool(getattr(settings, "PLAID_ENABLED", False))
     connected = False
     if plaid_enabled:
@@ -62,11 +95,9 @@ async def banking_status(
 
 @router.get("/link-token", response_model=Dict[str, Any])
 async def banking_link_token(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
-    """Create a Plaid Link token to initialize Link in the frontend. Requires PERMISSION_TRADE_VIEW."""
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """Create a Plaid Link token to initialize Link in the frontend."""
     _plaid_ok()
     out = create_link_token(current_user.id)
     if "error" in out:
@@ -78,11 +109,9 @@ async def banking_link_token(
 async def banking_connect(
     body: ConnectRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
-    """Exchange Plaid public_token and store access_token in UserImplementationConnection. Requires PERMISSION_TRADE_VIEW."""
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """Exchange Plaid public_token and store access_token in UserImplementationConnection."""
     _plaid_ok()
 
     out = exchange_public_token(body.public_token)
@@ -108,18 +137,36 @@ async def banking_connect(
         )
         db.add(conn)
     db.commit()
+    _track_plaid_usage(
+        db=db,
+        user_id=current_user.id,
+        organization_id=getattr(current_user, "organization_id", None),
+        api_endpoint="item/public_token/exchange",
+        item_id=out.get("item_id"),
+        usage_metadata={"source": "banking_connect"},
+    )
     return {"status": "connected", "connection_id": conn.id}
 
 
 @router.get("/accounts", response_model=Dict[str, Any])
 async def banking_accounts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
-    """List accounts from the linked Plaid Item. Requires PERMISSION_TRADE_VIEW."""
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """List accounts from the linked Plaid Item."""
     _plaid_ok()
+
+    # Credits gate (minimal): 1 credit per call (trading/universal)
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="trading",
+        amount=1.0,
+        feature="plaid_accounts_get",
+        cost_usd=Decimal("0.00"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=402, content=gate)
 
     conn = get_plaid_connection(db, current_user.id)
     if not conn or not conn.connection_data or not isinstance(conn.connection_data, dict):
@@ -132,19 +179,35 @@ async def banking_accounts(
     out = get_accounts(at)
     if "error" in out:
         raise HTTPException(status_code=502, detail=out["error"])
+    _track_plaid_usage(
+        db=db,
+        user_id=current_user.id,
+        organization_id=getattr(current_user, "organization_id", None),
+        api_endpoint="accounts/get",
+        item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
+        usage_metadata={"source": "banking_accounts"},
+    )
     return out
 
 
 @router.get("/balances", response_model=Dict[str, Any])
 async def banking_balances(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
-    """Get balances for the linked Plaid Item. Requires PERMISSION_TRADE_VIEW."""
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
+    """Get balances for the linked Plaid Item."""
     _plaid_ok()
+
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="trading",
+        amount=1.0,
+        feature="plaid_balances_get",
+        cost_usd=Decimal("0.00"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=402, content=gate)
     
     conn = get_plaid_connection(db, current_user.id)
     if not conn or not conn.connection_data or not isinstance(conn.connection_data, dict):
@@ -157,6 +220,14 @@ async def banking_balances(
     out = get_balances(at)
     if "error" in out:
         raise HTTPException(status_code=502, detail=out["error"])
+    _track_plaid_usage(
+        db=db,
+        user_id=current_user.id,
+        organization_id=getattr(current_user, "organization_id", None),
+        api_endpoint="accounts/balance/get",
+        item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
+        usage_metadata={"source": "banking_balances"},
+    )
     return out
 
 
@@ -168,12 +239,21 @@ async def banking_transactions(
     count: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
-    """Get transactions for the linked Plaid Item. Requires PERMISSION_TRADE_VIEW."""
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """Get transactions for the linked Plaid Item."""
     _plaid_ok()
+
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="trading",
+        amount=1.0,
+        feature="plaid_transactions_get",
+        cost_usd=Decimal("0.00"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=402, content=gate)
 
     conn = get_plaid_connection(db, current_user.id)
     if not conn or not conn.connection_data or not isinstance(conn.connection_data, dict):
@@ -186,22 +266,100 @@ async def banking_transactions(
     out = get_transactions(at, start_date=start_date, end_date=end_date, account_id=account_id, count=count, offset=offset)
     if "error" in out:
         raise HTTPException(status_code=502, detail=out["error"])
+    _track_plaid_usage(
+        db=db,
+        user_id=current_user.id,
+        organization_id=getattr(current_user, "organization_id", None),
+        api_endpoint="transactions/get",
+        item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
+        account_id=account_id,
+        usage_metadata={"source": "banking_transactions", "count": count, "offset": offset},
+    )
     return out
 
 
 @router.delete("/disconnect", status_code=204)
 async def banking_disconnect(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
-    """Disconnect Plaid (deactivate connection; does not delete). Requires PERMISSION_TRADE_VIEW."""
-    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    """Disconnect Plaid connection."""
+    _plaid_ok()
+    impl = ensure_plaid_implementation(db)
+    conn = db.query(UserImplementationConnection).filter(
+        UserImplementationConnection.user_id == current_user.id,
+        UserImplementationConnection.implementation_id == impl.id,
+    ).first()
+    if conn:
+        conn.is_active = False
+        db.commit()
 
+
+# Payment initiation endpoint (for Plaid bank payments)
+class PlaidPaymentInitiationRequest(BaseModel):
+    """Request for Plaid payment initiation."""
+    amount: str = Field(..., description="Payment amount")
+    currency: str = Field(default="USD", description="Payment currency")
+    payment_type: str = Field(..., description="Payment type (e.g., org_admin_upgrade, subscription_upgrade)")
+    recipient_name: Optional[str] = Field(None, description="(UK/EU) Recipient name for Payment Initiation")
+    iban: Optional[str] = Field(None, description="(UK/EU) Recipient IBAN for Payment Initiation")
+
+
+@router.post("/payment/initiate", response_model=Dict[str, Any])
+async def plaid_payment_initiate(
+    body: PlaidPaymentInitiationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """
+    Initiate a Plaid payment (bank transfer).
+    
+    This endpoint routes to PlaidService for bank-based payments.
+    Note: Plaid Payment Initiation is currently a placeholder.
+    """
+    _plaid_ok()
+    
+    # Check if user has Plaid connection
     conn = get_plaid_connection(db, current_user.id)
-    if not conn:
-        raise HTTPException(status_code=404, detail="No Plaid connection")
-    conn.is_active = False
-    conn.connection_data = None
-    db.commit()
-    return None
+    if not conn or not conn.connection_data or not isinstance(conn.connection_data, dict):
+        raise HTTPException(
+            status_code=404,
+            detail="No Plaid connection. Please link a bank account first."
+        )
+    
+    # Route to PlaidService for payment initiation
+    from app.services.plaid_service import create_payment_initiation
+    
+    result = create_payment_initiation(
+        access_token=conn.connection_data.get("access_token"),
+        amount=body.amount,
+        currency=body.currency,
+        payment_type=body.payment_type,
+        recipient_name=body.recipient_name,
+        iban=body.iban,
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    
+    # Track usage
+    _track_plaid_usage(
+        db=db,
+        user_id=current_user.id,
+        organization_id=getattr(current_user, "organization_id", None),
+        api_endpoint="payment_initiation/create",
+        item_id=conn.connection_data.get("item_id"),
+        usage_metadata={"source": "plaid_payment_initiate", "payment_type": body.payment_type},
+    )
+    
+    return {
+        "status": "initiated",
+        "mode": result.get("mode"),
+        "payment_id": (
+            (result.get("payment") or {}).get("payment_id")
+            or (result.get("payment") or {}).get("id")
+            or ((result.get("transfer") or {}).get("transfer") or {}).get("id")
+            or (result.get("transfer") or {}).get("id")
+        ),
+        "message": "Plaid payment initiated. Waiting for confirmation via webhook.",
+    }

@@ -10,6 +10,8 @@ import { MultimodalInputTabs } from '@/apps/docu-digitizer/MultimodalInputTabs';
 import { KYCVerificationStep } from '@/components/onboarding/KYCVerificationStep';
 import { LicenseUploadStep } from '@/components/onboarding/LicenseUploadStep';
 import { ConsentCollectionStep } from '@/components/onboarding/ConsentCollectionStep';
+import { usePlaidLink } from 'react-plaid-link';
+import { OrgAdminPaymentModal } from '@/components/payments/OrgAdminPaymentModal';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -283,6 +285,17 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Plaid linking (required after register)
+  const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
+  const [plaidLinking, setPlaidLinking] = useState(false);
+  const [plaidLinked, setPlaidLinked] = useState(false);
+  const [plaidError, setPlaidError] = useState<string | null>(null);
+  const openedPlaidTokenRef = useState<{ token: string | null }>({ token: null })[0];
+
+  // Org-admin payment gating
+  const [showOrgAdminPayment, setShowOrgAdminPayment] = useState(false);
+  const [orgAdminPaid, setOrgAdminPaid] = useState(false);
   
   const navigate = useNavigate();
   const { register, authError, clearError } = useAuth();
@@ -361,15 +374,46 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
       });
       
       if (success) {
-        // TODO: In next tasks, we'll:
-        // 1. Upload documents and extract profile data
-        // 2. Update user profile with extracted data
-        // 3. Index profile in ChromaDB
-        
-        if (onComplete) {
-          onComplete();
-        } else {
-          navigate('/dashboard', { replace: true });
+        // If user is signing up as an org admin (role=admin), require $2 org-admin payment before Plaid link + dashboard access.
+        if (formData.role === 'admin' && !orgAdminPaid) {
+          setShowOrgAdminPayment(true);
+          return;
+        }
+
+        // Require Plaid Link before allowing dashboard access
+        setPlaidError(null);
+        setPlaidLinking(true);
+        try {
+          const statusResp = await fetchWithAuth('/api/banking/status');
+          const statusData = await statusResp.json().catch(() => ({}));
+          if (!statusResp.ok) {
+            setPlaidError(statusData.detail || 'Failed to verify Plaid status.');
+            return;
+          }
+
+          if (!statusData.plaid_enabled) {
+            setPlaidError('Plaid is not enabled for this environment. Contact your administrator.');
+            return;
+          }
+
+          if (statusData.connected) {
+            setPlaidLinked(true);
+            if (onComplete) onComplete();
+            else navigate('/dashboard', { replace: true });
+            return;
+          }
+
+          const linkTokenResp = await fetchWithAuth('/api/banking/link-token');
+          const linkTokenData = await linkTokenResp.json().catch(() => ({}));
+          if (!linkTokenResp.ok || !linkTokenData.link_token) {
+            setPlaidError(linkTokenData.detail || linkTokenData.error || 'Failed to start Plaid Link.');
+            return;
+          }
+
+          setPlaidLinkToken(linkTokenData.link_token);
+          // Navigation will happen after Plaid Link onSuccess
+        } finally {
+          setPlaidLinking(false);
         }
       }
     } catch (error) {
@@ -381,6 +425,49 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
 
   const updateFormData = (updates: Partial<SignupFormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
+  };
+
+  const { open: openPlaid, ready: plaidReady } = usePlaidLink({
+    token: plaidLinkToken,
+    onSuccess: async (public_token: string) => {
+      setPlaidError(null);
+      try {
+        const r = await fetchWithAuth('/api/banking/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ public_token }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          setPlaidError(d.detail || 'Failed to connect Plaid.');
+          return;
+        }
+        setPlaidLinked(true);
+        setPlaidLinkToken(null);
+        openedPlaidTokenRef.token = null;
+        if (onComplete) onComplete();
+        else navigate('/dashboard', { replace: true });
+      } catch {
+        setPlaidError('Failed to connect Plaid.');
+      }
+    },
+    onExit: () => {
+      setPlaidLinkToken(null);
+      openedPlaidTokenRef.token = null;
+    },
+  });
+
+  useEffect(() => {
+    if (plaidLinkToken && plaidReady && openPlaid && openedPlaidTokenRef.token !== plaidLinkToken) {
+      openPlaid();
+      openedPlaidTokenRef.token = plaidLinkToken;
+    }
+  }, [plaidLinkToken, plaidReady, openPlaid, openedPlaidTokenRef]);
+
+  const proceedAfterOrgAdminPaid = () => {
+    setOrgAdminPaid(true);
+    setShowOrgAdminPayment(false);
+    void handleSubmit();
   };
 
   const renderStepContent = () => {
@@ -760,6 +847,12 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center py-12 px-4">
+      <OrgAdminPaymentModal
+        open={showOrgAdminPayment}
+        onClose={() => setShowOrgAdminPayment(false)}
+        onPaid={proceedAfterOrgAdminPaid}
+        canBypass={false}
+      />
       <Card className="w-full max-w-2xl">
         <CardHeader>
           <div className="flex items-center justify-between mb-4">

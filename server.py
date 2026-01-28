@@ -19,6 +19,7 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -551,6 +552,35 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Prevent 500s when request validation errors include raw bytes (e.g. multipart bodies).
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    # NOTE: FastAPI's default handler uses jsonable_encoder(exc.errors()) which can crash
+    # if the validation error contains raw bytes (common when a multipart/form-data body
+    # hits a JSON endpoint). We return a safe, minimally-informative payload.
+    def _sanitize(obj):
+        if isinstance(obj, (bytes, bytearray)):
+            return {"__bytes__": True, "length": len(obj)}
+        if isinstance(obj, dict):
+            return {str(k): _sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_sanitize(v) for v in obj]
+        return obj
+
+    safe_errors = []
+    try:
+        safe_errors = _sanitize(exc.errors())
+    except Exception:
+        safe_errors = [{"msg": "Request validation failed"}]
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": safe_errors, "message": "Request validation failed", "path": str(request.url.path)},
+    )
+
+# Ensure override even if defaults are re-registered elsewhere.
+app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
 
 from app.core.config import settings
 

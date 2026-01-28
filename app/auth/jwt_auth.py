@@ -111,6 +111,8 @@ class UserRegister(BaseModel):
     password: str
     display_name: str
     organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
+    organization_id: Optional[int] = None  # FK to organizations.id (optional)
+    implementation_ids: Optional[List[int]] = None  # Implementation selection (multi-select)
     
     @field_validator("password")
     @classmethod

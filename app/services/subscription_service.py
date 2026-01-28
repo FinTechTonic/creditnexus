@@ -100,6 +100,21 @@ class SubscriptionService:
         self.db.refresh(subscription)
         return subscription
 
+    def mark_org_admin_paid(self, user_id: int, *, payment_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Mark a user as having completed org-admin signup payment.
+        This is used to gate organization admin access during signup.
+        """
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return {"ok": False, "reason": "user_not_found"}
+
+        user.org_admin_payment_status = "paid"
+        user.org_admin_payment_id = payment_id
+        user.org_admin_paid_at = datetime.utcnow()
+        self.db.commit()
+        return {"ok": True}
+
     def renew_subscription(self, subscription_id: int) -> Optional[UserSubscription]:
         """Renew a subscription for the next billing period and generate rolling credits (pro/premium).
 

@@ -401,14 +401,14 @@ export function TranchePurchase({
             {!isConnected ? (
               <div className="space-y-4">
                 <p className="text-slate-400">
-                  Connect your MetaMask wallet to purchase this tranche.
+                  Connect your wallet to pay with crypto.
                 </p>
                 <Button
                   onClick={connect}
                   className="w-full bg-blue-600 hover:bg-blue-500 text-white"
                 >
                   <Wallet className="h-4 w-4 mr-2" />
-                  Connect MetaMask
+                  Connect Wallet
                 </Button>
               </div>
             ) : (

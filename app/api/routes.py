@@ -12545,37 +12545,6 @@ async def request_document_signature(
 ):
     """Request signatures for a document via configured provider (internal by default)."""
 
-    # #region agent log
-    try:
-        import json, time as _time
-
-        with open(
-            "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
-        ) as f:
-            f.write(
-                json.dumps(
-                    {
-                        "sessionId": "debug-session",
-                        "runId": "pre-fix",
-                        "hypothesisId": "S1",
-                        "location": "app/api/routes.py:request_document_signature",
-                        "message": "request_document_signature called",
-                        "data": {
-                            "document_id": document_id,
-                            "has_signers": bool(request.signers),
-                            "auto_detect_signers": request.auto_detect_signers,
-                            "expires_in_days": request.expires_in_days,
-                            "urgency": request.urgency,
-                        },
-                        "timestamp": _time.time(),
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # #endregion
-
     provider = get_signature_provider(db)
     ctx = SignatureRequestContext(
         document_id=document_id,
@@ -12604,70 +12573,12 @@ async def request_document_signature(
             },
         )
 
-        # #region agent log
-        try:
-            import json, time as _time
-
-            with open(
-                "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
-            ) as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "debug-session",
-                            "runId": "pre-fix",
-                            "hypothesisId": "S2",
-                            "location": "app/api/routes.py:request_document_signature",
-                            "message": "request_document_signature succeeded",
-                            "data": {
-                                "document_id": document_id,
-                                "signature_id": getattr(signature, "id", None),
-                                "provider": getattr(signature, "signature_provider", None),
-                            },
-                            "timestamp": _time.time(),
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
-
         return {
             "status": "success",
             "signature": signature.to_dict() if hasattr(signature, "to_dict") else None,
         }
     except Exception as e:
         logger.error(f"Error requesting signature: {e}")
-
-        # #region agent log
-        try:
-            import json, time as _time
-
-            with open(
-                "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
-            ) as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "debug-session",
-                            "runId": "pre-fix",
-                            "hypothesisId": "S3",
-                            "location": "app/api/routes.py:request_document_signature",
-                            "message": "request_document_signature failed",
-                            "data": {
-                                "document_id": document_id,
-                                "error": str(e),
-                                "error_type": type(e).__name__,
-                            },
-                            "timestamp": _time.time(),
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
 
         raise HTTPException(
             status_code=500,

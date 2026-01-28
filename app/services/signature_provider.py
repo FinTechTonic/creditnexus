@@ -104,34 +104,6 @@ def get_signature_provider(db: Session) -> SignatureProvider:
     provider_choice = (getattr(settings, "SIGNATURE_PROVIDER", "internal") or "internal").lower()
     digisigner_configured = bool(settings.DIGISIGNER_API_KEY)
 
-    # #region agent log
-    try:
-        import json, time as _time
-
-        with open(
-            "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
-        ) as f:
-            f.write(
-                json.dumps(
-                    {
-                        "sessionId": "debug-session",
-                        "runId": "pre-fix",
-                        "hypothesisId": "P1",
-                        "location": "app/services/signature_provider.py:get_signature_provider",
-                        "message": "Selecting signature provider",
-                        "data": {
-                            "provider_choice": provider_choice,
-                            "digisigner_configured": digisigner_configured,
-                        },
-                        "timestamp": _time.time(),
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # #endregion
-
     if provider_choice == "digisigner" and digisigner_configured:
         logger.info("Using DigiSignerSignatureProvider")
         return DigiSignerSignatureProvider(db)

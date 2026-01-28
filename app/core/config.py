@@ -354,6 +354,11 @@ class Settings(BaseSettings):
         description="Amount in USD for subscription upgrade via x402 (Pro tier)"
     )
 
+    ORG_ADMIN_SIGNUP_AMOUNT: Decimal = Field(
+        default=Decimal("2.00"),
+        description="Amount in USD for organization admin signup subscription via x402"
+    )
+
     # Audio Transcription (STT) Configuration
     STT_API_URL: Optional[str] = None  # Gradio Space URL (default: nvidia/canary-1b-v2)
     STT_SOURCE_LANG: str = "en"  # Source language code for transcription

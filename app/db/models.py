@@ -333,6 +333,12 @@ class User(Base):
     # Admin fields
     is_instance_admin = Column(Boolean, default=False, nullable=False, index=True)
     organization_role = Column(String(50), nullable=True, index=True)  # 'admin', 'member', etc.
+
+    # Org-admin payment gating (Week 3)
+    # For organization admins, signup requires payment (or instance-admin waiver).
+    org_admin_payment_status = Column(String(20), nullable=True, index=True)  # pending, paid, waived
+    org_admin_payment_id = Column(Integer, ForeignKey("payment_events.id", ondelete="SET NULL"), nullable=True)
+    org_admin_paid_at = Column(DateTime, nullable=True)
     
     # User preferences and API keys
     preferences = Column(JSONB, nullable=True)  # User preferences (audio_input_mode, investment_mode, etc.)
@@ -3953,6 +3959,130 @@ class SubscriptionUsage(Base):
             "billing_period_start": self.billing_period_start.isoformat() if self.billing_period_start else None,
             "billing_period_end": self.billing_period_end.isoformat() if self.billing_period_end else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PlaidUsageTracking(Base):
+    """Track Plaid API usage for billing/credits (no secrets stored)."""
+
+    __tablename__ = "plaid_usage_tracking"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Example: "transactions/get", "investments/holdings/get"
+    api_endpoint = Column(String(100), nullable=False, index=True)
+
+    # Plaid request correlation header (X-Request-ID) if captured upstream
+    request_id = Column(String(255), nullable=True, index=True)
+
+    # Internal cost accounting (in USD). Exact rates are configurable elsewhere.
+    cost_usd = Column(Numeric(10, 4), nullable=False, default=0)
+
+    # Optional linkage fields (not secrets)
+    item_id = Column(String(255), nullable=True)
+    account_id = Column(String(255), nullable=True)
+
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    # NOTE: attribute name "metadata" is reserved by SQLAlchemy Declarative API
+    usage_metadata = Column(JSONB(), nullable=True, name="usage_metadata")
+
+    user = relationship("User")
+    organization = relationship("Organization")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "organization_id": self.organization_id,
+            "api_endpoint": self.api_endpoint,
+            "request_id": self.request_id,
+            "cost_usd": float(self.cost_usd) if self.cost_usd is not None else None,
+            "item_id": self.item_id,
+            "account_id": self.account_id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "usage_metadata": self.usage_metadata,
+        }
+
+
+class PlaidPricingConfig(Base):
+    """
+    Configurable pricing for Plaid API calls.
+
+    Resolution rules (enforced in service layer):
+    - If organization_id is set: org-level override
+    - Else: instance-level default (instance_id may be null for single-instance deployments)
+    """
+
+    __tablename__ = "plaid_pricing_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    instance_id = Column(Integer, nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    # Example: "transactions/get", "investments/holdings/get"
+    api_endpoint = Column(String(100), nullable=False, index=True)
+    cost_per_call_usd = Column(Numeric(10, 4), nullable=False, default=0)
+    cost_per_call_credits = Column(Numeric(10, 4), nullable=False, default=0)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    organization = relationship("Organization")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "instance_id": self.instance_id,
+            "organization_id": self.organization_id,
+            "api_endpoint": self.api_endpoint,
+            "cost_per_call_usd": float(self.cost_per_call_usd) if self.cost_per_call_usd is not None else None,
+            "cost_per_call_credits": float(self.cost_per_call_credits) if self.cost_per_call_credits is not None else None,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ServicePricingConfig(Base):
+    """
+    Configurable pricing for any external-service-backed operation (LLMs, Plaid, etc.).
+
+    Resolution rules (enforced in service layer):
+    - If organization_id is set: org-level override
+    - Else: instance-level default (instance_id may be null for single-instance deployments)
+    """
+
+    __tablename__ = "service_pricing_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    instance_id = Column(Integer, nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+
+    # Example: "plaid.transactions.get", "llm.vllm.chat", "llm.huggingface.inference"
+    service_name = Column(String(120), nullable=False, index=True)
+    cost_per_call_usd = Column(Numeric(10, 4), nullable=False, default=0)
+    cost_per_call_credits = Column(Numeric(10, 4), nullable=False, default=0)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    organization = relationship("Organization")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "instance_id": self.instance_id,
+            "organization_id": self.organization_id,
+            "service_name": self.service_name,
+            "cost_per_call_usd": float(self.cost_per_call_usd) if self.cost_per_call_usd is not None else None,
+            "cost_per_call_credits": float(self.cost_per_call_credits) if self.cost_per_call_credits is not None else None,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

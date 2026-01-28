@@ -119,36 +119,6 @@ class InternalSignatureService:
         except Exception as exc:
             logger.warning("Failed to send signature request notification: %s", exc)
 
-        # #region agent log
-        try:
-            import json, time as _time
-
-            with open(
-                "c:\\Users\\MeMyself\\creditnexus\\.cursor\\debug.log", "a", encoding="utf-8"
-            ) as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "debug-session",
-                            "runId": "pre-fix",
-                            "hypothesisId": "IS1",
-                            "location": "app/services/internal_signature_service.py:create_signature_request",
-                            "message": "Created internal signature request",
-                            "data": {
-                                "document_id": document_id,
-                                "signature_id": signature.id,
-                                "signer_email": signer_email,
-                                "require_metamask": require_metamask,
-                            },
-                            "timestamp": _time.time(),
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
-
         return signature
 
     def inject_signature_into_pdf(
