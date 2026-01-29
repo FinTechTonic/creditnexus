@@ -286,7 +286,6 @@ async def get_portfolio_performance(
     except Exception as e:
         logger.error(f"Failed to calculate portfolio performance: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to calculate performance: {str(e)}")
-<<<<<<< HEAD
 
 
 @router.get("/transactions")
@@ -362,5 +361,3 @@ async def get_technical_indicators(
     except Exception as e:
         logger.error(f"Failed to calculate technical indicators: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to calculate technical indicators: {str(e)}")
-=======
->>>>>>> e5b5bade92fb2bdbc65e7efafb32d7ac4f3f4d7f
