@@ -15,6 +15,26 @@ If Alpaca keys are not set, **trading** uses `MockTradingAPIService`. If `ALPACA
 
 ---
 
+## 1.1 Broker API (Multiuser Brokerage)
+
+For **multiuser brokerage** (one Alpaca customer account per user), use the **Alpaca Broker API** instead of the Trading API:
+
+| Use | Service / component | When |
+|-----|---------------------|------|
+| **Account opening** | `POST /api/brokerage/account/apply` | KYC sufficient; creates Alpaca customer account (status SUBMITTED → ACTIVE via Event API). |
+| **Account status** | `GET /api/brokerage/account/status` | Returns user's Alpaca account status (SUBMITTED, ACTIVE, ACTION_REQUIRED, REJECTED). |
+| **Documents** | `POST /api/brokerage/account/documents` | When status is ACTION_REQUIRED; upload identity/address docs. |
+| **Trading** | `AlpacaBrokerTradingAPIService` | When user has an ACTIVE Alpaca account; orders are placed per account. |
+
+**When to use which:**
+
+- **Broker API**: You are building a brokerage app (RIA, broker-dealer, trading app). Each user gets an Alpaca customer account; you open accounts via `POST /v1/accounts` and trade per account. Set `ALPACA_BROKER_*` env vars.
+- **Trading API**: Single-account use (your own account only) or market data only. Set `ALPACA_API_KEY` / `ALPACA_API_SECRET` for data/backtest; for multiuser trading prefer Broker API.
+
+**KYC requirement:** Account opening is gated by platform KYC (`evaluate_kyc_for_brokerage`). Complete identity verification and required documents before applying. See [Account Opening](https://docs.alpaca.markets/docs/account-opening) and [Alpaca Broker API](https://docs.alpaca.markets/docs/about-broker-api).
+
+---
+
 ## 2. Configuration
 
 | Variable | Description | Default |
@@ -23,6 +43,15 @@ If Alpaca keys are not set, **trading** uses `MockTradingAPIService`. If `ALPACA
 | `ALPACA_API_SECRET` | Alpaca API secret | — |
 | `ALPACA_BASE_URL` | **Trading** API base. Paper: `https://paper-api.alpaca.markets`; live: `https://api.alpaca.markets` | `https://paper-api.alpaca.markets` |
 | `ALPACA_DATA_ENABLED` | Use Alpaca for **historical bars** in stock prediction and backtesting. When `false`, `MarketDataService` uses yahooquery only. | `false` |
+
+**Broker API (multiuser):**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ALPACA_BROKER_API_KEY` | Broker API key (from Alpaca Broker Dashboard) | — |
+| `ALPACA_BROKER_API_SECRET` | Broker API secret | — |
+| `ALPACA_BROKER_BASE_URL` | Broker API base. Sandbox: `https://broker-api.sandbox.alpaca.markets`; live: `https://broker-api.alpaca.markets` | `https://broker-api.sandbox.alpaca.markets` |
+| `ALPACA_BROKER_PAPER` | Use sandbox/paper when `true` | `true` |
 
 ---
 

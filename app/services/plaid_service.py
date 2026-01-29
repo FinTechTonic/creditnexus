@@ -132,6 +132,43 @@ def create_link_token(user_id: int) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+def create_link_token_for_brokerage(user_id: int) -> Dict[str, Any]:
+    """
+    Create a Plaid Link token for brokerage onboarding (link-for-brokerage).
+    Uses auth + identity products for account verification and form prefill.
+    Returns {"link_token": str} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        from plaid.model.link_token_create_request import LinkTokenCreateRequest
+        from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+        from plaid.model.country_code import CountryCode
+        from plaid.model.products import Products
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+
+    user = LinkTokenCreateRequestUser(client_user_id=str(user_id))
+    # Auth (routing/account verification) + Identity (name, address) for brokerage prefill
+    products = [Products("auth"), Products("identity")]
+    country_codes = [CountryCode("US")]
+    req = LinkTokenCreateRequest(
+        user=user,
+        client_name="CreditNexus Brokerage",
+        products=products,
+        country_codes=country_codes,
+        language="en",
+    )
+    try:
+        resp = api.link_token_create(req)
+        return {"link_token": resp.link_token}
+    except Exception as e:
+        logger.warning("Plaid link_token_create (brokerage) failed: %s", e)
+        return {"error": str(e)}
+
+
 def exchange_public_token(public_token: str) -> Dict[str, Any]:
     """
     Exchange public_token for access_token and item_id.
@@ -463,6 +500,11 @@ def monitor_aml_screening(*_: Any, **__: Any) -> Dict[str, Any]:
     return {"error": "monitor_not_implemented"}
 
 
+# Transfer billing: Plaid charges per transfer (see https://plaid.com/pricing).
+# Callers (e.g. brokerage fund/withdraw) should record transfer usage for billing/credits
+# via BillingService or RollingCreditsService when BROKERAGE_ONBOARDING_FEE or transfer fees apply.
+
+
 def create_transfer(
     *,
     access_token: str,
@@ -478,6 +520,8 @@ def create_transfer(
     Official flow (per Plaid docs):
       1) POST /transfer/authorization/create
       2) POST /transfer/create (using authorization)
+
+    Billing: Plaid charges per transfer; record usage for billing/credits when applicable.
 
     Returns:
       - {"authorization": {...}, "transfer": {...}} on success

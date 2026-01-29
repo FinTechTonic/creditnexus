@@ -15,6 +15,24 @@
 # INDIVIDUAL PROFILE KYC RULES
 # ============================================================================
 
+# Allow brokerage account opening when identity (and optionally docs) verified
+- name: allow_brokerage_identity_verified
+  when:
+    all:
+      - field: profile_type
+        op: eq
+        value: "individual"
+      - field: deal_type
+        op: eq
+        value: "brokerage"
+      - field: identity_verified
+        op: eq
+        value: true
+  action: allow
+  priority: 98
+  description: "Allow brokerage (Alpaca account) when identity is verified"
+  category: "kyc_brokerage"
+
 # Block individuals with insufficient identity verification
 - name: block_individual_insufficient_identity
   when:

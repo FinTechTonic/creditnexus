@@ -503,6 +503,186 @@ class AlpacaTradingAPIService(TradingAPIService):
             raise TradingAPIError(f"Failed to get market data: {str(e)}")
 
 
+class AlpacaBrokerTradingAPIService(TradingAPIService):
+    """Trading API service backed by Alpaca Broker API (per-account)."""
+
+    def __init__(self, alpaca_account_id: str):
+        from app.services.alpaca_broker_service import get_broker_client
+
+        self.alpaca_account_id = alpaca_account_id
+        self._client = get_broker_client()
+        if not self._client:
+            raise TradingAPIError("Alpaca Broker API not configured (ALPACA_BROKER_API_KEY/SECRET)")
+
+    def _order_request(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: Decimal,
+        price: Optional[Decimal] = None,
+        stop_price: Optional[Decimal] = None,
+        time_in_force: str = "day",
+    ) -> Dict[str, Any]:
+        """Build Broker API order request."""
+        req: Dict[str, Any] = {
+            "symbol": symbol,
+            "qty": str(int(quantity) if quantity == int(quantity) else float(quantity)),
+            "side": side.lower(),
+            "type": order_type.lower(),
+            "time_in_force": time_in_force.lower(),
+        }
+        if order_type.lower() in ("limit", "stop_limit") and price is not None:
+            req["limit_price"] = str(float(price))
+        if order_type.lower() in ("stop", "stop_limit") and stop_price is not None:
+            req["stop_price"] = str(float(stop_price))
+        return req
+
+    def submit_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: Decimal,
+        price: Optional[Decimal] = None,
+        stop_price: Optional[Decimal] = None,
+        time_in_force: str = "day",
+    ) -> Dict[str, Any]:
+        try:
+            from app.services.alpaca_broker_service import AlpacaBrokerAPIError
+        except ImportError:
+            AlpacaBrokerAPIError = Exception
+        req = self._order_request(symbol, side, order_type, quantity, price, stop_price, time_in_force)
+        try:
+            order = self._client.create_order(self.alpaca_account_id, req)
+        except AlpacaBrokerAPIError as e:
+            logger.error("Alpaca Broker order submission failed: %s", e)
+            raise TradingAPIError(str(e))
+        return self._normalize_order_response(order)
+
+    def _normalize_order_response(self, order: Dict[str, Any]) -> Dict[str, Any]:
+        """Map Broker API order to existing response shape."""
+        return {
+            "order_id": str(order.get("id", "")),
+            "status": (order.get("status") or "new").lower(),
+            "symbol": order.get("symbol", ""),
+            "side": (order.get("side") or "").lower(),
+            "order_type": (order.get("type") or "market").lower(),
+            "quantity": float(order.get("qty") or order.get("filled_qty") or 0),
+            "filled_quantity": float(order.get("filled_qty") or 0),
+            "average_fill_price": float(order["filled_avg_price"]) if order.get("filled_avg_price") is not None else None,
+            "submitted_at": order.get("submitted_at"),
+            "raw_response": serialize_cdm_data(order),
+        }
+
+    def get_order_status(self, order_id: str) -> Dict[str, Any]:
+        try:
+            from app.services.alpaca_broker_service import AlpacaBrokerAPIError
+        except ImportError:
+            AlpacaBrokerAPIError = Exception
+        try:
+            order = self._client.get_order(self.alpaca_account_id, order_id)
+        except AlpacaBrokerAPIError as e:
+            logger.error("Alpaca Broker order status failed: %s", e)
+            raise TradingAPIError(str(e))
+        return {
+            "order_id": str(order.get("id", "")),
+            "status": (order.get("status") or "").lower(),
+            "symbol": order.get("symbol", ""),
+            "side": (order.get("side") or "").lower(),
+            "order_type": (order.get("type") or "market").lower(),
+            "quantity": float(order.get("qty") or 0),
+            "filled_quantity": float(order.get("filled_qty") or 0),
+            "average_fill_price": float(order["filled_avg_price"]) if order.get("filled_avg_price") is not None else None,
+            "price": float(order["limit_price"]) if order.get("limit_price") is not None else None,
+            "stop_price": float(order["stop_price"]) if order.get("stop_price") is not None else None,
+            "submitted_at": order.get("submitted_at"),
+            "filled_at": order.get("filled_at"),
+            "cancelled_at": order.get("canceled_at") or order.get("cancelled_at"),
+            "raw_response": order,
+        }
+
+    def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        try:
+            from app.services.alpaca_broker_service import AlpacaBrokerAPIError
+        except ImportError:
+            AlpacaBrokerAPIError = Exception
+        try:
+            self._client.cancel_order(self.alpaca_account_id, order_id)
+        except AlpacaBrokerAPIError as e:
+            logger.error("Alpaca Broker cancel failed: %s", e)
+            raise TradingAPIError(str(e))
+        return {"order_id": order_id, "status": "cancelled"}
+
+    def get_account_info(self) -> Dict[str, Any]:
+        try:
+            from app.services.alpaca_broker_service import AlpacaBrokerAPIError
+        except ImportError:
+            AlpacaBrokerAPIError = Exception
+        try:
+            acc = self._client.get_account_portfolio(self.alpaca_account_id)
+        except AlpacaBrokerAPIError as e:
+            logger.error("Alpaca Broker account info failed: %s", e)
+            raise TradingAPIError(str(e))
+        return {
+            "account_number": acc.get("account_number"),
+            "buying_power": float(acc.get("buying_power") or 0),
+            "cash": float(acc.get("cash") or 0),
+            "equity": float(acc.get("equity") or 0),
+            "portfolio_value": float(acc.get("portfolio_value") or acc.get("equity") or 0),
+            "currency": acc.get("currency") or "USD",
+            "raw_response": acc,
+        }
+
+    def get_positions(self) -> List[Dict[str, Any]]:
+        try:
+            from app.services.alpaca_broker_service import AlpacaBrokerAPIError
+        except ImportError:
+            AlpacaBrokerAPIError = Exception
+        try:
+            positions = self._client.get_positions(self.alpaca_account_id)
+        except AlpacaBrokerAPIError as e:
+            logger.error("Alpaca Broker positions failed: %s", e)
+            raise TradingAPIError(str(e))
+        return [
+            {
+                "symbol": p.get("symbol", ""),
+                "quantity": float(p.get("qty") or 0),
+                "average_price": float(p["avg_entry_price"]) if p.get("avg_entry_price") is not None else None,
+                "current_price": float(p["current_price"]) if p.get("current_price") is not None else None,
+                "market_value": float(p["market_value"]) if p.get("market_value") is not None else None,
+                "unrealized_pl": float(p["unrealized_pl"]) if p.get("unrealized_pl") is not None else None,
+                "raw_response": p,
+            }
+            for p in (positions or [])
+        ]
+
+    def get_market_data(self, symbol: str, db: Optional[Any] = None) -> Dict[str, Any]:
+        """Reuse Alpaca data client (no account needed)."""
+        from app.core.config import settings
+
+        key = getattr(settings, "ALPACA_API_KEY", None)
+        secret = getattr(settings, "ALPACA_API_SECRET", None)
+        if key and secret:
+            k = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
+            s = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+            base = getattr(settings, "ALPACA_BASE_URL", None) or "https://paper-api.alpaca.markets"
+            try:
+                svc = AlpacaTradingAPIService(api_key=k, api_secret=s, base_url=base)
+                return svc.get_market_data(symbol, db=db)
+            except Exception as e:
+                logger.debug("Alpaca market data fallback failed: %s", e)
+        return {
+            "symbol": symbol,
+            "bid_price": None,
+            "ask_price": None,
+            "bid_size": None,
+            "ask_size": None,
+            "timestamp": datetime.utcnow().isoformat(),
+            "raw_response": {"source": "unavailable"},
+        }
+
+
 class MockTradingAPIService(TradingAPIService):
     """Mock trading API service for testing/development."""
     

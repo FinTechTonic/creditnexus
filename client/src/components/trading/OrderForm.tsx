@@ -118,7 +118,11 @@ export function OrderForm() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Failed to place order' }));
-        throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}: Failed to place order`);
+        const detail = errorData.detail || errorData.message;
+        if (response.status === 403 && (typeof detail === 'string' && (detail.toLowerCase().includes('brokerage') || detail.toLowerCase().includes('onboarding') || detail.toLowerCase().includes('account')))) {
+          throw new Error('Complete brokerage onboarding to trade. Open Settings → Trading account to apply.');
+        }
+        throw new Error(detail || `HTTP ${response.status}: Failed to place order`);
       }
 
       const result: OrderResponse = await response.json();

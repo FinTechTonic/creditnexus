@@ -203,6 +203,13 @@ class KYCService:
             "deal_type": deal_type,
         }
 
+    def evaluate_kyc_for_brokerage(self, user_id: int) -> bool:
+        """Evaluate whether user meets KYC requirements for brokerage (Alpaca account opening).
+        Uses policy with deal_type='brokerage'; requires identity_verified (and optionally docs).
+        """
+        result = self.evaluate_kyc_compliance(user_id, deal_type="brokerage")
+        return result.get("compliant", False) is True
+
     def get_kyc_requirements(self, deal_type: str) -> List[Dict[str, Any]]:
         """Get KYC requirements for a specific deal type."""
         # This would typically come from a policy or config

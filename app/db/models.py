@@ -310,6 +310,13 @@ class User(Base):
         "Meeting", back_populates="organizer", foreign_keys="Meeting.organizer_id"
     )
     implementation_connections = relationship("UserImplementationConnection", back_populates="user")
+    alpaca_customer_account = relationship(
+        "AlpacaCustomerAccount",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="AlpacaCustomerAccount.user_id",
+    )
     organization_identifier = Column(EncryptedString(255), nullable=True, index=True)  # Organization alias, blockchain address, or key
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])
@@ -3853,7 +3860,7 @@ class VerifiedImplementation(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user_connections = relationship("UserImplementationConnection", back_populates="implementation")
-    
+
     def to_dict(self):
         """Convert model to dictionary."""
         return {
@@ -3865,6 +3872,40 @@ class VerifiedImplementation(Base):
             "is_active": self.is_active,
             "configuration": self.configuration,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AlpacaCustomerAccount(Base):
+    """Alpaca Broker API customer account link (one per user)."""
+
+    __tablename__ = "alpaca_customer_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    alpaca_account_id = Column(String(64), unique=True, nullable=False, index=True)  # Alpaca account UUID
+    account_number = Column(String(64), nullable=True, index=True)  # Human-readable account number from Alpaca
+    status = Column(
+        String(32), nullable=False, index=True, default="SUBMITTED"
+    )  # SUBMITTED, APPROVED, ACTIVE, ACTION_REQUIRED, REJECTED, APPROVAL_PENDING
+    currency = Column(String(3), default="USD", nullable=False)
+    action_required_reason = Column(Text, nullable=True)  # Reason when status is ACTION_REQUIRED
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="alpaca_customer_account", foreign_keys=[user_id])
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "alpaca_account_id": self.alpaca_account_id,
+            "account_number": self.account_number,
+            "status": self.status,
+            "currency": self.currency,
+            "action_required_reason": self.action_required_reason,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -4213,7 +4254,8 @@ class Order(Base):
     commission_currency = Column(String(3), default="USD", nullable=False)
     
     # Trading API integration
-    trading_api = Column(String(50), nullable=True, index=True)  # "alpaca", "polygon", etc.
+    trading_api = Column(String(50), nullable=True, index=True)  # "alpaca", "alpaca_broker", "polygon", etc.
+    alpaca_account_id = Column(String(64), nullable=True, index=True)  # Alpaca Broker customer account ID (when trading_api=alpaca_broker)
     trading_api_order_id = Column(String(255), nullable=True, index=True)  # Order ID from trading API
     trading_api_response = Column(JSONB, nullable=True)  # Full response from trading API
     
@@ -4252,6 +4294,7 @@ class Order(Base):
             "commission": float(self.commission) if self.commission is not None else None,
             "commission_currency": self.commission_currency or "USD",
             "trading_api": self.trading_api,
+            "alpaca_account_id": self.alpaca_account_id,
             "trading_api_order_id": self.trading_api_order_id,
             "time_in_force": self.time_in_force or "day",
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,

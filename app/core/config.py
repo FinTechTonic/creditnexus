@@ -283,6 +283,41 @@ class Settings(BaseSettings):
         description="Use Alpaca for historical bars in stock prediction and backtesting when ALPACA_API_KEY/SECRET set",
     )
 
+    # Alpaca Broker API (multiuser brokerage; each user gets an Alpaca customer account)
+    ALPACA_BROKER_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Alpaca Broker API key (for account opening and per-account trading)",
+    )
+    ALPACA_BROKER_API_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        description="Alpaca Broker API secret",
+    )
+    ALPACA_BROKER_BASE_URL: Optional[str] = Field(
+        default="https://broker-api.sandbox.alpaca.markets",
+        description="Alpaca Broker API base URL (sandbox: broker-api.sandbox.alpaca.markets; live: broker-api.alpaca.markets)",
+    )
+    # Brokerage onboarding product and optional fee (Plaid link-for-brokerage + payment)
+    BROKERAGE_ONBOARDING_PRODUCT_ID: str = Field(
+        default="brokerage_onboarding",
+        description="Product ID for brokerage onboarding (used with Plaid link and billing)",
+    )
+    BROKERAGE_ONBOARDING_FEE_ENABLED: bool = Field(
+        default=False,
+        description="When True, require payment (fee) before or after brokerage account application",
+    )
+    BROKERAGE_ONBOARDING_FEE_AMOUNT: Decimal = Field(
+        default=Decimal("0.00"),
+        description="Optional onboarding fee amount (e.g. 9.99)",
+    )
+    BROKERAGE_ONBOARDING_FEE_CURRENCY: Currency = Field(
+        default=Currency.USD,
+        description="Currency for brokerage onboarding fee",
+    )
+    ALPACA_BROKER_PAPER: bool = Field(
+        default=True,
+        description="Use Alpaca Broker sandbox/paper when True",
+    )
+
     # Stock Prediction
     STOCK_PREDICTION_ENABLED: bool = Field(
         default=False,

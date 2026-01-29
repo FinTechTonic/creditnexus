@@ -14,11 +14,20 @@ import { fetchWithAuth } from '@/context/AuthContext';
 import { usePayment } from '@/context/PaymentContext';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_VIEW } from '@/utils/permissions';
-import { Landmark, Link2, Loader2, Unplug, CheckCircle2 } from 'lucide-react';
+import { Landmark, Link2, Loader2, Unplug, CheckCircle2, Briefcase } from 'lucide-react';
 
 interface BankingStatus {
   plaid_enabled: boolean;
   connected: boolean;
+}
+
+interface BrokerageStatus {
+  has_account: boolean;
+  status?: string;
+  alpaca_account_id?: string;
+  account_number?: string;
+  action_required_reason?: string;
+  currency: string;
 }
 
 export function LinkAccounts() {
@@ -30,6 +39,7 @@ export function LinkAccounts() {
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [disconnectLoading, setDisconnectLoading] = useState(false);
+  const [brokerageStatus, setBrokerageStatus] = useState<BrokerageStatus | null>(null);
   const openedForRef = useRef<string | null>(null);
 
   const fetchStatus = async () => {
@@ -47,9 +57,18 @@ export function LinkAccounts() {
           setError('Failed to load banking status.');
         }
       }
+      // Brokerage (Alpaca) account status
+      const br = await fetchWithAuth('/api/brokerage/account/status');
+      if (br.ok) {
+        const bd = await br.json();
+        setBrokerageStatus(bd);
+      } else {
+        setBrokerageStatus(null);
+      }
     } catch (e) {
       setError('Failed to load banking status.');
       setStatus(null);
+      setBrokerageStatus(null);
     } finally {
       setLoading(false);
     }
@@ -197,6 +216,36 @@ export function LinkAccounts() {
                 </div>
               )}
               {connectError && <p className="text-sm text-red-400">{connectError}</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {brokerageStatus !== null && (
+          <Card className="border-slate-700 bg-slate-800/50 mt-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Briefcase className="h-5 w-5 text-slate-400" />
+                Trading account (Alpaca)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {brokerageStatus.has_account ? (
+                <div className="flex items-center gap-2">
+                  <span className={brokerageStatus.status === 'ACTIVE' ? 'text-emerald-400' : 'text-amber-400'}>
+                    {brokerageStatus.status === 'ACTIVE' ? <CheckCircle2 className="h-5 w-5" /> : <Landmark className="h-5 w-5" />}
+                  </span>
+                  <span>
+                    {brokerageStatus.status === 'ACTIVE'
+                      ? `Active${brokerageStatus.account_number ? ` · #${brokerageStatus.account_number}` : ''}`
+                      : brokerageStatus.status ?? 'Pending'}
+                  </span>
+                  {brokerageStatus.action_required_reason && (
+                    <p className="text-sm text-amber-400 mt-1">{brokerageStatus.action_required_reason}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-muted-foreground">No brokerage account. Open one in Settings → Trading account.</p>
+              )}
             </CardContent>
           </Card>
         )}

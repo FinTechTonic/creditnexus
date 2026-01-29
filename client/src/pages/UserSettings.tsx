@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
-import { User, Key, Bell, Shield, Mic, TrendingUp, Building2, DollarSign, Link2 } from 'lucide-react';
+import { User, Key, Bell, Shield, Mic, TrendingUp, Building2, DollarSign, Link2, Briefcase } from 'lucide-react';
 import { LinkAccounts } from '@/components/LinkAccounts';
+import { BrokerageOnboarding } from '@/components/BrokerageOnboarding';
 
 interface UserPreferences {
   audio_input_mode: boolean;
@@ -212,6 +213,10 @@ export function UserSettings() {
             <Link2 className="h-4 w-4 mr-2" />
             Link Accounts
           </TabsTrigger>
+          <TabsTrigger value="trading-account">
+            <Briefcase className="h-4 w-4 mr-2" />
+            Trading account
+          </TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="api-keys">API Keys</TabsTrigger>
         </TabsList>
@@ -349,6 +354,10 @@ export function UserSettings() {
         
         <TabsContent value="link-accounts">
           <LinkAccounts />
+        </TabsContent>
+        
+        <TabsContent value="trading-account">
+          <BrokerageOnboarding />
         </TabsContent>
         
         <TabsContent value="notifications">
