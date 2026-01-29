@@ -883,7 +883,10 @@ By: _________________________
                 warnings.append("No commitment amount found in facilities")
         
         # Optional but recommended fields
-        if not credit_agreement.total_commitment:
+        # Some CDM CreditAgreement instances may not expose total_commitment as a top-level
+        # attribute; treat it as optional and avoid raising AttributeError.
+        total_commitment_value = getattr(credit_agreement, "total_commitment", None)
+        if not total_commitment_value:
             warnings.append("total_commitment not set (may be calculated from facilities)")
         
         return {

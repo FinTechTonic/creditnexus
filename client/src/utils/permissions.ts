@@ -236,6 +236,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSION_FINANCIAL_VIEW,
     PERMISSION_POLICY_VIEW,
     PERMISSION_SATELLITE_VIEW,
+    PERMISSION_SIGNATURE_COORDINATE,
+    PERMISSION_SIGNATURE_VIEW,
   ],
   
   // Law Officer: Write/edit for legal documents
@@ -254,6 +256,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSION_APPLICATION_VIEW,
     PERMISSION_INQUIRY_VIEW,
     PERMISSION_POLICY_VIEW,
+    PERMISSION_SIGNATURE_COORDINATE,
+    PERMISSION_SIGNATURE_VIEW,
   ],
   
   // Accountant: Write/edit for financial data
@@ -285,6 +289,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSION_INQUIRY_VIEW_OWN,
     PERMISSION_DOCUMENT_VIEW,
     PERMISSION_TEMPLATE_VIEW,
+    PERMISSION_SIGNATURE_EXECUTE,
+    PERMISSION_SIGNATURE_VIEW,
   ],
   
   // Trader: Trading and portfolio management

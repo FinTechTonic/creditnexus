@@ -1,6 +1,7 @@
 """Messenger factory for creating configured messenger instances."""
 
 import logging
+import datetime
 from typing import Optional
 
 from app.services.messenger.email import (
@@ -140,7 +141,7 @@ def create_messenger(
         return None
 
 
-def send_verification_link(
+async def send_verification_link(
     messenger: MessengerInterface,
     recipient: str,
     verification_id: str,
@@ -174,3 +175,42 @@ Please review the deal details and accept or decline the verification request.
 This link will expire in 72 hours."""
 
     return await messenger.send_message(recipient, subject, message, verification_link)
+
+
+async def send_signature_request(
+    messenger: MessengerInterface,
+    recipient: str,
+    signer_name: str,
+    document_title: str,
+    signing_link: str,
+    expires_at: Optional[datetime.datetime] = None,
+) -> bool:
+    """Send signature request via configured messenger.
+
+    Args:
+        messenger: Messenger instance
+        recipient: Recipient email
+        signer_name: Signer's name
+        document_title: Title of the document to sign
+        signing_link: Full signing portal URL
+        expires_at: Optional expiration date
+
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    subject = f"Signature Request: {document_title}"
+
+    message = f"""Hello {signer_name},
+
+You have been requested to sign the following document in CreditNexus:
+{document_title}
+
+Please use the link below to access the secure signing portal and review the document.
+"""
+
+    if expires_at:
+        message += f"\nThis signing link will expire on {expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC."
+
+    message += "\nThank you,\nThe CreditNexus Team"
+
+    return await messenger.send_message(recipient, subject, message, signing_link)

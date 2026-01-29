@@ -9,6 +9,7 @@ import { usePlaidLink } from 'react-plaid-link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { usePayment } from '@/context/PaymentContext';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 import { Landmark, Link2, Loader2, Unplug, CheckCircle2 } from 'lucide-react';
@@ -19,6 +20,7 @@ interface BankingStatus {
 }
 
 export function LinkAccounts() {
+  const { fetchWithPaymentHandling } = usePayment();
   const [status, setStatus] = useState<BankingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function LinkAccounts() {
   const fetchStatus = async () => {
     setError(null);
     try {
-      const r = await fetchWithAuth('/api/banking/status');
+      const r = await fetchWithPaymentHandling('/api/banking/status');
       if (r.ok) {
         const d = await r.json();
         setStatus({ plaid_enabled: d.plaid_enabled, connected: d.connected });
@@ -53,7 +55,7 @@ export function LinkAccounts() {
 
   useEffect(() => {
     fetchStatus();
-  }, []);
+  }, [fetchWithPaymentHandling]);
 
   const { open, ready } = usePlaidLink({
     token: linkToken,

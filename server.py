@@ -2,17 +2,24 @@
 
 import logging
 import warnings
+import sys
+from pathlib import Path
+
+# Ensure the project root (which contains the `app` package) is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Suppress Pydantic Annotated/Field metadata warnings from deps (e.g. repr=, frozen= in Field())
-warnings.filterwarnings('ignore', message=".*'repr' attribute.*", module='pydantic.*')
-warnings.filterwarnings('ignore', message=".*'frozen' attribute.*", module='pydantic.*')
+warnings.filterwarnings("ignore", message=".*'repr' attribute.*", module="pydantic.*")
+warnings.filterwarnings("ignore", message=".*'frozen' attribute.*", module="pydantic.*")
 
 # Trigger reload
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from pathlib import Path
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -55,6 +62,8 @@ from app.api.p2p_routes import router as p2p_router
 from app.api.whitelist_routes import router as whitelist_router
 from app.api.remote_profile_routes import router as remote_profile_router
 from app.api.metrics_routes import router as metrics_router
+from app.api.user_settings_routes import router as user_settings_router
+from app.api.deal_signature_routes import router as deal_signature_router
 from app.auth.routes import auth_router
 from app.auth.jwt_auth import jwt_router
 
@@ -544,6 +553,35 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Prevent 500s when request validation errors include raw bytes (e.g. multipart bodies).
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    # NOTE: FastAPI's default handler uses jsonable_encoder(exc.errors()) which can crash
+    # if the validation error contains raw bytes (common when a multipart/form-data body
+    # hits a JSON endpoint). We return a safe, minimally-informative payload.
+    def _sanitize(obj):
+        if isinstance(obj, (bytes, bytearray)):
+            return {"__bytes__": True, "length": len(obj)}
+        if isinstance(obj, dict):
+            return {str(k): _sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_sanitize(v) for v in obj]
+        return obj
+
+    safe_errors = []
+    try:
+        safe_errors = _sanitize(exc.errors())
+    except Exception:
+        safe_errors = [{"msg": "Request validation failed"}]
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": safe_errors, "message": "Request validation failed", "path": str(request.url.path)},
+    )
+
+# Ensure override even if defaults are re-registered elsewhere.
+app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
+
 from app.core.config import settings
 
 # Session secret management
@@ -692,6 +730,8 @@ app.include_router(organization_router)
 app.include_router(p2p_router)
 app.include_router(whitelist_router)
 app.include_router(remote_profile_router)
+app.include_router(user_settings_router)
+app.include_router(deal_signature_router)
 app.include_router(remote_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(jwt_router, prefix="/api")

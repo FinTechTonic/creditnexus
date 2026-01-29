@@ -7,6 +7,7 @@ import { FDC3Provider } from './context/FDC3Context'
 import { AuthProvider } from './context/AuthContext'
 import { WalletProvider } from './context/WalletContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { PaymentProvider } from './context/PaymentContext'
 import { ToastProvider } from './components/ui/toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
@@ -22,11 +23,13 @@ try {
       <ThemeProvider>
         <AuthProvider>
           <WalletProvider>
-            <FDC3Provider>
-              <ToastProvider>
-                <RouterProvider router={router} />
-              </ToastProvider>
-            </FDC3Provider>
+            <PaymentProvider>
+              <FDC3Provider>
+                <ToastProvider>
+                  <RouterProvider router={router} />
+                </ToastProvider>
+              </FDC3Provider>
+            </PaymentProvider>
           </WalletProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -224,6 +224,79 @@
   description: "Flag profiles with missing required KYC fields"
   category: "kyc_data_completeness"
 
+# ============================================================================
+# DEAL-TYPE & LICENSE-BASED REQUIREMENTS
+# ============================================================================
+
+# Block high-risk or regulated deals without enhanced KYC level
+- name: block_high_risk_deals_without_enhanced_kyc
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "kyc_compliance_check"
+      - any:
+          - field: deal_type
+            op: eq
+            value: "securitization"
+          - field: deal_type
+            op: eq
+            value: "sustainability_linked_loan"
+      - field: kyc_level
+        op: ne
+        value: "enhanced"
+  action: block
+  priority: 98
+  description: "Block securitization and sustainability-linked deals without enhanced KYC level"
+  category: "kyc_deal_type_requirements"
+
+# Block deals for regulated roles without a verified professional license
+- name: block_regulated_roles_without_verified_license
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "kyc_compliance_check"
+      - any:
+          - field: user_role
+            op: eq
+            value: "banker"
+          - field: user_role
+            op: eq
+            value: "law_officer"
+          - field: user_role
+            op: eq
+            value: "accountant"
+      - field: has_professional_license
+        op: eq
+        value: false
+  action: block
+  priority: 96
+  description: "Block regulated roles (banker, law_officer, accountant) without at least one verified professional license"
+  category: "kyc_license_requirements"
+
+# Flag securitization deals missing ID or proof of address
+- name: flag_securitization_missing_core_kyc_docs
+  when:
+    all:
+      - field: transaction_type
+        op: eq
+        value: "kyc_compliance_check"
+      - field: deal_type
+        op: eq
+        value: "securitization"
+      - any:
+          - field: has_id_document
+            op: eq
+            value: false
+          - field: has_proof_of_address
+            op: eq
+            value: false
+  action: flag
+  priority: 92
+  description: "Flag securitization deals where ID or proof of address documents are missing"
+  category: "kyc_deal_type_requirements"
+
 # Default: Allow if no other rules match
 - name: allow_kyc_compliant_profile
   when:

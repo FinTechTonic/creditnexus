@@ -7,6 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { ProfileEnrichment } from '@/components/ProfileEnrichment';
 import { MultimodalInputTabs } from '@/apps/docu-digitizer/MultimodalInputTabs';
+import { KYCVerificationStep } from '@/components/onboarding/KYCVerificationStep';
+import { LicenseUploadStep } from '@/components/onboarding/LicenseUploadStep';
+import { ConsentCollectionStep } from '@/components/onboarding/ConsentCollectionStep';
+import { usePlaidLink } from 'react-plaid-link';
+import { OrgAdminPaymentModal } from '@/components/payments/OrgAdminPaymentModal';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -47,8 +52,10 @@ const STEPS = [
   { id: 2, title: 'Organization', description: 'Select your organization' },
   { id: 3, title: 'Implementations', description: 'Connect to services (optional)' },
   { id: 4, title: 'Profile Enrichment', description: 'Complete your profile information' },
-  { id: 5, title: 'Document Upload', description: 'Upload supporting documents (optional)' },
-  { id: 6, title: 'Review & Submit', description: 'Review your information and complete signup' },
+  { id: 5, title: 'Identity Verification', description: 'Complete KYC requirements' },
+  { id: 6, title: 'Professional Licenses', description: 'Upload role-specific certifications' },
+  { id: 7, title: 'Privacy & Consent', description: 'Review privacy policy and provide consent' },
+  { id: 8, title: 'Review & Submit', description: 'Review your information and complete signup' },
 ];
 
 function OrganizationSelectionStep({
@@ -278,6 +285,17 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Plaid linking (required after register)
+  const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
+  const [plaidLinking, setPlaidLinking] = useState(false);
+  const [plaidLinked, setPlaidLinked] = useState(false);
+  const [plaidError, setPlaidError] = useState<string | null>(null);
+  const openedPlaidTokenRef = useState<{ token: string | null }>({ token: null })[0];
+
+  // Org-admin payment gating
+  const [showOrgAdminPayment, setShowOrgAdminPayment] = useState(false);
+  const [orgAdminPaid, setOrgAdminPaid] = useState(false);
   
   const navigate = useNavigate();
   const { register, authError, clearError } = useAuth();
@@ -356,15 +374,46 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
       });
       
       if (success) {
-        // TODO: In next tasks, we'll:
-        // 1. Upload documents and extract profile data
-        // 2. Update user profile with extracted data
-        // 3. Index profile in ChromaDB
-        
-        if (onComplete) {
-          onComplete();
-        } else {
-          navigate('/dashboard', { replace: true });
+        // If user is signing up as an org admin (role=admin), require $2 org-admin payment before Plaid link + dashboard access.
+        if (formData.role === 'admin' && !orgAdminPaid) {
+          setShowOrgAdminPayment(true);
+          return;
+        }
+
+        // Require Plaid Link before allowing dashboard access
+        setPlaidError(null);
+        setPlaidLinking(true);
+        try {
+          const statusResp = await fetchWithAuth('/api/banking/status');
+          const statusData = await statusResp.json().catch(() => ({}));
+          if (!statusResp.ok) {
+            setPlaidError(statusData.detail || 'Failed to verify Plaid status.');
+            return;
+          }
+
+          if (!statusData.plaid_enabled) {
+            setPlaidError('Plaid is not enabled for this environment. Contact your administrator.');
+            return;
+          }
+
+          if (statusData.connected) {
+            setPlaidLinked(true);
+            if (onComplete) onComplete();
+            else navigate('/dashboard', { replace: true });
+            return;
+          }
+
+          const linkTokenResp = await fetchWithAuth('/api/banking/link-token');
+          const linkTokenData = await linkTokenResp.json().catch(() => ({}));
+          if (!linkTokenResp.ok || !linkTokenData.link_token) {
+            setPlaidError(linkTokenData.detail || linkTokenData.error || 'Failed to start Plaid Link.');
+            return;
+          }
+
+          setPlaidLinkToken(linkTokenData.link_token);
+          // Navigation will happen after Plaid Link onSuccess
+        } finally {
+          setPlaidLinking(false);
         }
       }
     } catch (error) {
@@ -376,6 +425,49 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
 
   const updateFormData = (updates: Partial<SignupFormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
+  };
+
+  const { open: openPlaid, ready: plaidReady } = usePlaidLink({
+    token: plaidLinkToken,
+    onSuccess: async (public_token: string) => {
+      setPlaidError(null);
+      try {
+        const r = await fetchWithAuth('/api/banking/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ public_token }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          setPlaidError(d.detail || 'Failed to connect Plaid.');
+          return;
+        }
+        setPlaidLinked(true);
+        setPlaidLinkToken(null);
+        openedPlaidTokenRef.token = null;
+        if (onComplete) onComplete();
+        else navigate('/dashboard', { replace: true });
+      } catch {
+        setPlaidError('Failed to connect Plaid.');
+      }
+    },
+    onExit: () => {
+      setPlaidLinkToken(null);
+      openedPlaidTokenRef.token = null;
+    },
+  });
+
+  useEffect(() => {
+    if (plaidLinkToken && plaidReady && openPlaid && openedPlaidTokenRef.token !== plaidLinkToken) {
+      openPlaid();
+      openedPlaidTokenRef.token = plaidLinkToken;
+    }
+  }, [plaidLinkToken, plaidReady, openPlaid, openedPlaidTokenRef]);
+
+  const proceedAfterOrgAdminPaid = () => {
+    setOrgAdminPaid(true);
+    setShowOrgAdminPayment(false);
+    void handleSubmit();
   };
 
   const renderStepContent = () => {
@@ -639,19 +731,68 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
 
       case 5:
         return (
-          <div className="space-y-6">
-            <div className="text-center py-8">
-              <p className="text-slate-400">
-                Document upload will be implemented in the next task.
-              </p>
-              <p className="text-sm text-slate-500 mt-2">
-                Upload business cards, resumes, or company documents to automatically extract profile data.
-              </p>
-            </div>
-          </div>
+          <KYCVerificationStep
+            role={formData.role || 'applicant'}
+            onComplete={(data) => {
+              console.log('KYC Completed:', data);
+              handleNext();
+            }}
+          />
         );
 
       case 6:
+        return (
+          <LicenseUploadStep
+            role={formData.role || 'applicant'}
+            onComplete={(data) => {
+              console.log('Licenses Completed:', data);
+              handleNext();
+            }}
+          />
+        );
+
+      case 7:
+        return (
+          <ConsentCollectionStep
+            onConsentChange={async (consents) => {
+              // Record consents via API
+              try {
+                for (const [consentType, given] of Object.entries(consents)) {
+                  if (consentType !== 'essential') {
+                    const consentConfig = {
+                      essential: { purpose: 'Required for account functionality', basis: 'contract' },
+                      analytics: { purpose: 'Improving application performance and UX', basis: 'consent' },
+                      marketing: { purpose: 'Sending newsletters and product updates', basis: 'consent' },
+                      third_party: { purpose: 'Sharing non-essential data with partners', basis: 'consent' }
+                    };
+                    
+                    const config = consentConfig[consentType as keyof typeof consentConfig];
+                    if (config) {
+                      await fetchWithAuth('/api/gdpr/consents', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          consent_type: consentType,
+                          consent_purpose: config.purpose,
+                          legal_basis: config.basis,
+                          consent_given: given,
+                          consent_source: 'signup'
+                        })
+                      });
+                    }
+                  }
+                }
+                handleNext();
+              } catch (e) {
+                console.error('Failed to record consents:', e);
+                // Non-blocking - continue anyway
+                handleNext();
+              }
+            }}
+          />
+        );
+
+      case 8:
         return (
           <div className="space-y-6">
             <div className="bg-slate-800/50 rounded-lg p-6 space-y-4">
@@ -706,6 +847,12 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center py-12 px-4">
+      <OrgAdminPaymentModal
+        open={showOrgAdminPayment}
+        onClose={() => setShowOrgAdminPayment(false)}
+        onPaid={proceedAfterOrgAdminPaid}
+        canBypass={false}
+      />
       <Card className="w-full max-w-2xl">
         <CardHeader>
           <div className="flex items-center justify-between mb-4">

@@ -42,11 +42,6 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
     return user
 
 
-# Alias require_auth for compatibility with routes that expect it
-# This is equivalent to get_current_user but with a different name
-require_auth = get_current_user
-
-
 def require_role(allowed_roles: List[str]):
     """Decorator factory to require specific roles for a route."""
     def decorator(func):

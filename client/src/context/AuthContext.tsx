@@ -253,7 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await refreshUser();
         return true;
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ detail: 'Registration failed' }));
         let errorMessage = 'Registration failed';
         if (error.detail) {
           if (typeof error.detail === 'string') {

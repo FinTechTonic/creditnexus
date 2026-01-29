@@ -233,14 +233,14 @@ export function NotarizationPayment({
                   <span className="text-sm font-semibold">Wallet Not Connected</span>
                 </div>
                 <p className="text-xs text-slate-400 mb-3">
-                  Connect your MetaMask wallet to process payment.
+                  Connect your wallet to pay with crypto.
                 </p>
                 <Button
                   onClick={handleConnectWallet}
                   className="w-full bg-yellow-600 hover:bg-yellow-500 text-white"
                 >
                   <Wallet className="h-4 w-4 mr-2" />
-                  Connect MetaMask
+                  Connect Wallet
                 </Button>
               </div>
             </div>
@@ -263,8 +263,8 @@ export function NotarizationPayment({
                   </>
                 ) : (
                   <>
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    Pay {paymentRequest.currency} {paymentRequest.amount}
+                    <Wallet className="h-4 w-4 mr-2" />
+                    Pay with Crypto
                   </>
                 )}
               </Button>

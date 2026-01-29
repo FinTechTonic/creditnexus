@@ -164,6 +164,9 @@
             "finos.creditnexus.stockPrediction",
             "finos.creditnexus.predictionMarket",
             "finos.creditnexus.agentResult",
+            "finos.creditnexus.dealSignature",
+            "finos.creditnexus.dealDocumentation",
+            "finos.creditnexus.dealCompliance",
             "fdc3.instrument",
             "finos.creditnexus.instrument"
           ],
@@ -184,11 +187,17 @@
             "broadcasts": [
               "finos.creditnexus.agreement",
               "finos.creditnexus.approvalResult",
-              "finos.creditnexus.workflow"
+              "finos.creditnexus.workflow",
+              "finos.creditnexus.dealSignature",
+              "finos.creditnexus.dealDocumentation",
+              "finos.creditnexus.dealCompliance"
             ],
             "listensFor": [
               "finos.creditnexus.approvalResult",
-              "finos.creditnexus.workflow"
+              "finos.creditnexus.workflow",
+              "finos.creditnexus.dealSignature",
+              "finos.creditnexus.dealDocumentation",
+              "finos.creditnexus.dealCompliance"
             ]
           },
           {
@@ -613,6 +622,50 @@
                 "assessedAt": { "type": "string" }
               },
               "required": ["type"]
+            }
+          },
+          "finos.creditnexus.dealSignature": {
+            "description": "Deal signature tracking context (status, progress, required/completed signatures)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.dealSignature" },
+                "id": { "type": "object", "properties": { "dealId": { "type": "string" } }, "required": ["dealId"] },
+                "signatureStatus": { "type": "string" },
+                "requiredSignatures": { "type": "number" },
+                "completedSignatures": { "type": "number" },
+                "signatureProgress": { "type": "number" }
+              },
+              "required": ["type", "id"]
+            }
+          },
+          "finos.creditnexus.dealDocumentation": {
+            "description": "Deal documentation tracking context (status, progress, required/completed documents)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.dealDocumentation" },
+                "id": { "type": "object", "properties": { "dealId": { "type": "string" } }, "required": ["dealId"] },
+                "documentationStatus": { "type": "string" },
+                "requiredDocuments": { "type": "number" },
+                "completedDocuments": { "type": "number" },
+                "documentationProgress": { "type": "number" }
+              },
+              "required": ["type", "id"]
+            }
+          },
+          "finos.creditnexus.dealCompliance": {
+            "description": "Deal compliance summary context (overall status, signature/documentation status)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": { "const": "finos.creditnexus.dealCompliance" },
+                "id": { "type": "object", "properties": { "dealId": { "type": "string" } }, "required": ["dealId"] },
+                "complianceStatus": { "type": "string" },
+                "signatureStatus": { "type": "string" },
+                "documentationStatus": { "type": "string" }
+              },
+              "required": ["type", "id"]
             }
           }
         }

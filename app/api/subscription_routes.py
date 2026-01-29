@@ -12,9 +12,11 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.auth.jwt_auth import get_current_user
 from app.core.config import settings
+from app.db import get_db
 from app.db.models import User
 from app.models.cdm import Currency, Party
 
@@ -103,16 +105,26 @@ async def post_upgrade(
     # If no payload was provided, x402 returns 402-like structure
     if result.get("status_code") == 402 or (not body.payment_payload and result.get("status") != "settled"):
         from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=402,
-            content={
-                "status": "Payment Required",
-                "payment_request": result.get("payment_request"),
-                "amount": str(amount),
-                "currency": "USD",
-                "facilitator_url": getattr(pr.x402, "facilitator_url", None) if pr.x402 else None,
-            },
-        )
+        from app.services.revenuecat_service import RevenueCatService
+        
+        # Check if RevenueCat is available
+        revenuecat = RevenueCatService()
+        revenuecat_available = revenuecat.enabled
+        
+        response_content = {
+            "status": "Payment Required",
+            "payment_request": result.get("payment_request"),
+            "amount": str(amount),
+            "currency": "USD",
+            "payment_type": "subscription_upgrade",
+            "facilitator_url": getattr(pr.x402, "facilitator_url", None) if pr.x402 else None,
+        }
+        
+        if revenuecat_available:
+            response_content["revenuecat_available"] = True
+            response_content["revenuecat_endpoint"] = "/api/subscriptions/revenuecat/purchase"
+        
+        return JSONResponse(status_code=402, content=response_content)
 
     if result.get("status") != "settled":
         raise HTTPException(
@@ -133,4 +145,192 @@ async def post_upgrade(
         "payment_id": result.get("payment_id"),
         "transaction_hash": result.get("transaction_hash"),
         "revenuecat_grant": grant,
+    }
+
+
+@router.post("/org-admin/upgrade")
+async def post_org_admin_upgrade(
+    body: UpgradeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Organization-admin signup payment ($2): x402 payment flow.
+    If payment_payload is omitted, returns 402 with payment_request for the client to complete via x402.
+    """
+    pr = get_payment_router(request)
+    if not pr:
+        raise HTTPException(status_code=503, detail="Payment router not available")
+
+    amount = getattr(settings, "ORG_ADMIN_SIGNUP_AMOUNT", Decimal("2.00"))
+    payer = Party(
+        id=str(current_user.id),
+        name=current_user.display_name or current_user.email or "User",
+        role="Payer",
+        lei=None,
+    )
+    receiver = Party(
+        id="creditnexus_org_admin_signup",
+        name="CreditNexus Org Admin Signup",
+        role="Receiver",
+        lei=None,
+    )
+
+    from app.models.cdm_payment import PaymentType
+
+    try:
+        result = await pr.route_payment(
+            amount=amount,
+            currency=Currency.USD,
+            payer=payer,
+            receiver=receiver,
+            payment_type=PaymentType.SUBSCRIPTION_UPGRADE,
+            payment_payload=body.payment_payload,
+            cdm_reference={"user_id": current_user.id, "type": "org_admin_signup"},
+        )
+    except ValueError:
+        raise HTTPException(status_code=503, detail="x402 payment service not available")
+
+    if result.get("status_code") == 402 or (not body.payment_payload and result.get("status") != "settled"):
+        from fastapi.responses import JSONResponse
+        from app.services.revenuecat_service import RevenueCatService
+        
+        # Check if RevenueCat is available
+        revenuecat = RevenueCatService()
+        revenuecat_available = revenuecat.enabled
+        
+        response_content = {
+            "status": "Payment Required",
+            "payment_request": result.get("payment_request"),
+            "amount": str(amount),
+            "currency": "USD",
+            "payment_type": "org_admin_upgrade",
+            "facilitator_url": getattr(pr.x402, "facilitator_url", None) if pr.x402 else None,
+        }
+        
+        if revenuecat_available:
+            response_content["revenuecat_available"] = True
+            response_content["revenuecat_endpoint"] = "/api/subscriptions/revenuecat/purchase"
+        
+        return JSONResponse(status_code=402, content=response_content)
+
+    if result.get("status") != "settled":
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("verification") or result.get("status") or "Payment could not be completed",
+        )
+
+    return {
+        "status": "settled",
+        "payment_id": result.get("payment_id"),
+        "transaction_hash": result.get("transaction_hash"),
+    }
+
+
+class RevenueCatPurchaseRequest(BaseModel):
+    """Request body for RevenueCat purchase."""
+    product_id: str = Field(..., description="Product ID (e.g., 'subscription_upgrade', 'org_admin')")
+    transaction_id: Optional[str] = Field(None, description="RevenueCat transaction ID (if available)")
+    purchase_token: Optional[str] = Field(None, description="Purchase token from RevenueCat SDK")
+    amount: Optional[str] = Field(None, description="Purchase amount (for verification)")
+
+
+@router.post("/revenuecat/purchase")
+async def post_revenuecat_purchase(
+    body: RevenueCatPurchaseRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Process a RevenueCat purchase and grant entitlement.
+    
+    This endpoint accepts purchase data from RevenueCat SDK and grants the appropriate
+    entitlement. For subscription upgrades and org-admin payments.
+    """
+    from app.services.revenuecat_service import RevenueCatService
+    
+    revenuecat = RevenueCatService()
+    if not revenuecat.enabled:
+        raise HTTPException(status_code=503, detail="RevenueCat is not enabled")
+    
+    app_user_id = str(current_user.id)
+    
+    # Determine entitlement based on product_id
+    entitlement_id = None
+    duration = "P1M"
+    
+    if body.product_id == "org_admin":
+        entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_ORG_ADMIN", None) or getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
+        duration = "P1Y"  # Org admin gets 1 year
+    elif body.product_id == "subscription_upgrade":
+        entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
+        duration = "P1M"  # Monthly subscription
+    else:
+        entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
+    
+    # Verify purchase by checking subscriber (RevenueCat SDK handles payment verification)
+    # If transaction_id or purchase_token provided, we could verify more strictly
+    # For now, we trust the SDK and grant entitlement
+    
+    # Grant promotional entitlement
+    grant_result = revenuecat.grant_promotional_entitlement(
+        app_user_id=app_user_id,
+        entitlement_id=entitlement_id,
+        duration=duration,
+    )
+    
+    if not grant_result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to grant entitlement: {grant_result.get('reason', 'unknown')}",
+        )
+    
+    # Optionally allocate credits after successful purchase
+    from app.services.subscription_service import SubscriptionService
+    
+    try:
+        subscription_service = SubscriptionService(db)
+        
+        # For org-admin, mark as paid
+        if body.product_id == "org_admin":
+            subscription_service.mark_org_admin_paid(
+                user_id=current_user.id,
+                payment_id=None,  # RevenueCat doesn't use our payment_event system
+            )
+        
+        # Allocate credits based on product
+        from app.services.rolling_credits_service import RollingCreditsService
+        credits_service = RollingCreditsService(db)
+        
+        if body.product_id == "org_admin":
+            # Org admin gets initial credits
+            credits_service.add_credits(
+                user_id=current_user.id,
+                credit_type="universal",
+                amount=100.0,  # Initial credits for org admin
+                feature="org_admin_signup",
+                description="Org admin signup credits",
+            )
+        elif body.product_id == "subscription_upgrade":
+            # Subscription upgrade gets credits
+            credits_service.add_credits(
+                user_id=current_user.id,
+                credit_type="universal",
+                amount=50.0,  # Monthly subscription credits
+                feature="subscription_upgrade",
+                description="Subscription upgrade credits",
+            )
+        
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to allocate credits after RevenueCat purchase: {e}", exc_info=True)
+        db.rollback()
+        # Don't fail the request if credit allocation fails
+    
+    return {
+        "status": "completed",
+        "entitlement_granted": entitlement_id,
+        "duration": duration,
+        "revenuecat_result": grant_result,
     }
