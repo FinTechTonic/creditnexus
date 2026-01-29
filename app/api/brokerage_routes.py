@@ -36,6 +36,29 @@ class AccountStatusResponse(BaseModel):
     currency: str = "USD"
 
 
+class AgreementItem(BaseModel):
+    """Single agreement acceptance (Alpaca customer_agreement / margin_agreement)."""
+    agreement: str = Field(..., description="e.g. customer_agreement, margin_agreement")
+    signed_at: str = Field(..., description="ISO 8601 timestamp when user accepted")
+    ip_address: Optional[str] = Field("0.0.0.0", description="Client IP at acceptance (optional)")
+
+
+class ApplyRequest(BaseModel):
+    """Brokerage apply request: optional agreements (from UI) and Plaid KYC flag."""
+    agreements: Optional[List[AgreementItem]] = Field(
+        None,
+        description="Client-provided agreement acceptances (signed_at from UI). Required for Plaid KYC flow.",
+    )
+    use_plaid_kyc: bool = Field(
+        False,
+        description="When True, KYC is satisfied by linked Plaid identity (user must have linked via brokerage Link).",
+    )
+    prefill: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional prefill from Plaid identity (given_name, family_name, address, etc.).",
+    )
+
+
 @router.get("/link-token", response_model=Dict[str, Any])
 async def brokerage_link_token(
     current_user: User = Depends(require_auth),
@@ -104,12 +127,32 @@ async def brokerage_prefill(
 
 @router.post("/account/apply", response_model=Dict[str, Any])
 async def brokerage_account_apply(
+    body: Optional[ApplyRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Submit Alpaca Broker account application. Requires KYC to be sufficient."""
+    """Submit Alpaca Broker account application.
+    Use Plaid KYC flow: link via Plaid (brokerage link-token), pass agreements (signed_at from UI), use_plaid_kyc=True.
+    """
+    agreements_override = None
+    prefill_override = None
+    use_plaid_kyc = False
+    if body:
+        use_plaid_kyc = body.use_plaid_kyc
+        prefill_override = body.prefill
+        if body.agreements and len(body.agreements) >= 2:
+            agreements_override = [
+                {"agreement": a.agreement, "signed_at": a.signed_at, "ip_address": a.ip_address or "0.0.0.0"}
+                for a in body.agreements
+            ]
     try:
-        rec = open_alpaca_account(current_user.id, db)
+        rec = open_alpaca_account(
+            current_user.id,
+            db,
+            agreements_override=agreements_override,
+            prefill_override=prefill_override,
+            use_plaid_kyc=use_plaid_kyc,
+        )
         return {
             "status": "submitted",
             "alpaca_account_id": rec.alpaca_account_id,

@@ -8,11 +8,12 @@ Alpaca Broker account opening orchestration.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.db.models import User, KYCVerification, AlpacaCustomerAccount
+from app.db.models import User, UserRole, KYCVerification, AlpacaCustomerAccount
 from app.services.alpaca_broker_service import get_broker_client, AlpacaBrokerAPIError
 from app.services.kyc_service import KYCService
 from app.utils.audit import log_audit_action
@@ -26,8 +27,27 @@ class AlpacaAccountServiceError(Exception):
     pass
 
 
-def _build_account_payload(user: User, verification: Optional[KYCVerification]) -> Dict[str, Any]:
-    """Build Alpaca Broker API account creation payload from User and KYCVerification."""
+def is_instance_owner(user_id: int, db: Session) -> bool:
+    """True if user is instance owner (admin role or first user). Instance owner always has access to brokerage apply."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return False
+    role = getattr(user, "role", None)
+    if role == UserRole.ADMIN.value:
+        return True
+    # First user in DB (lowest id) is treated as instance owner
+    first = db.query(User).order_by(User.id.asc()).limit(1).first()
+    return first is not None and first.id == user_id
+
+
+def _build_account_payload(
+    user: User,
+    verification: Optional[KYCVerification],
+    *,
+    prefill_override: Optional[Dict[str, Any]] = None,
+    agreements_override: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Build Alpaca Broker API account creation payload from User, KYCVerification, and optional Plaid prefill/agreements."""
     email = getattr(user, "email", None) or ""
     if hasattr(email, "get_secret_value"):
         email = email.get_secret_value() or ""
@@ -38,20 +58,24 @@ def _build_account_payload(user: User, verification: Optional[KYCVerification]) 
         display_name = display_name.get_secret_value() or email.split("@")[0]
     display_name = str(display_name).strip()
     parts = display_name.split(None, 1)
-    given_name = parts[0] if parts else "Given"
-    family_name = parts[1] if len(parts) > 1 else "User"
+    given_name = (prefill_override or {}).get("given_name") or (parts[0] if parts else "Given")
+    family_name = (prefill_override or {}).get("family_name") or (parts[1] if len(parts) > 1 else "User")
 
     profile_data = getattr(user, "profile_data", None) or {}
     if isinstance(profile_data, dict):
         phone = profile_data.get("phone") or profile_data.get("phone_number") or ""
-        street = profile_data.get("street_address") or profile_data.get("address") or ""
-        city = profile_data.get("city") or ""
-        state = profile_data.get("state") or ""
-        postal_code = profile_data.get("postal_code") or profile_data.get("zip") or ""
-        country = profile_data.get("country") or "USA"
+        street = (prefill_override or {}).get("street_address") or profile_data.get("street_address") or profile_data.get("address") or ""
+        city = (prefill_override or {}).get("city") or profile_data.get("city") or ""
+        state = (prefill_override or {}).get("state") or profile_data.get("state") or ""
+        postal_code = (prefill_override or {}).get("postal_code") or profile_data.get("postal_code") or profile_data.get("zip") or ""
+        country = (prefill_override or {}).get("country") or profile_data.get("country") or "USA"
     else:
-        phone = street = city = state = postal_code = ""
-        country = "USA"
+        phone = ""
+        street = (prefill_override or {}).get("street_address") or ""
+        city = (prefill_override or {}).get("city") or ""
+        state = (prefill_override or {}).get("state") or ""
+        postal_code = (prefill_override or {}).get("postal_code") or ""
+        country = (prefill_override or {}).get("country") or "USA"
 
     # Alpaca account opening payload (contact, identity, address)
     # https://docs.alpaca.markets/reference/createaccount
@@ -60,8 +84,8 @@ def _build_account_payload(user: User, verification: Optional[KYCVerification]) 
         "phone_number": str(phone)[:20] if phone else "",
     }
     identity = {
-        "given_name": given_name[:50],
-        "family_name": family_name[:50],
+        "given_name": str(given_name)[:50],
+        "family_name": str(family_name)[:50],
         "date_of_birth": "1990-01-01",  # Placeholder if not in profile; Alpaca may require or return ACTION_REQUIRED
     }
     if isinstance(verification, KYCVerification) and getattr(verification, "verification_metadata", None):
@@ -71,11 +95,28 @@ def _build_account_payload(user: User, verification: Optional[KYCVerification]) 
 
     address = {
         "street_address": [str(street)[:64]] if street else ["N/A"],
-        "city": city[:32] if city else "N/A",
-        "state": state[:32] if state else "NY",
+        "city": (str(city)[:32]) if city else "N/A",
+        "state": (str(state)[:32]) if state else "NY",
         "postal_code": str(postal_code)[:10] if postal_code else "10001",
-        "country": country[:2] if len(country) == 2 else "US",
+        "country": (str(country)[:2]) if country and len(str(country)) == 2 else "US",
     }
+
+    # Agreements: use client-provided (Plaid KYC flow) or server-generated
+    agreements: List[Dict[str, Any]] = []
+    if agreements_override and len(agreements_override) >= 2:
+        for a in agreements_override:
+            if isinstance(a, dict) and a.get("agreement") and a.get("signed_at"):
+                agreements.append({
+                    "agreement": str(a["agreement"])[:64],
+                    "signed_at": str(a["signed_at"]),
+                    "ip_address": str(a.get("ip_address") or "0.0.0.0")[:45],
+                })
+    if len(agreements) < 2:
+        signed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        agreements = [
+            {"agreement": "customer_agreement", "signed_at": signed_at, "ip_address": "0.0.0.0"},
+            {"agreement": "margin_agreement", "signed_at": signed_at, "ip_address": "0.0.0.0"},
+        ]
 
     return {
         "contact": contact,
@@ -86,25 +127,53 @@ def _build_account_payload(user: User, verification: Optional[KYCVerification]) 
             "is_politically_exposed": False,
             "immediate_family_exposed": False,
         },
-        "agreements": [
-            {"agreement": "customer_agreement", "signed_at": None, "ip_address": None},
-            {"agreement": "margin_agreement", "signed_at": None, "ip_address": None},
-        ],
+        "agreements": agreements,
         "documents": [],
         "trusted_contact": {
-            "given_name": given_name[:50],
-            "family_name": family_name[:50],
+            "given_name": str(given_name)[:50],
+            "family_name": str(family_name)[:50],
             "email_address": email,
         },
         "address": address,
     }
 
 
-def open_alpaca_account(user_id: int, db: Session) -> AlpacaCustomerAccount:
+def _has_plaid_identity(user_id: int, db: Session) -> bool:
+    """True if user has linked Plaid and identity data (owners) is available. Used for Plaid KYC flow."""
+    try:
+        from app.services.plaid_service import get_plaid_connection, get_identity
+        conn = get_plaid_connection(db, user_id)
+        if not conn or not getattr(conn, "connection_data", None) or not isinstance(conn.connection_data, dict):
+            return False
+        access_token = conn.connection_data.get("access_token")
+        if not access_token:
+            return False
+        identity_resp = get_identity(access_token)
+        if "error" in identity_resp:
+            return False
+        accounts = identity_resp.get("accounts") or []
+        for acc in accounts:
+            owners = acc.get("owners") or []
+            if owners:
+                return True
+        return False
+    except Exception as e:
+        logger.warning("_has_plaid_identity check failed for user %s: %s", user_id, e)
+        return False
+
+
+def open_alpaca_account(
+    user_id: int,
+    db: Session,
+    *,
+    agreements_override: Optional[List[Dict[str, Any]]] = None,
+    prefill_override: Optional[Dict[str, Any]] = None,
+    use_plaid_kyc: bool = False,
+) -> AlpacaCustomerAccount:
     """
     Open an Alpaca Broker account for the user.
-    - Ensures KYC is sufficient (evaluate_kyc_for_brokerage).
-    - Builds account payload from User + KYCVerification.
+    - KYC: instance owner bypass, or use_plaid_kyc + Plaid identity, or evaluate_kyc_for_brokerage.
+    - Builds account payload from User + KYCVerification + optional Plaid prefill and client agreements.
     - Calls Broker API create_account.
     - Persists AlpacaCustomerAccount (SUBMITTED).
     """
@@ -127,18 +196,27 @@ def open_alpaca_account(user_id: int, db: Session) -> AlpacaCustomerAccount:
         if existing.status == "REJECTED":
             raise AlpacaAccountServiceError("Account was rejected; contact support to reapply")
 
-    kyc = KYCService(db)
-    if not kyc.evaluate_kyc_for_brokerage(user_id):
-        raise AlpacaAccountServiceError(
-            "KYC not sufficient for brokerage. Complete identity verification and required documents first."
-        )
+    # KYC: instance owner bypass, or Plaid KYC (linked Plaid + identity), or policy KYC
+    kyc_satisfied = is_instance_owner(user_id, db)
+    if not kyc_satisfied and use_plaid_kyc and _has_plaid_identity(user_id, db):
+        kyc_satisfied = True
+    if not kyc_satisfied:
+        kyc = KYCService(db)
+        if not kyc.evaluate_kyc_for_brokerage(user_id):
+            raise AlpacaAccountServiceError(
+                "KYC not sufficient for brokerage. Verify identity with Plaid (link bank) or complete identity verification first."
+            )
 
     client = get_broker_client()
     if not client:
         raise AlpacaAccountServiceError("Broker API not configured (ALPACA_BROKER_API_KEY/SECRET)")
 
     verification = getattr(user, "kyc_verification", None)
-    payload = _build_account_payload(user, verification)
+    payload = _build_account_payload(
+        user, verification,
+        prefill_override=prefill_override,
+        agreements_override=agreements_override,
+    )
 
     try:
         result = client.create_account(payload)

@@ -1062,42 +1062,66 @@ async def change_password(
 
     return {"message": "Password changed successfully"}
 
+def _safe_user_dict(user: User) -> Dict[str, Any]:
+    """Build user dict without raising (handles EncryptedString, etc.)."""
+    try:
+        return user.to_dict()
+    except Exception as e:
+        logger.warning("user.to_dict() failed for user %s: %s", getattr(user, "id", None), e)
+    email = getattr(user, "email", None)
+    if hasattr(email, "get_secret_value"):
+        try:
+            email = email.get_secret_value()
+        except Exception:
+            email = ""
+    email = str(email or "")
+    return {
+        "id": getattr(user, "id", None),
+        "email": email,
+        "display_name": str(getattr(user, "display_name", None) or ""),
+        "profile_image": getattr(user, "profile_image", None),
+        "role": getattr(user, "role", None) or "viewer",
+        "is_active": getattr(user, "is_active", True),
+        "last_login": None,
+        "wallet_address": getattr(user, "wallet_address", None),
+        "signup_status": getattr(user, "signup_status", None),
+        "profile_data": getattr(user, "profile_data", None),
+        "created_at": None,
+    }
+
+
 @jwt_router.get("/me")
 async def get_current_user_info(
     user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get the current authenticated user's information with organization and implementations."""
+    """Get the current authenticated user's information with organization and implementations.
+    Never returns 500: on any error returns minimal payload so client stays usable.
+    """
     if not user:
         return {"authenticated": False, "user": None, "organization": None, "implementations": []}
     try:
-        user_dict = user.to_dict()
-    except Exception as e:
-        logger.error(f"Error serializing user {user.id}: {e}", exc_info=True)
-        user_dict = {
-            "id": user.id,
-            "email": user.email or "",
-            "display_name": user.display_name or "",
-            "profile_image": user.profile_image,
-            "role": user.role or "viewer",
-            "is_active": user.is_active if user.is_active is not None else True,
-            "last_login": None,
-            "wallet_address": user.wallet_address,
-            "signup_status": user.signup_status,
-            "signup_submitted_at": None,
-            "signup_reviewed_at": None,
-            "signup_reviewed_by": user.signup_reviewed_by,
-            "signup_rejection_reason": user.signup_rejection_reason,
-            "profile_data": user.profile_data,
-            "created_at": None,
+        user_dict = _safe_user_dict(user)
+        try:
+            ctx = _hydrate_user_context(user, db)
+            org, impls = ctx.get("organization"), ctx.get("implementations") or []
+        except Exception as e:
+            logger.warning("_hydrate_user_context failed for user %s: %s", user.id, e)
+            org, impls = None, []
+        return {
+            "authenticated": True,
+            "user": user_dict,
+            "organization": org,
+            "implementations": impls,
         }
-    ctx = _hydrate_user_context(user, db)
-    return {
-        "authenticated": True,
-        "user": user_dict,
-        "organization": ctx["organization"],
-        "implementations": ctx["implementations"],
-    }
+    except Exception as e:
+        logger.error("get_current_user_info failed: %s", e, exc_info=True)
+        return {
+            "authenticated": True,
+            "user": _safe_user_dict(user),
+            "organization": None,
+            "implementations": [],
+        }
 
 @jwt_router.get("/verify")
 async def verify_token(user: User = Depends(require_auth)):
