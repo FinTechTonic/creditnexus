@@ -13,7 +13,6 @@ Expanded (Portfolio-First / Plaid-First):
 
 import logging
 from datetime import date, timedelta
-import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -27,30 +26,6 @@ logger = logging.getLogger(__name__)
 # Lazy Plaid imports (plaid-python)
 _plaid_api = None
 _plaid_config = None
-
-
-def _agent_debug_log(*, hypothesisId: str, location: str, message: str, data: Dict[str, Any]) -> None:
-    """
-    Debug-mode NDJSON logger (no secrets / no PII).
-    Writes to workspace debug log path.
-    """
-    try:
-        path = r"c:\Users\MeMyself\creditnexus\.cursor\debug.log"
-        payload = {
-            "sessionId": "debug-session",
-            "runId": "pre-fix",
-            "hypothesisId": hypothesisId,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(__import__("time").time() * 1000),
-        }
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        # Never break runtime on debug logging
-        pass
 
 
 def _get_plaid_client():
@@ -531,15 +506,6 @@ def create_transfer(
     if err:
         return {"error": err}
 
-    # #region agent log
-    _agent_debug_log(
-        hypothesisId="H1",
-        location="app/services/plaid_service.py:create_transfer:entry",
-        message="create_transfer called",
-        data={"has_account_id": bool(account_id), "currency": currency, "transfer_type": transfer_type},
-    )
-    # #endregion
-
     try:
         from decimal import Decimal
         from plaid.model.transfer_authorization_create_request import TransferAuthorizationCreateRequest
@@ -585,18 +551,6 @@ def create_transfer(
         auth_resp = api.transfer_authorization_create(auth_req)
         auth = auth_resp.to_dict() if hasattr(auth_resp, "to_dict") else _plaid_obj_to_dict(auth_resp)
 
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H1",
-            location="app/services/plaid_service.py:create_transfer:auth",
-            message="transfer authorization result",
-            data={
-                "decision": auth.get("decision") or auth.get("authorization", {}).get("decision"),
-                "rationale": auth.get("rationale") or auth.get("authorization", {}).get("rationale"),
-            },
-        )
-        # #endregion
-
         # Decision handling
         decision = (auth.get("decision") or auth.get("authorization", {}).get("decision") or "").lower()
         if decision and decision not in ("approved",):
@@ -616,26 +570,9 @@ def create_transfer(
         create_resp = api.transfer_create(create_req)
         transfer = create_resp.to_dict() if hasattr(create_resp, "to_dict") else _plaid_obj_to_dict(create_resp)
 
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H1",
-            location="app/services/plaid_service.py:create_transfer:created",
-            message="transfer created",
-            data={"has_transfer_id": bool((transfer.get("transfer") or {}).get("id") or transfer.get("id"))},
-        )
-        # #endregion
-
         return {"authorization": auth, "transfer": transfer}
     except Exception as e:
         logger.warning("Plaid transfer flow failed: %s", e)
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H1",
-            location="app/services/plaid_service.py:create_transfer:exception",
-            message="transfer flow exception",
-            data={"error": str(e)[:300]},
-        )
-        # #endregion
         return {"error": str(e)}
 
 
@@ -662,15 +599,6 @@ def create_payment_initiation(
       - {"mode": "payment_initiation", "recipient": {...}, "payment": {...}}
       - {"error": "..."}
     """
-    # #region agent log
-    _agent_debug_log(
-        hypothesisId="H2",
-        location="app/services/plaid_service.py:create_payment_initiation:entry",
-        message="create_payment_initiation called",
-        data={"has_recipient": bool(recipient_name and iban), "currency": currency, "payment_type": payment_type},
-    )
-    # #endregion
-
     # UK/EU Payment Initiation path (requires recipient info)
     if recipient_name and iban:
         api, err = _get_plaid_client()
@@ -713,26 +641,9 @@ def create_payment_initiation(
             payment_resp = api.payment_initiation_payment_create(payment_req)
             payment = payment_resp.to_dict() if hasattr(payment_resp, "to_dict") else _plaid_obj_to_dict(payment_resp)
 
-            # #region agent log
-            _agent_debug_log(
-                hypothesisId="H2",
-                location="app/services/plaid_service.py:create_payment_initiation:pi_created",
-                message="payment initiation recipient+payment created",
-                data={"has_recipient_id": True, "has_payment_id": bool(payment.get("payment_id") or payment.get("id"))},
-            )
-            # #endregion
-
             return {"mode": "payment_initiation", "recipient": recipient, "payment": payment}
         except Exception as e:
             logger.warning("Plaid payment initiation flow failed: %s", e)
-            # #region agent log
-            _agent_debug_log(
-                hypothesisId="H2",
-                location="app/services/plaid_service.py:create_payment_initiation:pi_exception",
-                message="payment initiation exception",
-                data={"error": str(e)[:300]},
-            )
-            # #endregion
             return {"error": str(e)}
 
     # Default: US Transfer path
@@ -756,15 +667,6 @@ def create_layer_session(*, template_id: str, client_user_id: str) -> Dict[str, 
     if err:
         return {"error": err}
 
-    # #region agent log
-    _agent_debug_log(
-        hypothesisId="H3",
-        location="app/services/plaid_service.py:create_layer_session:entry",
-        message="create_layer_session called",
-        data={"has_template_id": bool(template_id), "has_client_user_id": bool(client_user_id)},
-    )
-    # #endregion
-
     try:
         # Not all plaid-python versions include Layer models/methods; use getattr defensively.
         from plaid.model.session_token_create_request import SessionTokenCreateRequest  # type: ignore
@@ -787,14 +689,6 @@ def create_layer_session(*, template_id: str, client_user_id: str) -> Dict[str, 
         return {"link_token": link_token, "raw": d}
     except Exception as e:
         logger.warning("Plaid layer session token create failed: %s", e)
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H3",
-            location="app/services/plaid_service.py:create_layer_session:exception",
-            message="layer session exception",
-            data={"error": str(e)[:300]},
-        )
-        # #endregion
         return {"error": str(e)}
 
 
