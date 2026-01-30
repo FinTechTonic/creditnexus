@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
@@ -112,6 +112,7 @@ class UserRegister(BaseModel):
     display_name: str
     organization_identifier: Optional[str] = None  # Organization alias, blockchain address, or key
     organization_id: Optional[int] = None  # FK to organizations.id (optional)
+    invited_role: Optional[str] = None  # Org role when signing up via invite (e.g. member, admin)
     implementation_ids: Optional[List[int]] = None  # Implementation selection (multi-select)
     
     @field_validator("password")
@@ -507,7 +508,12 @@ def _hydrate_user_context(user: User, db: Session) -> Dict[str, Any]:
 
 
 @jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(request: Request, user_data: UserRegister, db: Session = Depends(get_db)):
+async def register(
+    request: Request,
+    user_data: UserRegister,
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+):
     """Register a new user account.
 
     Password requirements:
@@ -535,12 +541,23 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
                 detail="One or more implementations are invalid or inactive"
             )
 
+    # When signing up via invite (organization_id + invited_role), store pending org/role in profile_data
+    # until admin approves; do not set user.organization_id until approval.
+    org_id_for_user = user_data.organization_id
+    profile_data = None
+    if user_data.invited_role is not None and user_data.organization_id is not None:
+        org_id_for_user = None
+        profile_data = {
+            "pending_organization_id": user_data.organization_id,
+            "invited_role": user_data.invited_role,
+        }
     user = User(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         display_name=user_data.display_name,
         organization_identifier=user_data.organization_identifier,
-        organization_id=user_data.organization_id,
+        organization_id=org_id_for_user,
+        profile_data=profile_data,
         role=UserRole.ANALYST.value,
         is_active=False,  # Require admin approval
         is_email_verified=False,
@@ -575,6 +592,14 @@ async def register(request: Request, user_data: UserRegister, db: Session = Depe
     )
     db.add(audit_log)
     db.commit()
+
+    # Enqueue post-signup tasks: populate dashboard from Plaid + person search (parallel)
+    if background_tasks:
+        try:
+            from app.services.signup_service import run_post_signup_tasks
+            background_tasks.add_task(run_post_signup_tasks, user.id)
+        except Exception as e:
+            logger.debug("Signup background tasks not added: %s", e)
 
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)

@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.permissions import has_permission, PERMISSION_TRADE_VIEW
 from app.db import get_db
 from app.db.models import PlaidUsageTracking, User, UserImplementationConnection
+from app.services.entitlement_service import has_org_unlocked
 from app.services.payment_gateway_service import PaymentGatewayService
 from app.services.plaid_service import (
     create_link_token,
@@ -93,12 +94,23 @@ async def banking_status(
     return BankingStatusResponse(plaid_enabled=plaid_enabled, connected=connected)
 
 
+_ORG_UNLOCK_402_MESSAGE = (
+    "Complete initial $2 payment or subscription to link accounts and open accounts."
+)
+
+
 @router.get("/link-token", response_model=Dict[str, Any])
 async def banking_link_token(
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
     """Create a Plaid Link token to initialize Link in the frontend."""
     _plaid_ok()
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
     out = create_link_token(current_user.id)
     if "error" in out:
         raise HTTPException(status_code=502, detail=out["error"])
@@ -113,6 +125,11 @@ async def banking_connect(
 ):
     """Exchange Plaid public_token and store access_token in UserImplementationConnection."""
     _plaid_ok()
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
 
     out = exchange_public_token(body.public_token)
     if "error" in out:

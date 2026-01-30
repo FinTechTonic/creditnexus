@@ -159,11 +159,22 @@ class InquiryStatus(str, enum.Enum):
 
 
 class SubscriptionTier(str, enum.Enum):
-    """Subscription tier levels."""
+    """Subscription tier levels. FREE = pay-as-you-go (no included credits). TIER_10/15 = $10/$15 per month with credits + Plaid cover."""
     FREE = "free"
     PRO = "pro"
     PREMIUM = "premium"
     LIFETIME = "lifetime"
+    TIER_10 = "tier_10"   # $10/month; monthly credits + N Plaid refreshes included
+    TIER_15 = "tier_15"   # $15/month; higher credits + more Plaid refreshes included
+
+
+class ByokProvider(str, enum.Enum):
+    """BYOK (Bring Your Own Keys) providers – crypto and trading only. Plaid is excluded (Link Accounts)."""
+
+    ALPACA = "alpaca"
+    POLYGON = "polygon"
+    POLYMARKET = "polymarket"
+    OTHER = "other"
 
 
 class SubscriptionType(str, enum.Enum):
@@ -317,6 +328,12 @@ class User(Base):
         cascade="all, delete-orphan",
         foreign_keys="AlpacaCustomerAccount.user_id",
     )
+    brokerage_ach_relationships = relationship(
+        "BrokerageAchRelationship",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="BrokerageAchRelationship.user_id",
+    )
     organization_identifier = Column(EncryptedString(255), nullable=True, index=True)  # Organization alias, blockchain address, or key
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])
@@ -366,6 +383,14 @@ class User(Base):
     consent_records = relationship("ConsentRecord", back_populates="user", cascade="all, delete-orphan")
     data_processing_requests = relationship("DataProcessingRequest", foreign_keys="DataProcessingRequest.user_id", back_populates="user", cascade="all, delete-orphan")
 
+    # BYOK (Bring Your Own Keys) – crypto and trading keys only
+    byok_keys = relationship(
+        "UserByokKey",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="UserByokKey.user_id",
+    )
+
     def to_dict(self):
         """Convert model to dictionary."""
         return {
@@ -390,6 +415,26 @@ class User(Base):
             "organization_id": self.organization_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class UserByokKey(Base):
+    """Per-user BYOK (Bring Your Own Keys) – crypto and trading providers only. One row per (user, provider)."""
+
+    __tablename__ = "user_byok_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, index=True)  # ByokProvider value
+    provider_type = Column(String(64), nullable=True)  # e.g. alpaca_paper, alpaca_live
+    credentials_encrypted = Column(EncryptedJSON(), nullable=True)  # Provider-specific: api_key, api_secret, etc.
+    is_verified = Column(Boolean, default=False, nullable=False)
+    unlocks_trading = Column(Boolean, default=False, nullable=False)  # True only for Alpaca when set
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="byok_keys", foreign_keys=[user_id])
+
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_byok_provider"),)
 
 
 class Document(Base):
@@ -3914,6 +3959,44 @@ class AlpacaCustomerAccount(Base):
             "status": self.status,
             "currency": self.currency,
             "action_required_reason": self.action_required_reason,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class BrokerageAchRelationship(Base):
+    """ACH relationship for brokerage funding (Plaid processor token → Alpaca). One per linked bank per Alpaca account."""
+
+    __tablename__ = "brokerage_ach_relationships"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    alpaca_account_id = Column(String(64), nullable=False, index=True)
+    alpaca_relationship_id = Column(String(64), nullable=False, index=True)  # Alpaca relationship id
+    plaid_account_id = Column(String(64), nullable=True)
+    nickname = Column(String(255), nullable=True)
+    status = Column(String(32), nullable=True)  # e.g. QUEUED, APPROVED from Alpaca
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="brokerage_ach_relationships", foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "alpaca_account_id", "alpaca_relationship_id",
+            name="uq_brokerage_ach_user_account_relationship",
+        ),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "alpaca_account_id": self.alpaca_account_id,
+            "alpaca_relationship_id": self.alpaca_relationship_id,
+            "plaid_account_id": self.plaid_account_id,
+            "nickname": self.nickname,
+            "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

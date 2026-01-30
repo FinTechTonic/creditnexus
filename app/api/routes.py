@@ -8,7 +8,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Request, Form, Body
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
 import pandas as pd
@@ -38,6 +38,8 @@ from app.services.clause_cache_service import ClauseCacheService
 from app.services.file_storage_service import FileStorageService
 from app.services.deal_service import DealService
 from app.services.profile_extraction_service import ProfileExtractionService
+from app.services.payment_gateway_service import PaymentGatewayService, billable_402_response
+from app.models.cdm_payment import PaymentType
 from app.chains.document_retrieval_chain import DocumentRetrievalService, add_user_profile, search_user_profiles
 from app.utils.audit import log_audit_action
 from fastapi import Request
@@ -958,6 +960,16 @@ async def research_person(
     - Updates deal timeline
     - Generates audit report
     """
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="universal",
+        amount=1.0,
+        feature="people_search",
+        payment_type=PaymentType.BILLABLE_FEATURE,
+        cost_usd=Decimal("0.10"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        return billable_402_response(gate)
     try:
         from app.workflows.peoplehub_research_graph import execute_peoplehub_research
         from app.services.psychometric_analysis_service import analyze_individual
@@ -4146,6 +4158,16 @@ async def digitizer_chatbot_launch_workflow(
     Returns:
         Workflow launch result with status and CDM events
     """
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="universal",
+        amount=1.0,
+        feature="agent_workflow",
+        payment_type=PaymentType.BILLABLE_FEATURE,
+        cost_usd=Decimal("0.10"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        return billable_402_response(gate)
     from app.services.digitizer_chatbot_service import DigitizerChatbotService
     
     try:
@@ -4431,6 +4453,17 @@ async def extract_profile(
     Returns:
         Extracted profile data in UserProfileData format
     """
+    if current_user:
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=1.0,
+            feature="profile_extract",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=Decimal("0.10"),
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return billable_402_response(gate)
     from app.chains.profile_extraction_chain import extract_profile_data
     
     try:
@@ -11268,6 +11301,17 @@ async def extract_profile_from_documents(
     Returns:
         Profile extraction result with structured profile data
     """
+    if current_user:
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=1.0,
+            feature="profile_extract",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=Decimal("0.10"),
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return billable_402_response(gate)
     from app.services.profile_extraction_service import ProfileExtractionService
     from app.models.user_profile import UserProfileData
     import json
@@ -11522,6 +11566,15 @@ async def approve_signup(
         user.signup_reviewed_at = datetime.utcnow()
         user.signup_reviewed_by = current_user.id
         user.signup_rejection_reason = None
+
+        # If user was invited to an org (pending_organization_id + invited_role), assign org and role
+        if user.profile_data and isinstance(user.profile_data, dict):
+            pending_org_id = user.profile_data.get("pending_organization_id")
+            invited_role = user.profile_data.get("invited_role")
+            if pending_org_id is not None and invited_role is not None:
+                user.organization_id = int(pending_org_id) if pending_org_id is not None else None
+                user.organization_role = str(invited_role)
+                user.profile_data = {k: v for k, v in user.profile_data.items() if k not in ("pending_organization_id", "invited_role")}
         
         db.commit()
         db.refresh(user)
@@ -11638,6 +11691,47 @@ async def reject_signup(
             status_code=500,
             detail={"status": "error", "message": f"Failed to reject signup: {str(e)}"}
         )
+
+
+@router.post("/admin/signups/{user_id}/verify-certification")
+async def verify_signup_certification(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Mark a user's optional FINRA/certification as reviewed by admin (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "error", "message": f"User {user_id} not found"}
+        )
+    if not user.profile_data or not isinstance(user.profile_data, dict):
+        user.profile_data = {}
+    user.profile_data["certification_reviewed_at"] = datetime.utcnow().isoformat()
+    user.profile_data["certification_reviewed_by"] = current_user.id
+    db.commit()
+    db.refresh(user)
+    log_audit_action(
+        db=db,
+        action=AuditAction.UPDATE,
+        target_type="user",
+        target_id=user.id,
+        user_id=current_user.id,
+        metadata={"certification_verified": True},
+        request=request
+    )
+    return {
+        "status": "success",
+        "message": "Certification marked as reviewed",
+        "data": user.to_dict()
+    }
 
 
 # ============================================================================

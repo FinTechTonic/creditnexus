@@ -67,17 +67,19 @@ export function PaymentRequiredModal({
 
   // Determine available payment methods based on payment type and configuration
   const availableMethods: PaymentMethod[] = [];
-  
-  // MetaMask/x402 is always available for blockchain payments
-  if (facilitatorUrl || paymentType === 'notarization_fee' || paymentType === 'subscription_upgrade' || paymentType === 'tranche_purchase') {
+  const isBillableFeature = paymentType === 'billable_feature' || (paymentType && paymentType.startsWith('stock_prediction_'));
+
+  // MetaMask/x402 for blockchain payments, billable features, and unified funding (credit top-up, Polymarket, Alpaca)
+  const isFundingType = paymentType === 'credit_top_up' || paymentType === 'polymarket_funding' || paymentType === 'alpaca_funding';
+  if (facilitatorUrl || paymentType === 'notarization_fee' || paymentType === 'subscription_upgrade' || paymentType === 'tranche_purchase' || isBillableFeature || isFundingType) {
     availableMethods.push('metamask', 'facilitator');
   }
-  
-  // RevenueCat for subscription upgrades
-  if (paymentType === 'subscription_upgrade' || paymentType === 'org_admin_upgrade') {
+
+  // RevenueCat for subscription upgrades, billable features, and credit top-up
+  if (paymentType === 'subscription_upgrade' || paymentType === 'org_admin_upgrade' || isBillableFeature || paymentType === 'credit_top_up') {
     availableMethods.push('revenuecat');
   }
-  
+
   // Plaid for bank-based payments (future)
   if (paymentType === 'plaid_accounts_get' || paymentType === 'plaid_balances_get' || paymentType === 'plaid_transactions_get') {
     availableMethods.push('plaid');
@@ -87,6 +89,19 @@ export function PaymentRequiredModal({
   if (availableMethods.length === 0 && facilitatorUrl) {
     availableMethods.push('facilitator');
   }
+
+  const billableMessage = isBillableFeature
+    ? (payload?.message || 'Purchase credits or subscribe for $10/$15 to use this feature.')
+    : null;
+
+  const fundingMessage =
+    paymentType === 'credit_top_up'
+      ? (payload?.message || 'Add credits to your account. Pay with MetaMask, facilitator, or RevenueCat.')
+      : paymentType === 'polymarket_funding'
+        ? (payload?.message || 'Fund your Polymarket proxy. Pay with MetaMask or facilitator.')
+        : paymentType === 'alpaca_funding'
+          ? (payload?.message || 'Fund brokerage. Pay with MetaMask or facilitator.')
+          : null;
 
   const handleConnectWallet = async () => {
     setError(null);
@@ -162,6 +177,8 @@ export function PaymentRequiredModal({
         productId = 'org_admin';
       } else if (paymentType === 'subscription_upgrade') {
         productId = 'subscription_upgrade';
+      } else if (paymentType === 'credit_top_up') {
+        productId = 'credit_top_up';
       }
 
       // RevenueCat payment flow
@@ -276,7 +293,7 @@ export function PaymentRequiredModal({
           <CardContent className="space-y-4">
             <div className="rounded-lg border border-yellow-700/40 bg-yellow-900/10 p-4">
               <div className="text-sm text-slate-300">
-                {payload?.message || 'Payment is required to continue.'}
+                {billableMessage ?? fundingMessage ?? payload?.message ?? 'Payment is required to continue.'}
               </div>
               {(usd || credits) && (
                 <div className="mt-3 text-xs text-slate-400">

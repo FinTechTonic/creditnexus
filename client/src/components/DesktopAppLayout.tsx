@@ -45,6 +45,8 @@ import { AssetAlertsView } from '@/apps/asset-alerts/AssetAlertsView';
 import { PortfolioRiskView } from '@/apps/portfolio-risk/PortfolioRiskView';
 import { FilingStatusDashboard } from '@/components/FilingStatusDashboard';
 import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
+import { PolymarketTrading } from '@/components/polymarket/PolymarketTrading';
+import { PolymarketFunding } from '@/components/polymarket/PolymarketFunding';
 import { BridgeBuilder } from '@/components/BridgeBuilder';
 import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { UserSettings } from '@/pages/UserSettings';
@@ -1249,7 +1251,41 @@ export function DesktopAppLayout() {
           {activeApp === 'asset-alerts' && <AssetAlertsView />}
           {activeApp === 'portfolio-risk' && <PortfolioRiskView />}
           {activeApp === 'trading' && <TradingDashboard />}
-          {activeApp === 'polymarket' && <MarketDashboard />}
+          {activeApp === 'polymarket' && (() => {
+            const tab = new URLSearchParams(location.search).get('tab') || 'markets';
+            return (
+              <div className="h-full flex flex-col">
+                <div className="flex gap-1 border-b border-border/50 px-2 py-1 shrink-0">
+                  <Button
+                    variant={tab === 'markets' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    asChild
+                  >
+                    <Link to="/app/polymarket?tab=markets">Markets</Link>
+                  </Button>
+                  <Button
+                    variant={tab === 'trading' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    asChild
+                  >
+                    <Link to="/app/polymarket?tab=trading">Trading</Link>
+                  </Button>
+                  <Button
+                    variant={tab === 'funding' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    asChild
+                  >
+                    <Link to="/app/polymarket?tab=funding">Funding</Link>
+                  </Button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-auto">
+                  {tab === 'markets' && <MarketDashboard />}
+                  {tab === 'trading' && <PolymarketTrading />}
+                  {tab === 'funding' && <PolymarketFunding />}
+                </div>
+              </div>
+            );
+          })()}
           {activeApp === 'bridge' && <BridgeBuilder />}
           {activeApp === 'green-lens' && <GreenLens />}
           {activeApp === 'document-generator' && (

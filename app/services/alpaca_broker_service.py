@@ -225,6 +225,45 @@ class AlpacaBrokerClient:
         }
         return self._request("POST", f"/v1/accounts/{account_id}/ach_relationships", json=payload)
 
+    def create_ach_relationship_with_processor_token(
+        self,
+        account_id: str,
+        processor_token: str,
+    ) -> Dict[str, Any]:
+        """
+        POST /v1/accounts/{account_id}/ach_relationships — Create ACH relationship using
+        Plaid processor token (no raw account/routing stored). Returns full response
+        (id = relationship_id, status, etc.).
+        """
+        payload = {"processor_token": processor_token}
+        return self._request("POST", f"/v1/accounts/{account_id}/ach_relationships", json=payload)
+
+    def get_transfer(self, account_id: str, transfer_id: str) -> Dict[str, Any]:
+        """GET /v1/accounts/{account_id}/transfers/{transfer_id} — Get transfer status."""
+        return self._request("GET", f"/v1/accounts/{account_id}/transfers/{transfer_id}")
+
+    def list_transfers(
+        self,
+        account_id: str,
+        limit: Optional[int] = None,
+        after: Optional[str] = None,
+        direction: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """GET /v1/accounts/{account_id}/transfers — List transfers."""
+        params: Dict[str, Any] = {}
+        if limit is not None:
+            params["limit"] = limit
+        if after:
+            params["after"] = after
+        if direction:
+            params["direction"] = direction
+        data = self._request(
+            "GET",
+            f"/v1/accounts/{account_id}/transfers",
+            params=params if params else None,
+        )
+        return data.get("transfers") if isinstance(data.get("transfers"), list) else []
+
     def create_transfer(
         self,
         account_id: str,
@@ -270,3 +309,30 @@ def get_broker_client() -> Optional[AlpacaBrokerClient]:
     k = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
     s = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
     return AlpacaBrokerClient(api_key=k, api_secret=s, base_url=base_url)
+
+
+def validate_alpaca_user_key(api_key: str, api_secret: str, paper: bool) -> bool:
+    """
+    Validate user-provided Alpaca Trading API key by calling GET /v2/account.
+    Used for BYOK: user's key unlocks trading. Do not log raw secret.
+    """
+    base_url = (
+        "https://paper-api.alpaca.markets"
+        if paper
+        else "https://api.alpaca.markets"
+    )
+    url = f"{base_url.rstrip('/')}/v2/account"
+    headers = {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": api_secret,
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            logger.info("BYOK Alpaca key validated (paper=%s)", paper)
+            return True
+        logger.debug("BYOK Alpaca key validation failed: status %s", resp.status_code)
+        return False
+    except requests.RequestException as e:
+        logger.warning("BYOK Alpaca key validation request failed: %s", e)
+        return False

@@ -18,6 +18,7 @@ from app.auth.jwt_auth import get_current_user
 from app.core.config import settings
 from app.db import get_db
 from app.db.models import User
+from app.services.subscription_service import SubscriptionService
 from app.models.cdm import Currency, Party
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,7 @@ async def post_upgrade(
 async def post_org_admin_upgrade(
     body: UpgradeRequest,
     request: Request,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -266,8 +268,12 @@ async def post_revenuecat_purchase(
     elif body.product_id == "subscription_upgrade":
         entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
         duration = "P1M"  # Monthly subscription
+    elif body.product_id == "mobile_app":
+        entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
+        duration = "P1Y"  # Mobile app purchase: 1-year entitlement + instant credits
     else:
         entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
+        duration = "P1M"
     
     # Verify purchase by checking subscriber (RevenueCat SDK handles payment verification)
     # If transaction_id or purchase_token provided, we could verify more strictly
@@ -292,13 +298,14 @@ async def post_revenuecat_purchase(
     try:
         subscription_service = SubscriptionService(db)
         
-        # For org-admin, mark as paid
+        # For org-admin, mark as paid and ensure user has an organisation
         if body.product_id == "org_admin":
             subscription_service.mark_org_admin_paid(
                 user_id=current_user.id,
                 payment_id=None,  # RevenueCat doesn't use our payment_event system
             )
-        
+            subscription_service.ensure_org_for_paying_user(current_user.id)
+
         # Allocate credits based on product
         from app.services.rolling_credits_service import RollingCreditsService
         credits_service = RollingCreditsService(db)
@@ -321,7 +328,16 @@ async def post_revenuecat_purchase(
                 feature="subscription_upgrade",
                 description="Subscription upgrade credits",
             )
-        
+        elif body.product_id == "mobile_app":
+            # Mobile app purchase: one-time credits (tier equivalent)
+            credits_service.add_credits(
+                user_id=current_user.id,
+                credit_type="universal",
+                amount=float(getattr(settings, "MOBILE_APP_PURCHASE_CREDITS", 50)),
+                feature="mobile_app_purchase",
+                description="Mobile app purchase credits",
+            )
+
         db.commit()
     except Exception as e:
         logger.error(f"Failed to allocate credits after RevenueCat purchase: {e}", exc_info=True)

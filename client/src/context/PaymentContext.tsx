@@ -130,5 +130,13 @@ function extractPaymentTypeFromUrl(url: string): string {
   if (url.includes('/settle')) return 'trade_settlement';
   if (url.includes('/disburse')) return 'loan_disbursement';
   if (url.includes('/penalty-payment')) return 'penalty_payment';
+  if (url.includes('/stock-prediction')) return 'billable_feature';
+  if (url.includes('/profile/extract')) return 'billable_feature';
+  if (url.includes('/digitizer-chatbot/launch-workflow')) return 'billable_feature';
+  if (url.includes('/business-intelligence/research-person')) return 'billable_feature';
+  if (url.includes('/green-finance/assess')) return 'billable_feature';
+  if (url.includes('/api/funding/request')) return 'credit_top_up'; // Server 402 includes payment_type from body
+  if (url.includes('/api/credits/top-up')) return 'credit_top_up';
+  if (url.includes('/api/polymarket/fund')) return 'polymarket_funding';
   return 'payment';
 }

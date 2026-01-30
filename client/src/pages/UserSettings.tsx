@@ -7,9 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useAuth, fetchWithAuth } from '@/context/AuthContext';
-import { User, Key, Bell, Shield, Mic, TrendingUp, Building2, DollarSign, Link2, Briefcase, Settings } from 'lucide-react';
+import { usePayment } from '@/context/PaymentContext';
+import { User, Key, Bell, Shield, Mic, TrendingUp, Building2, DollarSign, Link2, Briefcase, Settings, Coins } from 'lucide-react';
 import { LinkAccounts } from '@/components/LinkAccounts';
 import { BrokerageOnboarding } from '@/components/BrokerageOnboarding';
+import { BringYourOwnKeys } from '@/components/BringYourOwnKeys';
 
 interface UserPreferences {
   audio_input_mode: boolean;
@@ -44,7 +46,7 @@ interface KYCInfo {
   tax_id_type: string;
 }
 
-const SETTINGS_TAB_VALUES = ['profile', 'preferences', 'kyc-identity', 'link-accounts', 'trading-account', 'notifications', 'api-keys'] as const;
+const SETTINGS_TAB_VALUES = ['profile', 'preferences', 'kyc-identity', 'link-accounts', 'bring-your-own-keys', 'trading-account', 'notifications', 'api-keys'] as const;
 
 export function UserSettings() {
   const { user } = useAuth();
@@ -91,6 +93,12 @@ export function UserSettings() {
     tax_id_type: 'USA_SSN',
   });
   const [activeSettingsTab, setActiveSettingsTab] = useState(initialTab);
+  const [byokAccess, setByokAccess] = useState<{ allowed: boolean; reason: string } | null>(null);
+  const [tradingUnlocked, setTradingUnlocked] = useState<boolean | null>(null);
+  const { fetchWithPaymentHandling } = usePayment();
+  const [creditsAmount, setCreditsAmount] = useState('');
+  const [creditsTopUpLoading, setCreditsTopUpLoading] = useState(false);
+  const [creditsTopUpError, setCreditsTopUpError] = useState<string | null>(null);
 
   // Sync tab from URL when landing on /settings?tab=kyc-identity
   useEffect(() => {
@@ -99,6 +107,44 @@ export function UserSettings() {
       setActiveSettingsTab(t);
     }
   }, [searchParams]);
+
+  // Fetch BYOK access when user switches to Bring Your Own Keys tab
+  useEffect(() => {
+    if (activeSettingsTab !== 'bring-your-own-keys' || !user) {
+      setByokAccess(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithAuth('/api/user-settings/byok/access');
+        const data = res.ok ? await res.json() : { allowed: false, reason: 'paywall' };
+        if (!cancelled) setByokAccess({ allowed: data.allowed === true, reason: data.reason || '' });
+      } catch {
+        if (!cancelled) setByokAccess({ allowed: false, reason: 'paywall' });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSettingsTab, user]);
+
+  // Fetch trading-unlocked when user switches to Trading account tab (gate: require Alpaca BYOK)
+  useEffect(() => {
+    if (activeSettingsTab !== 'trading-account' || !user) {
+      setTradingUnlocked(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithAuth('/api/user-settings/byok/trading-unlocked');
+        const data = res.ok ? await res.json() : { unlocked: false };
+        if (!cancelled) setTradingUnlocked(data.unlocked === true);
+      } catch {
+        if (!cancelled) setTradingUnlocked(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSettingsTab, user]);
 
   const handleTabChange = (value: string) => {
     setActiveSettingsTab(value);
@@ -338,6 +384,10 @@ export function UserSettings() {
           <TabsTrigger value="link-accounts">
             <Link2 className="h-4 w-4 mr-2" />
             Link Accounts
+          </TabsTrigger>
+          <TabsTrigger value="bring-your-own-keys">
+            <Key className="h-4 w-4 mr-2" />
+            Bring Your Own Keys
           </TabsTrigger>
           <TabsTrigger value="trading-account">
             <Briefcase className="h-4 w-4 mr-2" />
@@ -820,11 +870,114 @@ export function UserSettings() {
         </TabsContent>
         
         <TabsContent value="link-accounts">
-          <LinkAccounts />
+          <div className="space-y-6">
+            <Card className="border-slate-700 bg-slate-800/50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Coins className="h-5 w-5 text-slate-400" />
+                  Add credits
+                </CardTitle>
+                <CardDescription>
+                  Top up rolling credits to use billable features. Pay with MetaMask, facilitator, or RevenueCat.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex gap-2 flex-wrap items-center">
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Amount (USD)"
+                    value={creditsAmount}
+                    onChange={(e) => setCreditsAmount(e.target.value)}
+                    className="max-w-[140px]"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={creditsTopUpLoading || !creditsAmount || Number(creditsAmount) <= 0}
+                    onClick={async () => {
+                      setCreditsTopUpError(null);
+                      setCreditsTopUpLoading(true);
+                      try {
+                        const r = await fetchWithPaymentHandling('/api/credits/top-up', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ amount: creditsAmount }),
+                        });
+                        if (r.ok) {
+                          setCreditsAmount('');
+                        } else if (r.status !== 402) {
+                          const d = await r.json().catch(() => ({}));
+                          setCreditsTopUpError(d.detail?.message ?? d.detail ?? 'Top-up failed');
+                        }
+                      } catch {
+                        setCreditsTopUpError('Top-up failed');
+                      } finally {
+                        setCreditsTopUpLoading(false);
+                      }
+                    }}
+                  >
+                    {creditsTopUpLoading ? '…' : 'Top up'}
+                  </Button>
+                </div>
+                {creditsTopUpError && <p className="text-sm text-red-400">{creditsTopUpError}</p>}
+              </CardContent>
+            </Card>
+            <LinkAccounts />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="bring-your-own-keys">
+          {byokAccess === null ? (
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-slate-400">Loading…</p>
+              </CardContent>
+            </Card>
+          ) : !byokAccess.allowed ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Bring Your Own Keys</CardTitle>
+                <CardDescription>
+                  Upgrade or complete payment to configure your own API keys for trading and market data (Alpaca, Polygon, Polymarket). Bank and brokerage linking stays in Link Accounts.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-amber-500 text-sm mb-4">BYOK access is paywalled. Subscribe or add credits to unlock.</p>
+                <Button asChild>
+                  <Link to="/settings?tab=profile">Go to profile</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <BringYourOwnKeys />
+          )}
         </TabsContent>
         
         <TabsContent value="trading-account">
-          <BrokerageOnboarding />
+          {tradingUnlocked === null ? (
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-slate-400">Loading…</p>
+              </CardContent>
+            </Card>
+          ) : !tradingUnlocked ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Trading account</CardTitle>
+                <CardDescription>
+                  Add an Alpaca key in Bring Your Own Keys to unlock trading. If you don’t have BYOK access yet, upgrade or complete payment to unlock Bring Your Own Keys first.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={() => handleTabChange('bring-your-own-keys')}>
+                  <Key className="h-4 w-4 mr-2" />
+                  Open Bring Your Own Keys
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <BrokerageOnboarding />
+          )}
         </TabsContent>
         
         <TabsContent value="notifications">
