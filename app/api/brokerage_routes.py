@@ -12,7 +12,11 @@ from app.core.config import settings
 from app.db import get_db
 from app.db.models import User, AlpacaCustomerAccount
 from app.db.models import AuditAction
-from app.services.alpaca_account_service import open_alpaca_account, AlpacaAccountServiceError
+from app.services.alpaca_account_service import (
+    open_alpaca_account,
+    AlpacaAccountServiceError,
+    sync_alpaca_account_status,
+)
 from app.services.alpaca_broker_service import get_broker_client, AlpacaBrokerAPIError
 from app.services.plaid_service import (
     create_link_token_for_brokerage,
@@ -27,9 +31,11 @@ router = APIRouter(prefix="/brokerage", tags=["brokerage"])
 
 
 class AccountStatusResponse(BaseModel):
-    """Brokerage account status for the current user."""
+    """Brokerage account status for the current user (equities + crypto per Alpaca)."""
     has_account: bool
-    status: Optional[str] = None
+    status: Optional[str] = None  # Equities: SUBMITTED, ACTIVE, ACTION_REQUIRED, REJECTED
+    crypto_status: Optional[str] = None  # Crypto: INACTIVE, ACTIVE, SUBMISSION_FAILED
+    enabled_assets: Optional[List[str]] = None  # e.g. ["us_equity"] when equities active
     alpaca_account_id: Optional[str] = None
     account_number: Optional[str] = None
     action_required_reason: Optional[str] = None
@@ -44,7 +50,7 @@ class AgreementItem(BaseModel):
 
 
 class ApplyRequest(BaseModel):
-    """Brokerage apply request: optional agreements (from UI) and Plaid KYC flag."""
+    """Brokerage apply request: optional agreements (from UI), Plaid KYC flag, and asset classes."""
     agreements: Optional[List[AgreementItem]] = Field(
         None,
         description="Client-provided agreement acceptances (signed_at from UI). Required for Plaid KYC flow.",
@@ -56,6 +62,10 @@ class ApplyRequest(BaseModel):
     prefill: Optional[Dict[str, Any]] = Field(
         None,
         description="Optional prefill from Plaid identity (given_name, family_name, address, etc.).",
+    )
+    enabled_assets: Optional[List[str]] = Field(
+        None,
+        description="Asset classes to enable: e.g. ['us_equity', 'crypto']. Defaults to ['us_equity'] if omitted.",
     )
 
 
@@ -189,9 +199,11 @@ async def brokerage_account_apply(
     agreements_override = None
     prefill_override = None
     use_plaid_kyc = False
+    enabled_assets = None
     if body:
         use_plaid_kyc = body.use_plaid_kyc
         prefill_override = body.prefill
+        enabled_assets = body.enabled_assets
         if body.agreements and len(body.agreements) >= 2:
             agreements_override = [
                 {"agreement": a.agreement, "signed_at": a.signed_at, "ip_address": a.ip_address or "0.0.0.0"}
@@ -204,6 +216,7 @@ async def brokerage_account_apply(
             agreements_override=agreements_override,
             prefill_override=prefill_override,
             use_plaid_kyc=use_plaid_kyc,
+            enabled_assets=enabled_assets,
         )
         return {
             "status": "submitted",
@@ -220,7 +233,7 @@ async def brokerage_account_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Get current user's Alpaca Broker account status."""
+    """Get current user's Alpaca Broker account status. Syncs from Alpaca so refresh returns status, crypto_status, and enabled_assets."""
     acc = (
         db.query(AlpacaCustomerAccount)
         .filter(AlpacaCustomerAccount.user_id == current_user.id)
@@ -228,9 +241,47 @@ async def brokerage_account_status(
     )
     if not acc:
         return AccountStatusResponse(has_account=False, currency="USD")
+    # Always sync from Alpaca so response includes equities status, crypto_status, enabled_assets
+    _, alpaca_data = sync_alpaca_account_status(acc, db)
+    db.refresh(acc)
+    # If sync returned no data (e.g. client unavailable), try direct fetch so we still show ACTIVE when Alpaca says so
+    if not alpaca_data:
+        client = get_broker_client()
+        if client:
+            try:
+                alpaca_data = client.get_account(acc.alpaca_account_id)
+                # Persist so DB matches Alpaca and next request does not need to re-fetch
+                if alpaca_data:
+                    _s = (alpaca_data.get("status") or "").upper()
+                    if _s and (_s != (acc.status or "").upper() or acc.account_number != (alpaca_data.get("account_number") or acc.account_number)):
+                        acc.status = _s
+                        acc.account_number = alpaca_data.get("account_number") or acc.account_number
+                        acc.action_required_reason = alpaca_data.get("action_required_reason") or alpaca_data.get("reason") or acc.action_required_reason
+                        db.commit()
+                        db.refresh(acc)
+            except AlpacaBrokerAPIError as e:
+                logger.warning("Brokerage status fallback get_account failed for %s: %s", acc.alpaca_account_id, e)
+    if alpaca_data:
+        _status = (alpaca_data.get("status") or acc.status) or ""
+        _status = (_status.upper() if isinstance(_status, str) else str(_status)) or acc.status
+        _crypto = alpaca_data.get("crypto_status")
+        if _crypto and isinstance(_crypto, str):
+            _crypto = _crypto.upper()
+        return AccountStatusResponse(
+            has_account=True,
+            status=_status,
+            crypto_status=_crypto,
+            enabled_assets=alpaca_data.get("enabled_assets") if isinstance(alpaca_data.get("enabled_assets"), list) else None,
+            alpaca_account_id=acc.alpaca_account_id,
+            account_number=alpaca_data.get("account_number") or acc.account_number,
+            action_required_reason=alpaca_data.get("action_required_reason") or alpaca_data.get("reason") or acc.action_required_reason,
+            currency=alpaca_data.get("currency") or acc.currency or "USD",
+        )
     return AccountStatusResponse(
         has_account=True,
-        status=acc.status,
+        status=(acc.status or "").upper() or None,
+        crypto_status=None,
+        enabled_assets=None,
         alpaca_account_id=acc.alpaca_account_id,
         account_number=acc.account_number,
         action_required_reason=acc.action_required_reason,

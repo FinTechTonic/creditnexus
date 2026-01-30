@@ -240,6 +240,8 @@ class UserKYCInfoUpdate(BaseModel):
     address_postal_code: Optional[str] = None
     address_country: Optional[str] = None
     phone: Optional[str] = None
+    tax_id: Optional[str] = None  # SSN / TIN for brokerage (e.g. USA: XXX-XX-XXXX)
+    tax_id_type: Optional[str] = None  # e.g. USA_SSN, USA_TIN
 
 
 @router.get("/kyc-info")
@@ -261,6 +263,8 @@ async def get_user_kyc_info(
         "address_postal_code": kyc.get("address_postal_code") or "",
         "address_country": kyc.get("address_country") or "",
         "phone": kyc.get("phone") or "",
+        "tax_id": kyc.get("tax_id") or "",
+        "tax_id_type": kyc.get("tax_id_type") or "USA_SSN",
     }
 
 

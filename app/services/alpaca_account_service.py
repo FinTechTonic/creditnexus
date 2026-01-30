@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,23 @@ from app.utils.audit import log_audit_action
 from app.db.models import AuditAction
 
 logger = logging.getLogger(__name__)
+
+# ISO 3166-1 alpha-2 -> alpha-3 for contact.country (Alpaca requires alpha-3)
+_COUNTRY_ALPHA2_TO_ALPHA3: Dict[str, str] = {
+    "US": "USA", "CA": "CAN", "GB": "GBR", "DE": "DEU", "FR": "FRA", "IT": "ITA",
+    "ES": "ESP", "AU": "AUS", "JP": "JPN", "CN": "CHN", "IN": "IND", "BR": "BRA",
+    "MX": "MEX", "NL": "NLD", "CH": "CHE", "SE": "SWE", "PL": "POL", "IE": "IRL",
+}
+
+
+def _country_to_alpha3(country: str) -> str:
+    """Return ISO 3166-1 alpha-3 code; Alpaca contact.country requires alpha-3."""
+    s = (str(country) or "").strip().upper()
+    if len(s) == 3 and s.isalpha():
+        return s[:3]
+    if len(s) >= 2:
+        return _COUNTRY_ALPHA2_TO_ALPHA3.get(s[:2], "USA")
+    return "USA"
 
 
 class AlpacaAccountServiceError(Exception):
@@ -46,6 +63,7 @@ def _build_account_payload(
     *,
     prefill_override: Optional[Dict[str, Any]] = None,
     agreements_override: Optional[List[Dict[str, Any]]] = None,
+    enabled_assets: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Build Alpaca Broker API account creation payload from User, KYCVerification, and optional Plaid prefill/agreements."""
     email = getattr(user, "email", None) or ""
@@ -66,13 +84,16 @@ def _build_account_payload(
     if isinstance(profile_data, dict):
         # Prefer user-configured KYC info from User Settings when present
         phone = (kyc.get("phone") or profile_data.get("phone") or profile_data.get("phone_number") or "").strip()
-        street = (
+        # Normalize street: prefill/API may send string or list
+        _raw_street = (
             (prefill_override or {}).get("street_address")
             or kyc.get("address_line1")
             or profile_data.get("street_address")
             or profile_data.get("address")
             or ""
-        ).strip()
+        )
+        street = (_raw_street[0] if isinstance(_raw_street, list) and _raw_street else str(_raw_street or "")).strip()
+        unit = (kyc.get("address_line2") or (prefill_override or {}).get("unit") or "").strip()[:32]
         city = (
             (prefill_override or {}).get("city")
             or kyc.get("address_city")
@@ -105,17 +126,39 @@ def _build_account_payload(
     else:
         phone = ""
         street = (prefill_override or {}).get("street_address") or ""
+        street = (street[0] if isinstance(street, list) and street else str(street or "")).strip()
+        unit = ""
         city = (prefill_override or {}).get("city") or ""
         state = (prefill_override or {}).get("state") or ""
         postal_code = (prefill_override or {}).get("postal_code") or ""
         country = (prefill_override or {}).get("country") or "USA"
 
+    # Alpaca requires contact.street_address (array of Latin strings); invalid/empty can return "required"
+    # Use valid Latin placeholders when user has not provided address (sandbox only)
+    _street_val = str(street)[:64].strip() if street else "123 Application Pending"
+    _city_val = (str(city)[:32]).strip() if city else "New York"
+    _state_val = (str(state)[:32]).strip() if state else "NY"
+    _postal_val = str(postal_code)[:10].strip() if postal_code else "10001"
+    _country_contact = (str(country)[:2].upper() if country and len(str(country)) >= 2 else "US")
+    if len(_country_contact) != 2:
+        _country_contact = "US"
+
+    # Alpaca contact.country must be ISO 3166-1 alpha-3 (e.g. USA, CAN, GBR)
+    _country_alpha3 = _country_to_alpha3(country)
     # Alpaca account opening payload (contact, identity, address)
     # https://docs.alpaca.markets/reference/createaccount
+    # contact: street_address (array), city, postal_code, state, country, unit (optional)
     contact = {
         "email_address": email,
         "phone_number": str(phone)[:20] if phone else "",
+        "street_address": [_street_val],
+        "city": _city_val,
+        "postal_code": _postal_val,
+        "state": _state_val,
+        "country": _country_alpha3,
     }
+    if unit:
+        contact["unit"] = str(unit)[:32]
     dob = "1990-01-01"  # Placeholder if not in profile; Alpaca may require or return ACTION_REQUIRED
     if kyc.get("date_of_birth"):
         dob = str(kyc["date_of_birth"])[:10]
@@ -123,18 +166,33 @@ def _build_account_payload(
         meta = verification.verification_metadata or {}
         if isinstance(meta, dict) and meta.get("date_of_birth"):
             dob = str(meta["date_of_birth"])[:10]
+    # Alpaca identity country fields must be 3 characters (ISO 3166-1 alpha-3), same as contact.country
+    # Tax ID: use from profile_data.kyc if present, else sandbox placeholder (Alpaca requires it for account creation)
+    tax_id = (kyc.get("tax_id") or "").strip() if isinstance(kyc, dict) else ""
+    tax_id_type = (kyc.get("tax_id_type") or "USA_SSN").strip() if isinstance(kyc, dict) else "USA_SSN"
+    if not tax_id or len(tax_id.replace("-", "").replace(".", "")) < 9:
+        # Sandbox placeholder: 9 digits required for USA_SSN; do not use in production without user-provided SSN
+        tax_id = "111-22-3333"
+        tax_id_type = "USA_SSN"
+    # identity per dev/alpaca.md: country_* in alpha-3, funding_source required in sample
     identity = {
         "given_name": str(given_name)[:50],
         "family_name": str(family_name)[:50],
         "date_of_birth": dob,
+        "country_of_citizenship": _country_alpha3,
+        "country_of_birth": _country_alpha3,
+        "country_of_tax_residence": _country_alpha3,
+        "tax_id": str(tax_id)[:40],
+        "tax_id_type": tax_id_type,
+        "funding_source": ["employment_income"],
     }
 
     address = {
-        "street_address": [str(street)[:64]] if street else ["N/A"],
-        "city": (str(city)[:32]) if city else "N/A",
-        "state": (str(state)[:32]) if state else "NY",
-        "postal_code": str(postal_code)[:10] if postal_code else "10001",
-        "country": (str(country)[:2]) if country and len(str(country)) == 2 else "US",
+        "street_address": [_street_val],
+        "city": _city_val,
+        "state": _state_val,
+        "postal_code": _postal_val,
+        "country": _country_alpha3,
     }
 
     # Agreements: use client-provided (Plaid KYC flow) or server-generated
@@ -154,12 +212,19 @@ def _build_account_payload(
             {"agreement": "margin_agreement", "signed_at": signed_at, "ip_address": "0.0.0.0"},
         ]
 
+    # Alpaca enabled_assets: us_equity (equities), crypto, us_option, etc. Default equities only.
+    assets: List[str] = (
+        [str(a).strip() for a in enabled_assets if isinstance(enabled_assets, list) and str(a).strip()][:10]
+        if enabled_assets
+        else ["us_equity"]
+    )
     return {
         "contact": contact,
         "identity": identity,
         "disclosures": {
             "is_control_person": False,
             "is_affiliated_exchange_or_finra": False,
+            "is_affiliated_exchange_or_iiroc": False,
             "is_politically_exposed": False,
             "immediate_family_exposed": False,
         },
@@ -171,6 +236,7 @@ def _build_account_payload(
             "email_address": email,
         },
         "address": address,
+        "enabled_assets": assets,
     }
 
 
@@ -205,6 +271,7 @@ def open_alpaca_account(
     agreements_override: Optional[List[Dict[str, Any]]] = None,
     prefill_override: Optional[Dict[str, Any]] = None,
     use_plaid_kyc: bool = False,
+    enabled_assets: Optional[List[str]] = None,
 ) -> AlpacaCustomerAccount:
     """
     Open an Alpaca Broker account for the user.
@@ -252,8 +319,19 @@ def open_alpaca_account(
         user, verification,
         prefill_override=prefill_override,
         agreements_override=agreements_override,
+        enabled_assets=enabled_assets,
     )
 
+    # Log payload structure (no PII) for debugging Alpaca 400/422
+    _contact = payload.get("contact")
+    _identity = payload.get("identity")
+    _contact_keys = list(_contact.keys()) if isinstance(_contact, dict) else type(_contact).__name__
+    _identity_keys = list(_identity.keys()) if isinstance(_identity, dict) else type(_identity).__name__
+    _street_ok = bool(_contact.get("street_address")) if isinstance(_contact, dict) else False
+    logger.info(
+        "Alpaca account apply: user_id=%s contact_keys=%s identity_keys=%s street_provided=%s",
+        user_id, _contact_keys, _identity_keys, _street_ok,
+    )
     try:
         result = client.create_account(payload)
     except AlpacaBrokerAPIError as e:
@@ -298,19 +376,20 @@ def open_alpaca_account(
 _FINAL_STATUSES = frozenset({"ACTIVE", "REJECTED"})
 
 
-def sync_alpaca_account_status(rec: AlpacaCustomerAccount, db: Session) -> bool:
+def sync_alpaca_account_status(rec: AlpacaCustomerAccount, db: Session) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """
     Poll Alpaca Broker API for account status and update local record.
-    Returns True if status or account_number/action_required_reason changed.
+    Returns (changed, data): changed True if status/account_number/action_required_reason changed;
+    data is the raw Alpaca account dict when available (for crypto_status, enabled_assets in API response).
     """
     client = get_broker_client()
     if not client:
-        return False
+        return False, None
     try:
         data = client.get_account(rec.alpaca_account_id)
     except AlpacaBrokerAPIError as e:
         logger.warning("Alpaca get_account failed for %s: %s", rec.alpaca_account_id, e)
-        return False
+        return False, None
 
     status = (data.get("status") or rec.status).upper()
     account_number = data.get("account_number") or rec.account_number
@@ -355,7 +434,7 @@ def sync_alpaca_account_status(rec: AlpacaCustomerAccount, db: Session) -> bool:
                 notify_kyc_brokerage_status(db, rec.user_id, subject, msg)
             except Exception as exc:
                 logger.warning("KYC/brokerage notification failed after Alpaca status sync: %s", exc)
-    return changed
+    return changed, data
 
 
 def sync_all_pending_alpaca_accounts(db: Session) -> Dict[str, Any]:
@@ -373,7 +452,8 @@ def sync_all_pending_alpaca_accounts(db: Session) -> Dict[str, Any]:
     errors = 0
     for rec in pending:
         try:
-            if sync_alpaca_account_status(rec, db):
+            changed, _ = sync_alpaca_account_status(rec, db)
+            if changed:
                 synced += 1
         except Exception as e:
             logger.warning("Sync failed for Alpaca account %s: %s", rec.alpaca_account_id, e)

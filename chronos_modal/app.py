@@ -6,10 +6,10 @@ from typing import Any, Dict, List
 
 import modal
 
-from modal.image import chronos_image
+from chronos_modal.image import chronos_image
 
 # Config from env: MODAL_USE_GPU (1/true/yes) and CHRONOS_DEVICE (cpu, cuda, cuda:0).
-# Set when running: modal run modal/app.py or modal deploy, e.g. MODAL_USE_GPU=1 modal deploy
+# Set when running: modal run chronos_modal/app.py or modal deploy, e.g. MODAL_USE_GPU=1 modal deploy
 _MODAL_USE_GPU = os.getenv("MODAL_USE_GPU", "").lower() in ("1", "true", "yes")
 _CHRONOS_DEVICE = os.getenv("CHRONOS_DEVICE", "cpu")
 

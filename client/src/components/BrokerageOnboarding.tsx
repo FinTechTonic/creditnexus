@@ -21,7 +21,9 @@ import { Loader2, CheckCircle2, AlertTriangle, FileUp, Send, Link2, FileText, Se
 
 interface BrokerageStatus {
   has_account: boolean;
-  status?: string;
+  status?: string; // Equities: SUBMITTED, ACTIVE, ACTION_REQUIRED, REJECTED
+  crypto_status?: string; // Crypto: INACTIVE, ACTIVE, SUBMISSION_FAILED
+  enabled_assets?: string[];
   alpaca_account_id?: string;
   account_number?: string;
   action_required_reason?: string;
@@ -44,6 +46,7 @@ const ALPACA_MARGIN_AGREEMENT_URL = 'https://alpaca.markets/disclosures';
 export function BrokerageOnboarding() {
   const [status, setStatus] = useState<BrokerageStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +63,8 @@ export function BrokerageOnboarding() {
   const [agreedCustomer, setAgreedCustomer] = useState(false);
   const [agreedMargin, setAgreedMargin] = useState(false);
   const [agreedAt, setAgreedAt] = useState<string | null>(null);
+  const [enableEquities, setEnableEquities] = useState(true);
+  const [enableCrypto, setEnableCrypto] = useState(false);
   const openedForRef = useRef<string | null>(null);
   const [brokeragePreferences, setBrokeragePreferences] = useState<{ brokerage_plaid_kyc_preferred?: boolean } | null>(null);
 
@@ -206,6 +211,10 @@ export function BrokerageOnboarding() {
       const use_plaid_kyc = prefill
         ? (brokeragePreferences?.brokerage_plaid_kyc_preferred ?? usePlaidKyc)
         : usePlaidKyc;
+      const enabled_assets: string[] = [];
+      if (enableEquities) enabled_assets.push('us_equity');
+      if (enableCrypto) enabled_assets.push('crypto');
+      if (enabled_assets.length === 0) enabled_assets.push('us_equity');
       const body = {
         use_plaid_kyc,
         agreements: [
@@ -213,6 +222,7 @@ export function BrokerageOnboarding() {
           { agreement: 'margin_agreement', signed_at: signedAt, ip_address: '0.0.0.0' },
         ],
         prefill: prefill || undefined,
+        enabled_assets,
       };
       const r = await fetchWithAuth(resolveApiUrl('/api/brokerage/account/apply'), {
         method: 'POST',
@@ -319,10 +329,22 @@ export function BrokerageOnboarding() {
               <>Open brokerage account (Plaid KYC + agreements)</>
             )}
           </CardTitle>
-          <CardDescription>
-            {isActive && status?.account_number && `Account #${status.account_number}`}
-            {isActionRequired && status?.action_required_reason}
-            {isPending && 'Your application is under review. Status updates automatically.'}
+          <CardDescription className="space-y-1">
+            {status?.has_account && status.account_number && (
+              <span className="block">Account #{status.account_number}</span>
+            )}
+            {status?.has_account && (status.status || status.crypto_status) && (
+              <span className="block text-muted-foreground">
+                Equities: <span className="font-medium capitalize">{status.status?.toLowerCase() ?? '—'}</span>
+                {status.crypto_status != null && (
+                  <> · Crypto: <span className="font-medium capitalize">{status.crypto_status.toLowerCase()}</span></>
+                )}
+              </span>
+            )}
+            {isActionRequired && status?.action_required_reason && (
+              <span className="block">{status.action_required_reason}</span>
+            )}
+            {isPending && !status?.action_required_reason && 'Your application is under review. Status updates when you refresh.'}
             {!status?.has_account && 'Complete the steps below to apply.'}
           </CardDescription>
         </CardHeader>
@@ -453,6 +475,30 @@ export function BrokerageOnboarding() {
                 </div>
               )}
 
+              {/* Asset classes: Equities and Crypto */}
+              <div className="space-y-2">
+                <Label className="text-base font-medium">Asset classes</Label>
+                <p className="text-sm text-muted-foreground">Choose which products to enable on your brokerage account.</p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable_equities"
+                      checked={enableEquities}
+                      onCheckedChange={(checked) => setEnableEquities(!!checked)}
+                    />
+                    <label htmlFor="enable_equities" className="text-sm cursor-pointer">Equities (stocks)</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable_crypto"
+                      checked={enableCrypto}
+                      onCheckedChange={(checked) => setEnableCrypto(!!checked)}
+                    />
+                    <label htmlFor="enable_crypto" className="text-sm cursor-pointer">Crypto</label>
+                  </div>
+                </div>
+              </div>
+
               {/* Step 4: Submit */}
               <div className="border-t border-slate-700 pt-4 space-y-2">
                 {brokeragePreferences?.brokerage_plaid_kyc_preferred && prefill !== null && (
@@ -512,8 +558,27 @@ export function BrokerageOnboarding() {
           )}
 
           {status?.has_account && !loading && (
-            <Button variant="outline" size="sm" onClick={fetchStatus}>
-              Refresh status
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setRefreshing(true);
+                try {
+                  await fetchStatus();
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+              disabled={refreshing}
+            >
+              {refreshing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Refreshing…
+                </>
+              ) : (
+                'Refresh status'
+              )}
             </Button>
           )}
         </CardContent>

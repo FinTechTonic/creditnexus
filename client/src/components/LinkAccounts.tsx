@@ -24,6 +24,8 @@ interface BankingStatus {
 interface BrokerageStatus {
   has_account: boolean;
   status?: string;
+  crypto_status?: string;
+  enabled_assets?: string[];
   alpaca_account_id?: string;
   account_number?: string;
   action_required_reason?: string;
@@ -230,15 +232,25 @@ export function LinkAccounts() {
             </CardHeader>
             <CardContent>
               {brokerageStatus.has_account ? (
-                <div className="flex items-center gap-2">
-                  <span className={brokerageStatus.status === 'ACTIVE' ? 'text-emerald-400' : 'text-amber-400'}>
-                    {brokerageStatus.status === 'ACTIVE' ? <CheckCircle2 className="h-5 w-5" /> : <Landmark className="h-5 w-5" />}
-                  </span>
-                  <span>
-                    {brokerageStatus.status === 'ACTIVE'
-                      ? `Active${brokerageStatus.account_number ? ` · #${brokerageStatus.account_number}` : ''}`
-                      : brokerageStatus.status ?? 'Pending'}
-                  </span>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className={brokerageStatus.status === 'ACTIVE' ? 'text-emerald-400' : 'text-amber-400'}>
+                      {brokerageStatus.status === 'ACTIVE' ? <CheckCircle2 className="h-5 w-5" /> : <Landmark className="h-5 w-5" />}
+                    </span>
+                    <span>
+                      {brokerageStatus.status === 'ACTIVE'
+                        ? `Active${brokerageStatus.account_number ? ` · #${brokerageStatus.account_number}` : ''}`
+                        : brokerageStatus.status ?? 'Pending'}
+                    </span>
+                  </div>
+                  {(brokerageStatus.status != null || brokerageStatus.crypto_status != null) && (
+                    <p className="text-sm text-muted-foreground">
+                      Equities: <span className="capitalize">{(brokerageStatus.status ?? '—').toLowerCase()}</span>
+                      {brokerageStatus.crypto_status != null && (
+                        <> · Crypto: <span className="capitalize">{brokerageStatus.crypto_status.toLowerCase()}</span></>
+                      )}
+                    </p>
+                  )}
                   {brokerageStatus.action_required_reason && (
                     <p className="text-sm text-amber-400 mt-1">{brokerageStatus.action_required_reason}</p>
                   )}

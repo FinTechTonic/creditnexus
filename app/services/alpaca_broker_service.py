@@ -142,8 +142,12 @@ class AlpacaBrokerClient:
         return data.get("orders") if isinstance(data.get("orders"), list) else []
 
     def get_positions(self, account_id: str) -> List[Dict[str, Any]]:
-        """GET /v1/trading/accounts/{account_id}/positions."""
+        """GET /v1/trading/accounts/{account_id}/positions. API may return list or { positions: [] }."""
         data = self._request("GET", f"/v1/trading/accounts/{account_id}/positions")
+        if isinstance(data, list):
+            return data
+        if not isinstance(data, dict):
+            return []
         return data.get("positions") if isinstance(data.get("positions"), list) else []
 
     def get_account_portfolio(self, account_id: str) -> Dict[str, Any]:
@@ -186,6 +190,61 @@ class AlpacaBrokerClient:
         if r.status_code == 204 or not r.content:
             return {}
         return r.json()
+
+    # -------------------------------------------------------------------------
+    # ACH & Transfers (funding)
+    # -------------------------------------------------------------------------
+
+    def list_ach_relationships(self, account_id: str) -> List[Dict[str, Any]]:
+        """
+        GET /v1/accounts/{account_id}/ach_relationships — List ACH relationships.
+        In sandbox, relationships move from QUEUED to APPROVED after ~1 minute.
+        """
+        data = self._request("GET", f"/v1/accounts/{account_id}/ach_relationships")
+        return data if isinstance(data, list) else data.get("ach_relationships") or []
+
+    def create_ach_relationship(
+        self,
+        account_id: str,
+        account_owner_name: str,
+        bank_account_type: str,
+        bank_account_number: str,
+        bank_routing_number: str,
+        nickname: str,
+    ) -> Dict[str, Any]:
+        """
+        POST /v1/accounts/{account_id}/ach_relationships — Create ACH relationship.
+        Sandbox accepts test values (e.g. bank_account_number "32131231abc", routing "123103716").
+        """
+        payload = {
+            "account_owner_name": account_owner_name,
+            "bank_account_type": bank_account_type,
+            "bank_account_number": bank_account_number,
+            "bank_routing_number": bank_routing_number,
+            "nickname": nickname,
+        }
+        return self._request("POST", f"/v1/accounts/{account_id}/ach_relationships", json=payload)
+
+    def create_transfer(
+        self,
+        account_id: str,
+        transfer_type: str,
+        relationship_id: str,
+        amount: str,
+        direction: str,
+    ) -> Dict[str, Any]:
+        """
+        POST /v1/accounts/{account_id}/transfers — Create transfer (deposit/withdrawal).
+        Sandbox: credit/debit is effective immediately.
+        direction: INCOMING (deposit) or OUTGOING (withdrawal).
+        """
+        payload = {
+            "transfer_type": transfer_type,
+            "relationship_id": relationship_id,
+            "amount": amount,
+            "direction": direction,
+        }
+        return self._request("POST", f"/v1/accounts/{account_id}/transfers", json=payload)
 
     # -------------------------------------------------------------------------
     # CIP (fully-disclosed broker-dealer only)

@@ -40,6 +40,8 @@ interface KYCInfo {
   address_postal_code: string;
   address_country: string;
   phone: string;
+  tax_id: string;
+  tax_id_type: string;
 }
 
 const SETTINGS_TAB_VALUES = ['profile', 'preferences', 'kyc-identity', 'link-accounts', 'trading-account', 'notifications', 'api-keys'] as const;
@@ -85,6 +87,8 @@ export function UserSettings() {
     address_postal_code: '',
     address_country: '',
     phone: '',
+    tax_id: '',
+    tax_id_type: 'USA_SSN',
   });
   const [activeSettingsTab, setActiveSettingsTab] = useState(initialTab);
 
@@ -167,6 +171,8 @@ export function UserSettings() {
             address_postal_code: kycInfoData.address_postal_code ?? '',
             address_country: kycInfoData.address_country ?? '',
             phone: kycInfoData.phone ?? '',
+            tax_id: kycInfoData.tax_id ?? '',
+            tax_id_type: kycInfoData.tax_id_type ?? 'USA_SSN',
           });
         }
       } catch (error) {
@@ -484,6 +490,32 @@ export function UserSettings() {
                     placeholder="Phone number (e.g. E.164)"
                   />
                 </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="profile_kyc_tax_id">Tax ID (SSN / TIN)</Label>
+                    <Input
+                      id="profile_kyc_tax_id"
+                      type="password"
+                      autoComplete="off"
+                      value={kycInfo.tax_id}
+                      onChange={(e) => setKycInfo({ ...kycInfo, tax_id: e.target.value })}
+                      placeholder="e.g. XXX-XX-XXXX (USA)"
+                    />
+                    <p className="text-xs text-slate-400">Required for brokerage application. Stored securely.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="profile_kyc_tax_id_type">Tax ID type</Label>
+                    <select
+                      id="profile_kyc_tax_id_type"
+                      value={kycInfo.tax_id_type}
+                      onChange={(e) => setKycInfo({ ...kycInfo, tax_id_type: e.target.value })}
+                      className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="USA_SSN">USA SSN</option>
+                      <option value="USA_TIN">USA TIN</option>
+                    </select>
+                  </div>
+                </div>
                 <Button onClick={handleSaveKycInfo} disabled={saving}>
                   {saving ? 'Saving...' : 'Save KYC information'}
                 </Button>
@@ -491,7 +523,7 @@ export function UserSettings() {
             </Card>
           </div>
         </TabsContent>
-        
+
         <TabsContent value="preferences">
           <Card>
             <CardHeader>
@@ -715,6 +747,32 @@ export function UserSettings() {
                     onChange={(e) => setKycInfo({ ...kycInfo, phone: e.target.value })}
                     placeholder="Phone number (e.g. E.164)"
                   />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="kyc_tax_id">Tax ID (SSN / TIN)</Label>
+                    <Input
+                      id="kyc_tax_id"
+                      type="password"
+                      autoComplete="off"
+                      value={kycInfo.tax_id}
+                      onChange={(e) => setKycInfo({ ...kycInfo, tax_id: e.target.value })}
+                      placeholder="e.g. XXX-XX-XXXX (USA)"
+                    />
+                    <p className="text-xs text-slate-400">Required for brokerage application. Stored securely.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="kyc_tax_id_type">Tax ID type</Label>
+                    <select
+                      id="kyc_tax_id_type"
+                      value={kycInfo.tax_id_type}
+                      onChange={(e) => setKycInfo({ ...kycInfo, tax_id_type: e.target.value })}
+                      className="flex h-10 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="USA_SSN">USA SSN</option>
+                      <option value="USA_TIN">USA TIN</option>
+                    </select>
+                  </div>
                 </div>
                 <Button onClick={handleSaveKycInfo} disabled={saving}>
                   {saving ? 'Saving...' : 'Save KYC information'}

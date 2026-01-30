@@ -38,16 +38,27 @@ export interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, children, ...props }, ref) => {
-    const isIconOnly = React.Children.count(children) === 1 && 
-      React.isValidElement(children) && 
+  ({ className, variant, size, asChild = false, children, ...props }, ref) => {
+    const isIconOnly = React.Children.count(children) === 1 &&
+      React.isValidElement(children) &&
       children.type?.toString().includes('Icon')
+
+    const computedClassName = cn(buttonVariants({ variant, size, className }))
+    const ariaLabel = isIconOnly && !props['aria-label'] ? 'Icon button' : props['aria-label']
+
+    if (asChild && React.Children.count(children) === 1 && React.isValidElement(children)) {
+      return React.cloneElement(children as React.ReactElement<{ className?: string; ref?: React.Ref<unknown> }>, {
+        className: cn((children as React.ReactElement).props?.className, computedClassName),
+        ref,
+        ...(ariaLabel != null && { 'aria-label': ariaLabel }),
+      })
+    }
 
     return (
       <button
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={computedClassName}
         ref={ref}
-        aria-label={isIconOnly && !props['aria-label'] ? 'Icon button' : props['aria-label']}
+        aria-label={ariaLabel}
         {...props}
       >
         {children}
