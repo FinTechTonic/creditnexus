@@ -62,13 +62,46 @@ def _build_account_payload(
     family_name = (prefill_override or {}).get("family_name") or (parts[1] if len(parts) > 1 else "User")
 
     profile_data = getattr(user, "profile_data", None) or {}
+    kyc = isinstance(profile_data, dict) and profile_data.get("kyc") or {}
     if isinstance(profile_data, dict):
-        phone = profile_data.get("phone") or profile_data.get("phone_number") or ""
-        street = (prefill_override or {}).get("street_address") or profile_data.get("street_address") or profile_data.get("address") or ""
-        city = (prefill_override or {}).get("city") or profile_data.get("city") or ""
-        state = (prefill_override or {}).get("state") or profile_data.get("state") or ""
-        postal_code = (prefill_override or {}).get("postal_code") or profile_data.get("postal_code") or profile_data.get("zip") or ""
-        country = (prefill_override or {}).get("country") or profile_data.get("country") or "USA"
+        # Prefer user-configured KYC info from User Settings when present
+        phone = (kyc.get("phone") or profile_data.get("phone") or profile_data.get("phone_number") or "").strip()
+        street = (
+            (prefill_override or {}).get("street_address")
+            or kyc.get("address_line1")
+            or profile_data.get("street_address")
+            or profile_data.get("address")
+            or ""
+        ).strip()
+        city = (
+            (prefill_override or {}).get("city")
+            or kyc.get("address_city")
+            or profile_data.get("city")
+            or ""
+        ).strip()
+        state = (
+            (prefill_override or {}).get("state")
+            or kyc.get("address_state")
+            or profile_data.get("state")
+            or ""
+        ).strip()
+        postal_code = (
+            (prefill_override or {}).get("postal_code")
+            or kyc.get("address_postal_code")
+            or profile_data.get("postal_code")
+            or profile_data.get("zip")
+            or ""
+        ).strip()
+        country = (
+            (prefill_override or {}).get("country")
+            or kyc.get("address_country")
+            or profile_data.get("country")
+            or "USA"
+        ).strip()
+        if kyc.get("legal_name"):
+            kyc_parts = str(kyc["legal_name"]).strip().split(None, 1)
+            given_name = (prefill_override or {}).get("given_name") or (kyc_parts[0] if kyc_parts else given_name)
+            family_name = (prefill_override or {}).get("family_name") or (kyc_parts[1] if len(kyc_parts) > 1 else family_name)
     else:
         phone = ""
         street = (prefill_override or {}).get("street_address") or ""
@@ -83,15 +116,18 @@ def _build_account_payload(
         "email_address": email,
         "phone_number": str(phone)[:20] if phone else "",
     }
-    identity = {
-        "given_name": str(given_name)[:50],
-        "family_name": str(family_name)[:50],
-        "date_of_birth": "1990-01-01",  # Placeholder if not in profile; Alpaca may require or return ACTION_REQUIRED
-    }
+    dob = "1990-01-01"  # Placeholder if not in profile; Alpaca may require or return ACTION_REQUIRED
+    if kyc.get("date_of_birth"):
+        dob = str(kyc["date_of_birth"])[:10]
     if isinstance(verification, KYCVerification) and getattr(verification, "verification_metadata", None):
         meta = verification.verification_metadata or {}
         if isinstance(meta, dict) and meta.get("date_of_birth"):
-            identity["date_of_birth"] = str(meta["date_of_birth"])[:10]
+            dob = str(meta["date_of_birth"])[:10]
+    identity = {
+        "given_name": str(given_name)[:50],
+        "family_name": str(family_name)[:50],
+        "date_of_birth": dob,
+    }
 
     address = {
         "street_address": [str(street)[:64]] if street else ["N/A"],
@@ -307,6 +343,18 @@ def sync_alpaca_account_status(rec: AlpacaCustomerAccount, db: Session) -> bool:
                 "previous_status": previous_status,
             },
         )
+        if status in ("ACTIVE", "ACTION_REQUIRED"):
+            try:
+                from app.services.kyc_brokerage_notification import notify_kyc_brokerage_status
+
+                subject = "Brokerage account status update"
+                if status == "ACTIVE":
+                    msg = "Your brokerage account is now active. You can place trades."
+                else:
+                    msg = "Action required on your brokerage account. Please check the app for details."
+                notify_kyc_brokerage_status(db, rec.user_id, subject, msg)
+            except Exception as exc:
+                logger.warning("KYC/brokerage notification failed after Alpaca status sync: %s", exc)
     return changed
 
 

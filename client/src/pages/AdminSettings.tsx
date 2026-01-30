@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
-import { Shield, Database, Users, Settings, Building2, Globe } from 'lucide-react';
+import { Shield, Database, Users, Settings, Building2, Globe, ExternalLink, UserCircle } from 'lucide-react';
 import { DemoDataDashboard } from '@/components/DemoDataDashboard';
 import { AdminSignupDashboard } from '@/components/AdminSignupDashboard';
 import { VerificationFileConfigEditor } from '@/apps/verification-config/VerificationFileConfigEditor';
@@ -11,6 +13,7 @@ import { PolicyEditor } from '@/apps/policy-editor/PolicyEditor';
 
 export function AdminSettings() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [isInstanceAdmin, setIsInstanceAdmin] = useState(false);
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
   
@@ -46,6 +49,58 @@ export function AdminSettings() {
           </p>
         </div>
       </div>
+
+      <Card className="mb-6 border-slate-700 bg-slate-800/30">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ExternalLink className="h-4 w-4" />
+            Quick links
+          </CardTitle>
+          <CardDescription>Jump to related admin and user areas</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          <Button variant="outline" size="sm" className="border-slate-600" asChild>
+            <Link to="/settings">
+              <UserCircle className="h-4 w-4 mr-2" />
+              User Settings
+            </Link>
+          </Button>
+          {isInstanceAdmin && (
+            <>
+              <Button variant="outline" size="sm" className="border-slate-600" asChild>
+                <Link to="/dashboard/admin-signups">
+                  <Users className="h-4 w-4 mr-2" />
+                  User Signups
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" className="border-slate-600" asChild>
+                <Link to="/app/demo-data">
+                  <Database className="h-4 w-4 mr-2" />
+                  Demo Data
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" className="border-slate-600" asChild>
+                <Link to="/app/policy-editor">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Policy Editor
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" className="border-slate-600" asChild>
+                <Link to="/app/verification-config">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Verification Config
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" className="border-slate-600" asChild>
+                <Link to="/app/whitelisting-dashboard">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Whitelisting
+                </Link>
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
       
       <Tabs defaultValue={isInstanceAdmin ? "instance" : "organization"} className="space-y-6">
         <TabsList>

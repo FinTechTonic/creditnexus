@@ -25,6 +25,8 @@ class UserPreferencesUpdate(BaseModel):
     trading_mode: bool = False
     email_notifications: bool = True
     push_notifications: bool = False
+    kyc_brokerage_notifications: bool = True
+    brokerage_plaid_kyc_preferred: bool = False
 
 
 class APIKeyCreate(BaseModel):
@@ -67,6 +69,8 @@ async def get_user_preferences(
         "trading_mode": preferences.get("trading_mode", False),
         "email_notifications": preferences.get("email_notifications", True),
         "push_notifications": preferences.get("push_notifications", False),
+        "kyc_brokerage_notifications": preferences.get("kyc_brokerage_notifications", True),
+        "brokerage_plaid_kyc_preferred": preferences.get("brokerage_plaid_kyc_preferred", False),
     }
 
 
@@ -223,6 +227,68 @@ class UserProfileUpdate(BaseModel):
     """User profile update model."""
     display_name: Optional[str] = None
     profile_image: Optional[str] = None
+
+
+class UserKYCInfoUpdate(BaseModel):
+    """KYC information used for identity verification (stored in profile_data.kyc)."""
+    legal_name: Optional[str] = None
+    date_of_birth: Optional[str] = None  # ISO date string YYYY-MM-DD
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    address_city: Optional[str] = None
+    address_state: Optional[str] = None
+    address_postal_code: Optional[str] = None
+    address_country: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@router.get("/kyc-info")
+async def get_user_kyc_info(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Get KYC-related information (legal name, DOB, address, phone) used for identity verification."""
+    kyc = {}
+    if getattr(current_user, "profile_data", None) and isinstance(current_user.profile_data, dict):
+        kyc = current_user.profile_data.get("kyc") or {}
+    return {
+        "legal_name": kyc.get("legal_name") or "",
+        "date_of_birth": kyc.get("date_of_birth") or "",
+        "address_line1": kyc.get("address_line1") or "",
+        "address_line2": kyc.get("address_line2") or "",
+        "address_city": kyc.get("address_city") or "",
+        "address_state": kyc.get("address_state") or "",
+        "address_postal_code": kyc.get("address_postal_code") or "",
+        "address_country": kyc.get("address_country") or "",
+        "phone": kyc.get("phone") or "",
+    }
+
+
+@router.put("/kyc-info")
+async def update_user_kyc_info(
+    payload: UserKYCInfoUpdate,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Update KYC-related information (stored in profile_data.kyc)."""
+    if not current_user.profile_data:
+        current_user.profile_data = {}
+    if "kyc" not in current_user.profile_data:
+        current_user.profile_data["kyc"] = {}
+    kyc = current_user.profile_data["kyc"]
+    data = payload.model_dump(exclude_none=False)
+    for key, value in data.items():
+        kyc[key] = value or ""
+    # Sync to top-level profile_data so Alpaca/brokerage prefill can use them
+    current_user.profile_data["phone"] = kyc.get("phone") or ""
+    current_user.profile_data["street_address"] = kyc.get("address_line1") or ""
+    current_user.profile_data["city"] = kyc.get("address_city") or ""
+    current_user.profile_data["state"] = kyc.get("address_state") or ""
+    current_user.profile_data["postal_code"] = kyc.get("address_postal_code") or ""
+    current_user.profile_data["country"] = kyc.get("address_country") or ""
+    db.commit()
+    db.refresh(current_user)
+    return {"status": "success"}
 
 
 @router.get("/profile")

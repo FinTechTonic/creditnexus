@@ -80,49 +80,101 @@ async def brokerage_link_token(
     return out
 
 
+def _kyc_to_prefill(profile_data: Any) -> Dict[str, Any]:
+    """Build brokerage prefill dict from user-settings KYC info (profile_data.kyc)."""
+    if not profile_data or not isinstance(profile_data, dict):
+        return {}
+    kyc = profile_data.get("kyc") or {}
+    if not kyc:
+        return {}
+    prefill: Dict[str, Any] = {}
+    legal = (kyc.get("legal_name") or "").strip()
+    if legal:
+        parts = legal.split(None, 1)
+        prefill["given_name"] = parts[0] if parts else ""
+        prefill["family_name"] = parts[1] if len(parts) > 1 else ""
+    if kyc.get("date_of_birth"):
+        prefill["date_of_birth"] = str(kyc["date_of_birth"])[:10]
+    if kyc.get("address_line1"):
+        prefill["street_address"] = str(kyc["address_line1"]).strip()
+    if kyc.get("address_city"):
+        prefill["city"] = str(kyc["address_city"]).strip()
+    if kyc.get("address_state"):
+        prefill["state"] = str(kyc["address_state"]).strip()
+    if kyc.get("address_postal_code"):
+        prefill["postal_code"] = str(kyc["address_postal_code"]).strip()
+    if kyc.get("address_country"):
+        prefill["country"] = str(kyc["address_country"]).strip()
+    return prefill
+
+
 @router.get("/prefill", response_model=Dict[str, Any])
 async def brokerage_prefill(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Get identity/account prefill from linked Plaid connection for brokerage application form."""
-    conn = get_plaid_connection(db, current_user.id)
-    if not conn or not getattr(conn, "connection_data", None) or not isinstance(conn.connection_data, dict):
-        return {"prefill": {}, "message": "No linked bank account. Link an account to prefill the form."}
-    access_token = conn.connection_data.get("access_token")
-    if not access_token:
-        return {"prefill": {}, "message": "Plaid connection missing access token."}
-    identity_resp = get_identity(access_token)
-    if "error" in identity_resp:
-        return {"prefill": {}, "message": identity_resp.get("error", "Could not fetch identity.")}
-    accounts = identity_resp.get("accounts") or []
+    """Get identity/account prefill from Plaid and/or User Settings KYC for brokerage application form."""
     prefill_data: Dict[str, Any] = {}
-    for acc in accounts:
-        owners = acc.get("owners") or []
-        for owner in owners:
-            if not isinstance(owner, dict):
-                continue
-            names = owner.get("names") or []
-            if names and isinstance(names, list):
-                full = (names[0] or "").strip()
-                parts = full.split(None, 1)
-                prefill_data["given_name"] = parts[0] if parts else ""
-                prefill_data["family_name"] = parts[1] if len(parts) > 1 else (names[1] if len(names) > 1 else "")
-            addrs = owner.get("addresses") or []
-            for a in addrs:
-                if isinstance(a, dict) and a.get("data"):
-                    d = a["data"]
-                    prefill_data["street_address"] = d.get("street") or ""
-                    prefill_data["city"] = d.get("city") or ""
-                    prefill_data["state"] = d.get("region") or ""
-                    prefill_data["postal_code"] = d.get("postal_code") or ""
-                    prefill_data["country"] = d.get("country") or "US"
-                    break
-            if prefill_data:
-                break
-        if prefill_data:
-            break
-    return {"prefill": prefill_data}
+    source = "none"
+    message = ""
+
+    # 1) Plaid identity (if linked)
+    conn = get_plaid_connection(db, current_user.id)
+    if conn and getattr(conn, "connection_data", None) and isinstance(conn.connection_data, dict):
+        access_token = conn.connection_data.get("access_token")
+        if access_token:
+            identity_resp = get_identity(access_token)
+            if "error" not in identity_resp:
+                accounts = identity_resp.get("accounts") or []
+                for acc in accounts:
+                    owners = acc.get("owners") or []
+                    for owner in owners:
+                        if not isinstance(owner, dict):
+                            continue
+                        names = owner.get("names") or []
+                        if names and isinstance(names, list):
+                            full = (names[0] or "").strip()
+                            parts = full.split(None, 1)
+                            prefill_data["given_name"] = parts[0] if parts else ""
+                            prefill_data["family_name"] = parts[1] if len(parts) > 1 else (names[1] if len(names) > 1 else "")
+                        addrs = owner.get("addresses") or []
+                        for a in addrs:
+                            if isinstance(a, dict) and a.get("data"):
+                                d = a["data"]
+                                prefill_data["street_address"] = d.get("street") or ""
+                                prefill_data["city"] = d.get("city") or ""
+                                prefill_data["state"] = d.get("region") or ""
+                                prefill_data["postal_code"] = d.get("postal_code") or ""
+                                prefill_data["country"] = d.get("country") or "US"
+                                break
+                        if prefill_data:
+                            break
+                    if prefill_data:
+                        break
+                if prefill_data:
+                    source = "plaid"
+            else:
+                message = identity_resp.get("error", "Could not fetch identity.")
+        else:
+            message = "Plaid connection missing access token."
+    else:
+        message = "No linked bank account. Link an account or fill User Settings → KYC & Identity to prefill."
+
+    # 2) Merge or fallback to User Settings KYC info
+    kyc_prefill = _kyc_to_prefill(getattr(current_user, "profile_data", None))
+    if kyc_prefill:
+        if source == "plaid":
+            for key, value in kyc_prefill.items():
+                if value and not prefill_data.get(key):
+                    prefill_data[key] = value
+            source = "both"
+        else:
+            prefill_data = kyc_prefill
+            source = "user_settings"
+        if not message and source == "user_settings":
+            message = "Prefill from User Settings → KYC & Identity. Edit there to change."
+
+    return {"prefill": prefill_data, "source": source, "message": message or None}
 
 
 @router.post("/account/apply", response_model=Dict[str, Any])

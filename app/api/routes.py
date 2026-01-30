@@ -1137,7 +1137,7 @@ class KYCComplianceRequest(BaseModel):
     deal_id: Optional[int] = Field(None, description="Optional deal ID for context")
 
 
-@router.post("/kyc/evaluate")
+@router.post("/compliance/kyc/evaluate")
 # Rate limiting: Uses slowapi default_limits (60/minute) from server.py
 async def evaluate_kyc_compliance(
     request: KYCComplianceRequest,
@@ -11453,10 +11453,22 @@ async def get_signup_details(
                 status_code=404,
                 detail={"status": "error", "message": f"User {user_id} not found"}
             )
-        
+        data = user.to_dict()
+        data["kyc_verification"] = user.kyc_verification.to_dict() if getattr(user, "kyc_verification", None) else None
+        kyc_docs = getattr(user, "kyc_documents", None) or []
+        data["kyc_documents"] = [
+            {
+                "id": d.id,
+                "document_type": d.document_type,
+                "document_category": d.document_category,
+                "verification_status": d.verification_status,
+                "document_id": d.document_id,
+            }
+            for d in kyc_docs
+        ]
         return {
             "status": "success",
-            "data": user.to_dict()
+            "data": data,
         }
     except HTTPException:
         raise

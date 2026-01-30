@@ -335,7 +335,13 @@ class User(Base):
         foreign_keys="KYCVerification.user_id",
     )
     licenses = relationship("UserLicense", back_populates="user", cascade="all, delete-orphan")
-    kyc_documents = relationship("KYCDocument", back_populates="user", cascade="all, delete-orphan")
+    # Explicit foreign_keys: KYCDocument has user_id and reviewed_by (both FK to users)
+    kyc_documents = relationship(
+        "KYCDocument",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="KYCDocument.user_id",
+    )
     
     # Admin fields
     is_instance_admin = Column(Boolean, default=False, nullable=False, index=True)
@@ -1502,10 +1508,12 @@ class KYCDocument(Base):
     extracted_data = Column(JSONB, nullable=True)  # OCR-extracted data
     ocr_confidence = Column(Float, nullable=True)
     
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Relationships
-    user = relationship("User", back_populates="kyc_documents")
+    # Relationships (foreign_keys: link to document owner, not reviewer)
+    user = relationship("User", back_populates="kyc_documents", foreign_keys=[user_id])
     kyc_verification = relationship("KYCVerification", back_populates="documents")
     document = relationship("Document")
 
@@ -1520,6 +1528,8 @@ class KYCDocument(Base):
             "verification_status": self.verification_status,
             "extracted_data": self.extracted_data,
             "ocr_confidence": self.ocr_confidence,
+            "reviewed_by": self.reviewed_by,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

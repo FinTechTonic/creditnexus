@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { usePlaidLink } from 'react-plaid-link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { fetchWithAuth } from '@/context/AuthContext';
 import { resolveApiUrl } from '@/utils/apiBase';
-import { Loader2, CheckCircle2, AlertTriangle, FileUp, Send, Link2, FileText } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertTriangle, FileUp, Send, Link2, FileText, Settings } from 'lucide-react';
 
 interface BrokerageStatus {
   has_account: boolean;
@@ -53,11 +54,14 @@ export function BrokerageOnboarding() {
   // Plaid KYC flow
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<Prefill | null>(null);
+  const [prefillSource, setPrefillSource] = useState<'plaid' | 'user_settings' | 'both' | 'none'>('none');
+  const [prefillMessage, setPrefillMessage] = useState<string | null>(null);
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [agreedCustomer, setAgreedCustomer] = useState(false);
   const [agreedMargin, setAgreedMargin] = useState(false);
   const [agreedAt, setAgreedAt] = useState<string | null>(null);
   const openedForRef = useRef<string | null>(null);
+  const [brokeragePreferences, setBrokeragePreferences] = useState<{ brokerage_plaid_kyc_preferred?: boolean } | null>(null);
 
   const fetchStatus = async () => {
     setError(null);
@@ -84,12 +88,19 @@ export function BrokerageOnboarding() {
       const r = await fetchWithAuth(resolveApiUrl('/api/brokerage/prefill'));
       if (r.ok) {
         const d = await r.json();
-        setPrefill(d.prefill && Object.keys(d.prefill).length > 0 ? d.prefill : null);
+        const hasPrefill = d.prefill && typeof d.prefill === 'object' && Object.keys(d.prefill).length > 0;
+        setPrefill(hasPrefill ? d.prefill : null);
+        setPrefillSource(d.source || 'none');
+        setPrefillMessage(d.message || null);
       } else {
         setPrefill(null);
+        setPrefillSource('none');
+        setPrefillMessage(null);
       }
     } catch {
       setPrefill(null);
+      setPrefillSource('none');
+      setPrefillMessage(null);
     } finally {
       setPrefillLoading(false);
     }
@@ -97,6 +108,22 @@ export function BrokerageOnboarding() {
 
   useEffect(() => {
     fetchStatus();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetchWithAuth(resolveApiUrl('/api/user-settings/preferences'));
+        if (r.ok && !cancelled) {
+          const d = await r.json();
+          setBrokeragePreferences(d);
+        }
+      } catch {
+        if (!cancelled) setBrokeragePreferences(null);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // When status loaded and no account yet, fetch prefill once (user may have linked Plaid earlier)
@@ -176,8 +203,11 @@ export function BrokerageOnboarding() {
     setMessage(null);
     try {
       const signedAt = agreedAt || new Date().toISOString();
+      const use_plaid_kyc = prefill
+        ? (brokeragePreferences?.brokerage_plaid_kyc_preferred ?? usePlaidKyc)
+        : usePlaidKyc;
       const body = {
-        use_plaid_kyc: usePlaidKyc,
+        use_plaid_kyc,
         agreements: [
           { agreement: 'customer_agreement', signed_at: signedAt, ip_address: '0.0.0.0' },
           { agreement: 'margin_agreement', signed_at: signedAt, ip_address: '0.0.0.0' },
@@ -326,19 +356,38 @@ export function BrokerageOnboarding() {
                 )}
               </div>
 
-              {/* Step 2: Prefill from Plaid (optional; show agreements even without prefill) */}
+              {/* Step 2: Your information (from Plaid and/or User Settings) */}
               {(prefill !== null || prefillLoading || (prefill === null && !prefillLoading)) && (
                 <div className="space-y-2 border-t border-slate-700 pt-4">
                   <Label className="text-base font-medium flex items-center gap-2">
                     <FileText className="h-4 w-4" />
-                    Step 2: Your information (from Plaid)
+                    Step 2: Your information
                   </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Name, address, and date of birth used for your application. You can edit these in{' '}
+                    <Link to="/settings?tab=kyc-identity" className="inline-flex items-center gap-1 text-emerald-400 hover:underline">
+                      <Settings className="h-3.5 w-3.5" />
+                      User Settings → KYC & Identity
+                    </Link>
+                    .
+                  </p>
                   {prefillLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
                   ) : prefill && Object.keys(prefill).length > 0 ? (
                     <div className="grid gap-2 text-sm text-muted-foreground">
+                      {(prefillSource === 'plaid' || prefillSource === 'both') && (
+                        <span className="text-emerald-400/90 text-xs">
+                          {prefillSource === 'both' ? 'Plaid + User Settings' : 'From Plaid'}
+                        </span>
+                      )}
+                      {prefillSource === 'user_settings' && (
+                        <span className="text-emerald-400/90 text-xs">From User Settings</span>
+                      )}
                       {(prefill.given_name || prefill.family_name) && (
                         <p>Name: {[prefill.given_name, prefill.family_name].filter(Boolean).join(' ')}</p>
+                      )}
+                      {prefill.date_of_birth && (
+                        <p>Date of birth: {prefill.date_of_birth}</p>
                       )}
                       {(prefill.street_address || prefill.city) && (
                         <p>
@@ -349,8 +398,17 @@ export function BrokerageOnboarding() {
                       )}
                     </div>
                   ) : !prefillLoading ? (
-                    <p className="text-sm text-muted-foreground">No Plaid identity linked. You can still apply without Plaid (admin/legacy flow) below.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Fill your name, date of birth, and address in{' '}
+                      <Link to="/settings?tab=kyc-identity" className="text-emerald-400 hover:underline">
+                        User Settings → KYC & Identity
+                      </Link>
+                      {' '}to prefill your application. You can also link Plaid above or submit without prefill (admin/legacy flow) below.
+                    </p>
                   ) : null}
+                  {prefillMessage && !prefillLoading && (
+                    <p className="text-xs text-slate-400">{prefillMessage}</p>
+                  )}
                 </div>
               )}
 
@@ -397,6 +455,9 @@ export function BrokerageOnboarding() {
 
               {/* Step 4: Submit */}
               <div className="border-t border-slate-700 pt-4 space-y-2">
+                {brokeragePreferences?.brokerage_plaid_kyc_preferred && prefill !== null && (
+                  <p className="text-sm text-emerald-400/90">Using Plaid for KYC is preferred in your settings.</p>
+                )}
                 {prefill !== null && (
                   <Button
                     onClick={() => handleApply(true)}
