@@ -730,6 +730,109 @@ def generate_cdm_notarization_event(
     }
 
 
+def generate_cdm_signature_event(
+    signature_id: str,
+    document_id: int,
+    deal_id: Optional[int],
+    signer_name: str,
+    signature_status: str,
+    signature_method: str = "digital"
+) -> Dict[str, Any]:
+    """Generate CDM-compliant signature event.
+    
+    Args:
+        signature_id: Signature record ID
+        document_id: Document ID that was signed
+        deal_id: Optional deal ID
+        signer_name: Name/email of the signer
+        signature_status: Status of the signature (completed, pending, etc.)
+        signature_method: Method of signature (digital, electronic, etc.)
+        
+    Returns:
+        CDM-compliant Signature event dictionary
+    """
+    return {
+        "eventType": "SignatureEvent",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "signature": {
+            "signatureIdentifier": {
+                "issuer": "CreditNexus_DealSignatureService",
+                "assignedIdentifier": [{"identifier": {"value": f"SIG_{signature_id}"}}]
+            },
+            "documentIdentifier": {
+                "issuer": "CreditNexus_DocumentService",
+                "assignedIdentifier": [{"identifier": {"value": str(document_id)}}]
+            },
+            "dealIdentifier": {
+                "issuer": "CreditNexus_DealService",
+                "assignedIdentifier": [{"identifier": {"value": str(deal_id)}}]
+            } if deal_id else None,
+            "signerName": signer_name,
+            "signatureStatus": signature_status,
+            "signatureMethod": signature_method,
+            "signatureDate": {"date": datetime.date.today().isoformat()}
+        },
+        "meta": {
+            "globalKey": {
+                "issuer": "CreditNexus",
+                "assignedIdentifier": [{"identifier": {"value": str(uuid.uuid4())}}]
+            },
+            "sourceSystem": "CreditNexus_DealSignatureService_v1",
+            "version": 1
+        }
+    }
+
+
+def generate_cdm_documentation_event(
+    document_id: int,
+    deal_id: Optional[int],
+    document_type: str,
+    document_category: str,
+    documentation_status: str,
+    action: str = "added"  # added, updated, completed
+) -> Dict[str, Any]:
+    """Generate CDM-compliant documentation event.
+    
+    Args:
+        document_id: Document ID
+        deal_id: Optional deal ID
+        document_type: Type of document
+        document_category: Category of document
+        documentation_status: Status of documentation (complete, pending, etc.)
+        action: Action taken (added, updated, completed)
+        
+    Returns:
+        CDM-compliant Documentation event dictionary
+    """
+    return {
+        "eventType": "DocumentationEvent",
+        "eventDate": datetime.datetime.now().isoformat(),
+        "documentation": {
+            "documentIdentifier": {
+                "issuer": "CreditNexus_DocumentService",
+                "assignedIdentifier": [{"identifier": {"value": str(document_id)}}]
+            },
+            "dealIdentifier": {
+                "issuer": "CreditNexus_DealService",
+                "assignedIdentifier": [{"identifier": {"value": str(deal_id)}}]
+            } if deal_id else None,
+            "documentType": document_type,
+            "documentCategory": document_category,
+            "documentationStatus": documentation_status,
+            "action": action,
+            "eventDate": {"date": datetime.date.today().isoformat()}
+        },
+        "meta": {
+            "globalKey": {
+                "issuer": "CreditNexus",
+                "assignedIdentifier": [{"identifier": {"value": str(uuid.uuid4())}}]
+            },
+            "sourceSystem": "CreditNexus_DealSignatureService_v1",
+            "version": 1
+        }
+    }
+
+
 def generate_cdm_securitization_notarization(
     pool_id: str,
     notarization_hash: str,

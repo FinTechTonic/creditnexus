@@ -39,6 +39,12 @@ interface SignatureStatus {
   requested_at: string;
   completed_at?: string;
   expires_at?: string;
+  // Phase 2 native fields
+  access_token?: string;
+  coordinates?: Record<string, any>;
+  audit_data?: Record<string, any>;
+  metamask_signature?: string;
+  metamask_signed_at?: string;
 }
 
 interface SignatureStatusProps {
@@ -313,6 +319,36 @@ export function SignatureStatus({ documentId, signatureId }: SignatureStatusProp
               </span>
             )}
           </div>
+
+          {/* Native Signing Portal Link (Phase 2) */}
+          {signature.signature_provider === 'internal' && signature.access_token && signature.signature_status === 'pending' && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <ExternalLink className="h-5 w-5 text-emerald-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-emerald-400">Native Signing Portal</p>
+                  <p className="text-xs text-slate-300">
+                    Share this secure link with the signer to complete the signature natively in CreditNexus.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-slate-950 p-2 rounded text-[10px] text-slate-300 truncate">
+                  {window.location.origin}/signers/{signature.access_token}
+                </code>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="h-8 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/signers/${signature.access_token}`);
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Expiry Warning */}
           {signature.expires_at && daysUntilExpiry !== null && daysUntilExpiry <= 7 && (

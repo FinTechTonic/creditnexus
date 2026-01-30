@@ -4,10 +4,16 @@ Plaid bank integration (Trading Phase 1).
 - create_link_token: for Plaid Link UI
 - exchange_public_token: store access_token in UserImplementationConnection
 - get_accounts, get_balances, get_transactions
+
+Expanded (Portfolio-First / Plaid-First):
+- investments, liabilities, identity
+- income / assets / consumer report (Plaid Check) / statements (where available)
+- (future) identity verification + monitor/beacon + transfer/payment initiation + layer
 """
 
 import logging
 from datetime import date, timedelta
+import os
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -101,6 +107,43 @@ def create_link_token(user_id: int) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+def create_link_token_for_brokerage(user_id: int) -> Dict[str, Any]:
+    """
+    Create a Plaid Link token for brokerage onboarding (link-for-brokerage).
+    Uses auth + identity products for account verification and form prefill.
+    Returns {"link_token": str} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        from plaid.model.link_token_create_request import LinkTokenCreateRequest
+        from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+        from plaid.model.country_code import CountryCode
+        from plaid.model.products import Products
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+
+    user = LinkTokenCreateRequestUser(client_user_id=str(user_id))
+    # Auth (routing/account verification) + Identity (name, address) for brokerage prefill
+    products = [Products("auth"), Products("identity")]
+    country_codes = [CountryCode("US")]
+    req = LinkTokenCreateRequest(
+        user=user,
+        client_name="CreditNexus Brokerage",
+        products=products,
+        country_codes=country_codes,
+        language="en",
+    )
+    try:
+        resp = api.link_token_create(req)
+        return {"link_token": resp.link_token}
+    except Exception as e:
+        logger.warning("Plaid link_token_create (brokerage) failed: %s", e)
+        return {"error": str(e)}
+
+
 def exchange_public_token(public_token: str) -> Dict[str, Any]:
     """
     Exchange public_token for access_token and item_id.
@@ -119,6 +162,102 @@ def exchange_public_token(public_token: str) -> Dict[str, Any]:
         return {"error": f"Plaid models: {e}"}
     except Exception as e:
         logger.warning("Plaid item_public_token_exchange failed: %s", e)
+        return {"error": str(e)}
+
+
+def _get_plaid_base_url() -> tuple[str, str, str]:
+    """Return (base_url, client_id, secret) for direct API calls; or raise. Used for processor token."""
+    if not getattr(settings, "PLAID_ENABLED", False):
+        return "", "", ""
+    cid = getattr(settings, "PLAID_CLIENT_ID", None)
+    secret = getattr(settings, "PLAID_SECRET", None)
+    if not cid or not secret:
+        return "", "", ""
+    cid = cid.get_secret_value() if hasattr(cid, "get_secret_value") else str(cid)
+    secret = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+    env = (getattr(settings, "PLAID_ENV", None) or "sandbox").lower()
+    hosts = {
+        "production": "https://production.plaid.com",
+        "development": "https://development.plaid.com",
+        "sandbox": "https://sandbox.plaid.com",
+    }
+    base = hosts.get(env, "https://sandbox.plaid.com")
+    return base, cid, secret
+
+
+def create_processor_token(
+    access_token: str,
+    account_id: str,
+    processor: str = "alpaca",
+) -> Dict[str, Any]:
+    """
+    Create a Plaid processor token for a partner (e.g. Alpaca).
+    Call POST /processor/token/create; returns {"processor_token": str} or {"error": str}.
+    Never log the processor_token value.
+    """
+    base, cid, secret = _get_plaid_base_url()
+    if not base or not cid or not secret:
+        return {"error": "Plaid is disabled or PLAID_CLIENT_ID/PLAID_SECRET missing"}
+    try:
+        import requests
+        url = f"{base}/processor/token/create"
+        payload = {
+            "client_id": cid,
+            "secret": secret,
+            "access_token": access_token,
+            "account_id": account_id,
+            "processor": processor,
+        }
+        r = requests.post(url, json=payload, timeout=30)
+        data = r.json() if r.content else {}
+        if r.status_code != 200:
+            err = data.get("error_message") or data.get("error") or r.text or f"HTTP {r.status_code}"
+            logger.warning("Plaid processor_token create failed: %s", err)
+            return {"error": err}
+        pt = data.get("processor_token")
+        if not pt:
+            return {"error": "processor_token missing in response"}
+        return {"processor_token": pt}
+    except ImportError:
+        return {"error": "requests not available"}
+    except Exception as e:
+        logger.warning("Plaid processor_token create failed: %s", e)
+        return {"error": str(e)}
+
+
+def create_link_token_for_funding(user_id: int) -> Dict[str, Any]:
+    """
+    Create a Plaid Link token for brokerage funding (link bank for ACH).
+    Auth product only, US; used to get public_token → exchange → processor_token → Alpaca ACH.
+    Returns {"link_token": str} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        from plaid.model.link_token_create_request import LinkTokenCreateRequest
+        from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+        from plaid.model.country_code import CountryCode
+        from plaid.model.products import Products
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+
+    user = LinkTokenCreateRequestUser(client_user_id=str(user_id))
+    products = [Products("auth")]
+    country_codes = [CountryCode("US")]
+    req = LinkTokenCreateRequest(
+        user=user,
+        client_name="CreditNexus Brokerage Funding",
+        products=products,
+        country_codes=country_codes,
+        language="en",
+    )
+    try:
+        resp = api.link_token_create(req)
+        return {"link_token": resp.link_token}
+    except Exception as e:
+        logger.warning("Plaid link_token_create (funding) failed: %s", e)
         return {"error": str(e)}
 
 
@@ -203,6 +342,450 @@ def _plaid_obj_to_dict(obj: Any) -> dict:
     if hasattr(obj, "__dict__"):
         return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
     return {"raw": str(obj)}
+
+
+def get_identity(access_token: str) -> Dict[str, Any]:
+    """
+    Fetch identity for linked accounts (Identity product).
+    Returns {"accounts":[...]} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    try:
+        from plaid.model.identity_get_request import IdentityGetRequest
+        req = IdentityGetRequest(access_token=access_token)
+        resp = api.identity_get(req)
+        accounts = [a.to_dict() if hasattr(a, "to_dict") else _plaid_obj_to_dict(a) for a in resp.accounts]
+        return {"accounts": accounts, "item": _plaid_obj_to_dict(resp.item) if getattr(resp, "item", None) else None}
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+    except Exception as e:
+        logger.warning("Plaid identity_get failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_liabilities(access_token: str) -> Dict[str, Any]:
+    """
+    Fetch liabilities (Liabilities product).
+    Returns {"liabilities": {...}, "accounts":[...]} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    try:
+        from plaid.model.liabilities_get_request import LiabilitiesGetRequest
+        req = LiabilitiesGetRequest(access_token=access_token)
+        resp = api.liabilities_get(req)
+        out = {
+            "liabilities": _plaid_obj_to_dict(getattr(resp, "liabilities", None)),
+            "accounts": [a.to_dict() if hasattr(a, "to_dict") else _plaid_obj_to_dict(a) for a in getattr(resp, "accounts", [])],
+            "item": _plaid_obj_to_dict(resp.item) if getattr(resp, "item", None) else None,
+        }
+        return out
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+    except Exception as e:
+        logger.warning("Plaid liabilities_get failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_investments_holdings(access_token: str) -> Dict[str, Any]:
+    """
+    Fetch investment holdings (Investments product).
+    Returns {"holdings":[...], "securities":[...], "accounts":[...]} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    try:
+        from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
+        req = InvestmentsHoldingsGetRequest(access_token=access_token)
+        resp = api.investments_holdings_get(req)
+        return {
+            "holdings": [h.to_dict() if hasattr(h, "to_dict") else _plaid_obj_to_dict(h) for h in getattr(resp, "holdings", [])],
+            "securities": [s.to_dict() if hasattr(s, "to_dict") else _plaid_obj_to_dict(s) for s in getattr(resp, "securities", [])],
+            "accounts": [a.to_dict() if hasattr(a, "to_dict") else _plaid_obj_to_dict(a) for a in getattr(resp, "accounts", [])],
+            "item": _plaid_obj_to_dict(resp.item) if getattr(resp, "item", None) else None,
+        }
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+    except Exception as e:
+        logger.warning("Plaid investments_holdings_get failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_investments_transactions(
+    access_token: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    account_id: Optional[str] = None,
+    count: int = 100,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """
+    Fetch investment transactions (Investments product).
+    Returns {"investment_transactions":[...], "securities":[...], "accounts":[...], "total_investment_transactions": int} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    end_date = end_date or date.today()
+    start_date = start_date or (end_date - timedelta(days=30))
+    try:
+        from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
+        from plaid.model.investments_transactions_get_request_options import InvestmentsTransactionsGetRequestOptions
+        opt = InvestmentsTransactionsGetRequestOptions(
+            account_ids=[account_id] if account_id else None,
+            count=count,
+            offset=offset,
+        )
+        req = InvestmentsTransactionsGetRequest(
+            access_token=access_token,
+            start_date=start_date,
+            end_date=end_date,
+            options=opt,
+        )
+        resp = api.investments_transactions_get(req)
+        txs = [
+            t.to_dict() if hasattr(t, "to_dict") else _plaid_obj_to_dict(t)
+            for t in getattr(resp, "investment_transactions", [])
+        ]
+        return {
+            "investment_transactions": txs,
+            "securities": [s.to_dict() if hasattr(s, "to_dict") else _plaid_obj_to_dict(s) for s in getattr(resp, "securities", [])],
+            "accounts": [a.to_dict() if hasattr(a, "to_dict") else _plaid_obj_to_dict(a) for a in getattr(resp, "accounts", [])],
+            "total_investment_transactions": getattr(resp, "total_investment_transactions", len(txs)),
+            "item": _plaid_obj_to_dict(resp.item) if getattr(resp, "item", None) else None,
+        }
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+    except Exception as e:
+        logger.warning("Plaid investments_transactions_get failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_income(access_token: str) -> Dict[str, Any]:
+    """
+    Fetch income information (Income product / legacy).
+    NOTE: Plaid Check Consumer Report is recommended for underwriting in many cases.
+    Returns {"income": {...}} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    try:
+        from plaid.model.income_get_request import IncomeGetRequest
+        req = IncomeGetRequest(access_token=access_token)
+        resp = api.income_get(req)
+        return {"income": _plaid_obj_to_dict(getattr(resp, "income", None))}
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+    except Exception as e:
+        logger.warning("Plaid income_get failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_assets(access_token: str) -> Dict[str, Any]:
+    """
+    Create an Assets report (Assets product).
+    Returns {"assets_report_token": str, "asset_report_id": str} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    try:
+        from plaid.model.asset_report_create_request import AssetReportCreateRequest
+        from plaid.model.asset_report_create_request_options import AssetReportCreateRequestOptions
+        # Default to 30 days (common baseline); callers can adjust later as needed.
+        options = AssetReportCreateRequestOptions()
+        req = AssetReportCreateRequest(access_token=access_token, days_requested=30, options=options)
+        resp = api.asset_report_create(req)
+        return {
+            "assets_report_token": getattr(resp, "asset_report_token", None),
+            "asset_report_id": getattr(resp, "asset_report_id", None),
+        }
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+    except Exception as e:
+        logger.warning("Plaid asset_report_create failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_assets_report(assets_report_token: str) -> Dict[str, Any]:
+    """
+    Fetch an Assets report by token.
+    Returns {"report": {...}} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    try:
+        from plaid.model.asset_report_get_request import AssetReportGetRequest
+        req = AssetReportGetRequest(asset_report_token=assets_report_token)
+        resp = api.asset_report_get(req)
+        return {"report": _plaid_obj_to_dict(getattr(resp, "report", None))}
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+    except Exception as e:
+        logger.warning("Plaid asset_report_get failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_statements(access_token: str) -> Dict[str, Any]:
+    """
+    Statements product: currently varies by Plaid availability.
+    This wrapper is intentionally conservative and returns a helpful error if unsupported.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+    try:
+        # Not all plaid-python versions expose statements endpoints/models.
+        from plaid.model.statements_list_request import StatementsListRequest  # type: ignore
+        req = StatementsListRequest(access_token=access_token)
+        resp = api.statements_list(req)  # type: ignore[attr-defined]
+        return {"statements": _plaid_obj_to_dict(resp)}
+    except ImportError:
+        return {"error": "Plaid statements models not available in current SDK"}
+    except Exception as e:
+        logger.warning("Plaid statements_list failed: %s", e)
+        return {"error": str(e)}
+
+
+def get_consumer_report(*_: Any, **__: Any) -> Dict[str, Any]:
+    """
+    Plaid Check (Consumer Report) integration placeholder.
+    Pricing and availability are not public; implementation requires product enablement and API contract.
+    """
+    return {"error": "consumer_report_not_implemented"}
+
+
+def initiate_identity_verification(*_: Any, **__: Any) -> Dict[str, Any]:
+    """Plaid Identity Verification placeholder (minimal integration planned)."""
+    return {"error": "identity_verification_not_implemented"}
+
+
+def monitor_aml_screening(*_: Any, **__: Any) -> Dict[str, Any]:
+    """Plaid Monitor / AML screening placeholder (minimal integration planned)."""
+    return {"error": "monitor_not_implemented"}
+
+
+# Transfer billing: Plaid charges per transfer (see https://plaid.com/pricing).
+# Callers (e.g. brokerage fund/withdraw) should record transfer usage for billing/credits
+# via BillingService or RollingCreditsService when BROKERAGE_ONBOARDING_FEE or transfer fees apply.
+
+
+def create_transfer(
+    *,
+    access_token: str,
+    amount: str,
+    currency: str = "USD",
+    account_id: Optional[str] = None,
+    transfer_type: str = "debit",
+    description: str = "CreditNexus transfer",
+) -> Dict[str, Any]:
+    """
+    Plaid Transfer (US) implementation.
+
+    Official flow (per Plaid docs):
+      1) POST /transfer/authorization/create
+      2) POST /transfer/create (using authorization)
+
+    Billing: Plaid charges per transfer; record usage for billing/credits when applicable.
+
+    Returns:
+      - {"authorization": {...}, "transfer": {...}} on success
+      - {"error": "..."} on failure
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        from decimal import Decimal
+        from plaid.model.transfer_authorization_create_request import TransferAuthorizationCreateRequest
+        from plaid.model.transfer_create_request import TransferCreateRequest
+        from plaid.model.transfer_user_in_request import TransferUserInRequest
+    except Exception as e:
+        return {"error": f"Plaid transfer models unavailable: {e}"}
+
+    try:
+        # If caller didn't supply account_id, choose first eligible depository account.
+        if not account_id:
+            acct = get_accounts(access_token)
+            if "error" in acct:
+                return {"error": acct["error"]}
+            accounts = acct.get("accounts") or []
+            chosen = None
+            for a in accounts:
+                # best-effort: pick a depository/checking first
+                try:
+                    if (a.get("type") == "depository") and (a.get("subtype") in ("checking", "savings", None)):
+                        chosen = a
+                        break
+                except Exception:
+                    continue
+            if not chosen and accounts:
+                chosen = accounts[0]
+            account_id = (chosen or {}).get("account_id")
+            if not account_id:
+                return {"error": "No eligible Plaid account_id found for transfer"}
+
+        # Authorization
+        # IMPORTANT: do not log amount; it can be sensitive for some orgs
+        user = TransferUserInRequest(legal_name="CreditNexus User")
+        auth_req = TransferAuthorizationCreateRequest(
+            access_token=access_token,
+            account_id=account_id,
+            type=transfer_type,  # debit or credit
+            network="ach",
+            amount=Decimal(str(amount)),
+            ach_class="ppd",
+            user=user,
+        )
+        auth_resp = api.transfer_authorization_create(auth_req)
+        auth = auth_resp.to_dict() if hasattr(auth_resp, "to_dict") else _plaid_obj_to_dict(auth_resp)
+
+        # Decision handling
+        decision = (auth.get("decision") or auth.get("authorization", {}).get("decision") or "").lower()
+        if decision and decision not in ("approved",):
+            return {"error": "transfer_authorization_not_approved", "authorization": auth}
+
+        # Create transfer
+        auth_id = auth.get("authorization", {}).get("id") or auth.get("id")
+        if not auth_id:
+            return {"error": "transfer_authorization_missing_id", "authorization": auth}
+
+        create_req = TransferCreateRequest(
+            access_token=access_token,
+            account_id=account_id,
+            authorization_id=auth_id,
+            description=description,
+        )
+        create_resp = api.transfer_create(create_req)
+        transfer = create_resp.to_dict() if hasattr(create_resp, "to_dict") else _plaid_obj_to_dict(create_resp)
+
+        return {"authorization": auth, "transfer": transfer}
+    except Exception as e:
+        logger.warning("Plaid transfer flow failed: %s", e)
+        return {"error": str(e)}
+
+
+def create_payment_initiation(
+    *,
+    access_token: str,
+    amount: str,
+    currency: str = "USD",
+    payment_type: str = "bank_payment",
+    # Optional Payment Initiation (UK/EU) recipient details:
+    recipient_name: Optional[str] = None,
+    iban: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Initiate a bank payment via Plaid.
+
+    Strategy:
+    - If recipient details (recipient_name + iban) are provided, attempt Plaid Payment Initiation
+      (UK/EU) using recipient/create + payment/create.
+    - Otherwise default to Plaid Transfer (US) as the practical path for linked US accounts.
+
+    Returns a normalized structure:
+      - {"mode": "transfer", "transfer": {...}, "authorization": {...}}
+      - {"mode": "payment_initiation", "recipient": {...}, "payment": {...}}
+      - {"error": "..."}
+    """
+    # UK/EU Payment Initiation path (requires recipient info)
+    if recipient_name and iban:
+        api, err = _get_plaid_client()
+        if err:
+            return {"error": err}
+        try:
+            from decimal import Decimal
+            from plaid.model.payment_initiation_recipient_create_request import PaymentInitiationRecipientCreateRequest
+            from plaid.model.payment_initiation_payment_create_request import PaymentInitiationPaymentCreateRequest
+            from plaid.model.payment_initiation_address import PaymentInitiationAddress
+        except Exception as e:
+            return {"error": f"Plaid payment initiation models unavailable: {e}"}
+
+        try:
+            # Recipient create
+            recipient_req = PaymentInitiationRecipientCreateRequest(
+                name=recipient_name,
+                iban=iban,
+                address=PaymentInitiationAddress(
+                    street=["N/A"],
+                    city="N/A",
+                    postal_code="N/A",
+                    country="GB",
+                ),
+            )
+            recipient_resp = api.payment_initiation_recipient_create(recipient_req)
+            recipient = recipient_resp.to_dict() if hasattr(recipient_resp, "to_dict") else _plaid_obj_to_dict(recipient_resp)
+
+            recipient_id = recipient.get("recipient_id") or recipient.get("id")
+            if not recipient_id:
+                return {"error": "payment_initiation_recipient_missing_id", "recipient": recipient}
+
+            # Payment create (authorization happens in Link in PI flows; this just creates the intent)
+            payment_req = PaymentInitiationPaymentCreateRequest(
+                recipient_id=recipient_id,
+                reference=f"CreditNexus:{payment_type}",
+                amount=Decimal(str(amount)),
+                currency=currency,
+            )
+            payment_resp = api.payment_initiation_payment_create(payment_req)
+            payment = payment_resp.to_dict() if hasattr(payment_resp, "to_dict") else _plaid_obj_to_dict(payment_resp)
+
+            return {"mode": "payment_initiation", "recipient": recipient, "payment": payment}
+        except Exception as e:
+            logger.warning("Plaid payment initiation flow failed: %s", e)
+            return {"error": str(e)}
+
+    # Default: US Transfer path
+    out = create_transfer(access_token=access_token, amount=amount, currency=currency, transfer_type="debit")
+    if "error" in out:
+        return {"error": out["error"], "mode": "transfer", "details": out.get("authorization")}
+    return {"mode": "transfer", **out}
+
+
+def create_layer_session(*, template_id: str, client_user_id: str) -> Dict[str, Any]:
+    """
+    Plaid Layer session token creation.
+
+    Per Plaid Layer docs, this is created via Layer's session/token/create
+    and returns a Link token to start the Layer flow.
+
+    Returns:
+      - {"link_token": "..."} or {"error": "..."}
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        # Not all plaid-python versions include Layer models/methods; use getattr defensively.
+        from plaid.model.session_token_create_request import SessionTokenCreateRequest  # type: ignore
+    except Exception as e:
+        return {"error": f"Plaid Layer models unavailable: {e}"}
+
+    try:
+        req = SessionTokenCreateRequest(
+            template_id=template_id,
+            client_user_id=client_user_id,
+        )
+        fn = getattr(api, "session_token_create", None)
+        if not fn:
+            return {"error": "Plaid Layer session_token_create not available in current SDK"}
+        resp = fn(req)
+        d = resp.to_dict() if hasattr(resp, "to_dict") else _plaid_obj_to_dict(resp)
+        link_token = d.get("link_token") or d.get("session_token") or d.get("token")
+        if not link_token:
+            return {"error": "Plaid Layer did not return link token", "response": d}
+        return {"link_token": link_token, "raw": d}
+    except Exception as e:
+        logger.warning("Plaid layer session token create failed: %s", e)
+        return {"error": str(e)}
 
 
 def get_plaid_connection(db: Session, user_id: int) -> Optional[UserImplementationConnection]:

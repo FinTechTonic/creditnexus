@@ -235,6 +235,41 @@ export interface PredictionMarketContext extends Context {
   resolution_outcome?: string | null;
 }
 
+/** Deal Signature Tracking Context */
+export interface DealSignatureContext extends Context {
+  type: 'finos.creditnexus.dealSignature';
+  id: {
+    dealId: string;
+  };
+  signatureStatus: string;
+  requiredSignatures: number;
+  completedSignatures: number;
+  signatureProgress: number;
+}
+
+/** Deal Documentation Tracking Context */
+export interface DealDocumentationContext extends Context {
+  type: 'finos.creditnexus.dealDocumentation';
+  id: {
+    dealId: string;
+  };
+  documentationStatus: string;
+  requiredDocuments: number;
+  completedDocuments: number;
+  documentationProgress: number;
+}
+
+/** Deal Compliance Context */
+export interface DealComplianceContext extends Context {
+  type: 'finos.creditnexus.dealCompliance';
+  id: {
+    dealId: string;
+  };
+  complianceStatus: string;
+  signatureStatus: string;
+  documentationStatus: string;
+}
+
 /** LangAlpha/DeepResearch/PeopleHub result; symbols and recommendations for cross-linking. */
 export interface AgentResultContext extends Context {
   type: 'finos.creditnexus.agentResult';
@@ -252,6 +287,9 @@ export type CreditNexusContext =
   | AgreementContext
   | DocumentContext
   | PortfolioContext
+  | DealSignatureContext
+  | DealDocumentationContext
+  | DealComplianceContext
   | ApprovalResultContext
   | ESGDataContext
   | LandUseContext
@@ -784,6 +822,65 @@ export function createPredictionMarketContext(
     sfp_id: data.sfp_id ?? null,
     resolved_at: data.resolved_at ?? null,
     resolution_outcome: data.resolution_outcome ?? null,
+  };
+}
+
+export function createDealSignatureContext(
+  dealId: number,
+  status: {
+    signature_status: string;
+    required_signatures: Array<any>;
+    completed_signatures: Array<any>;
+    signature_progress: number;
+  }
+): DealSignatureContext {
+  return {
+    type: 'finos.creditnexus.dealSignature',
+    id: { dealId: String(dealId) },
+    signatureStatus: status.signature_status,
+    requiredSignatures: status.required_signatures?.length || 0,
+    completedSignatures: status.completed_signatures?.length || 0,
+    signatureProgress: status.signature_progress || 0
+  };
+}
+
+export function createDealDocumentationContext(
+  dealId: number,
+  status: {
+    documentation_status: string;
+    required_documents: Array<any>;
+    completed_documents: Array<any>;
+    documentation_progress: number;
+  }
+): DealDocumentationContext {
+  return {
+    type: 'finos.creditnexus.dealDocumentation',
+    id: { dealId: String(dealId) },
+    documentationStatus: status.documentation_status,
+    requiredDocuments: status.required_documents?.length || 0,
+    completedDocuments: status.completed_documents?.length || 0,
+    documentationProgress: status.documentation_progress || 0
+  };
+}
+
+export function createDealComplianceContext(
+  dealId: number,
+  summary: {
+    compliance_status: string;
+    signature_status: {
+      signature_status: string;
+    };
+    documentation_status: {
+      documentation_status: string;
+    };
+  }
+): DealComplianceContext {
+  return {
+    type: 'finos.creditnexus.dealCompliance',
+    id: { dealId: String(dealId) },
+    complianceStatus: summary.compliance_status,
+    signatureStatus: summary.signature_status?.signature_status || 'unknown',
+    documentationStatus: summary.documentation_status?.documentation_status || 'unknown'
   };
 }
 

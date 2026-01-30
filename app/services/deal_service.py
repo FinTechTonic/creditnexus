@@ -491,6 +491,15 @@ class DealService:
         )
         self.db.add(policy_decision)
         
+        # Update deal documentation status if deal has documentation requirements
+        if deal.required_documents:
+            try:
+                from app.services.deal_signature_service import DealSignatureService
+                deal_signature_service = DealSignatureService(self.db)
+                deal_signature_service.update_documentation_status(deal_id, document_id)
+            except Exception as e:
+                logger.warning(f"Failed to update deal documentation status: {e}")
+        
         # Audit log
         log_audit_action(
             self.db,

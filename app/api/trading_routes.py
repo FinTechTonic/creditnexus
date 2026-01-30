@@ -13,7 +13,14 @@ from app.db.models import User, Order, OrderStatus, OrderSide, OrderType, Manual
 from app.auth.jwt_auth import get_current_user, require_auth
 from app.core.permissions import has_permission, PERMISSION_TRADE_VIEW, PERMISSION_TRADE_EXECUTE
 from app.services.order_service import OrderService, OrderValidationError
-from app.services.trading_api_service import TradingAPIService, TradingAPIError, MockTradingAPIService, AlpacaTradingAPIService
+from app.services.trading_api_service import (
+    TradingAPIService,
+    TradingAPIError,
+    MockTradingAPIService,
+    AlpacaTradingAPIService,
+    AlpacaBrokerTradingAPIService,
+)
+from app.db.models import AlpacaCustomerAccount
 from app.services.commission_service import CommissionService
 from app.services.market_data_service import get_historical_data, is_valid_symbol
 from app.core.config import settings
@@ -134,13 +141,41 @@ class ManualHoldingResponse(BaseModel):
 # Service Dependencies
 # ============================================================================
 
-def get_trading_api_service() -> TradingAPIService:
-    """Get trading API service instance."""
-    # Check if Alpaca credentials are configured
+def get_trading_api_service(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TradingAPIService:
+    """Get trading API service: Broker (per-account) when configured and user has ACTIVE account, else legacy or mock."""
+    # 1. Broker API: if configured and user has ACTIVE Alpaca account, use per-account broker service
+    broker_key = getattr(settings, "ALPACA_BROKER_API_KEY", None)
+    if broker_key and current_user:
+        acc = db.query(AlpacaCustomerAccount).filter(
+            AlpacaCustomerAccount.user_id == current_user.id,
+            AlpacaCustomerAccount.status == "ACTIVE",
+        ).first()
+        if acc:
+            try:
+                return AlpacaBrokerTradingAPIService(alpaca_account_id=acc.alpaca_account_id)
+            except TradingAPIError as e:
+                logger.warning("Alpaca Broker service init failed: %s. Falling back.", e)
+        else:
+            # Broker API is configured but user has no ACTIVE account: require brokerage onboarding
+            has_any = db.query(AlpacaCustomerAccount).filter(
+                AlpacaCustomerAccount.user_id == current_user.id,
+            ).first()
+            if has_any:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Complete brokerage onboarding. Your trading account is not yet active; check status or upload documents in Settings.",
+                )
+            raise HTTPException(
+                status_code=403,
+                detail="Complete brokerage onboarding to trade. Open Settings → Trading account to apply.",
+            )
+    # 2. Legacy Alpaca Trading API (single account)
     alpaca_key = getattr(settings, "ALPACA_API_KEY", None)
     alpaca_secret = getattr(settings, "ALPACA_API_SECRET", None)
     alpaca_base_url = getattr(settings, "ALPACA_BASE_URL", None)
-    
     if alpaca_key and alpaca_secret:
         try:
             k = alpaca_key.get_secret_value() if hasattr(alpaca_key, "get_secret_value") else str(alpaca_key)
@@ -151,11 +186,10 @@ def get_trading_api_service() -> TradingAPIService:
                 base_url=alpaca_base_url
             )
         except Exception as e:
-            logger.warning(f"Failed to initialize Alpaca API service: {e}. Using mock service.")
+            logger.warning("Failed to initialize Alpaca API service: %s. Using mock service.", e)
             return MockTradingAPIService()
-    else:
-        logger.info("Alpaca credentials not configured. Using mock trading API service.")
-        return MockTradingAPIService()
+    logger.info("Alpaca credentials not configured. Using mock trading API service.")
+    return MockTradingAPIService()
 
 
 def get_order_service(

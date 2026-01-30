@@ -20,12 +20,33 @@ $BACKEND_URL = if ($env:BACKEND_URL) { $env:BACKEND_URL } else { "http://localho
 $FRONTEND_URL = if ($env:FRONTEND_URL) { $env:FRONTEND_URL } else { "http://localhost:5000" }
 $MANIFEST_URL = if ($env:OPENFIN_MANIFEST_URL) { $env:OPENFIN_MANIFEST_URL } else { "$BACKEND_URL/openfin/app.json" }
 
+# Optional initial delay before any polling. This helps avoid "polling too early"
+# on slower dev machines where the backend is still warming up even after Uvicorn
+# reports ready. Default is 30 seconds, override via OPENFIN_INITIAL_DELAY_SECONDS.
+$initialDelaySeconds = 30
+if ($env:OPENFIN_INITIAL_DELAY_SECONDS) {
+    try {
+        $parsed = [int]$env:OPENFIN_INITIAL_DELAY_SECONDS
+        if ($parsed -ge 0) {
+            $initialDelaySeconds = $parsed
+        }
+    } catch {
+        # Ignore parse errors and keep default
+    }
+}
+
+if ($initialDelaySeconds -gt 0) {
+    Write-Host "`nInitial delay before OpenFin health checks: $initialDelaySeconds seconds..." -ForegroundColor Yellow
+    Start-Sleep -Seconds $initialDelaySeconds
+}
+
 # Function to check if a service is ready
 function Test-ServiceReady {
     param(
         [string]$Url,
-        [int]$MaxRetries = 5,
-        [int]$RetryDelay = 2
+        # Bump retries/delay so we give services up to ~60s to stabilize
+        [int]$MaxRetries = 15,
+        [int]$RetryDelay = 4
     )
     
     for ($i = 0; $i -lt $MaxRetries; $i++) {

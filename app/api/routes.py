@@ -8,7 +8,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Request, Form, Body
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
 import pandas as pd
@@ -38,11 +38,16 @@ from app.services.clause_cache_service import ClauseCacheService
 from app.services.file_storage_service import FileStorageService
 from app.services.deal_service import DealService
 from app.services.profile_extraction_service import ProfileExtractionService
+from app.services.payment_gateway_service import PaymentGatewayService, billable_402_response
+from app.models.cdm_payment import PaymentType
 from app.chains.document_retrieval_chain import DocumentRetrievalService, add_user_profile, search_user_profiles
 from app.utils.audit import log_audit_action
 from fastapi import Request
 
 from app.utils import get_debug_log_path
+from app.services.signature_provider import SignatureRequestContext, get_signature_provider
+from app.api.signature_routes import signature_router
+from app.api.kyc_routes import kyc_router
 logger = logging.getLogger(__name__)
 
 # Deep Tech Components (Loaded on startup)
@@ -172,6 +177,12 @@ def extract_text_from_file(file_content: bytes, filename: Optional[str] = None) 
         raise ValueError(f"Unsupported file type: {extension}. Supported types: PDF, TXT")
 
 router = APIRouter(prefix="/api")
+
+# Mount native signature routes
+router.include_router(signature_router)
+
+# Mount KYC routes
+router.include_router(kyc_router)
 
 
 class ExtractionRequest(BaseModel):
@@ -949,6 +960,16 @@ async def research_person(
     - Updates deal timeline
     - Generates audit report
     """
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="universal",
+        amount=1.0,
+        feature="people_search",
+        payment_type=PaymentType.BILLABLE_FEATURE,
+        cost_usd=Decimal("0.10"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        return billable_402_response(gate)
     try:
         from app.workflows.peoplehub_research_graph import execute_peoplehub_research
         from app.services.psychometric_analysis_service import analyze_individual
@@ -1128,7 +1149,7 @@ class KYCComplianceRequest(BaseModel):
     deal_id: Optional[int] = Field(None, description="Optional deal ID for context")
 
 
-@router.post("/kyc/evaluate")
+@router.post("/compliance/kyc/evaluate")
 # Rate limiting: Uses slowapi default_limits (60/minute) from server.py
 async def evaluate_kyc_compliance(
     request: KYCComplianceRequest,
@@ -4137,6 +4158,16 @@ async def digitizer_chatbot_launch_workflow(
     Returns:
         Workflow launch result with status and CDM events
     """
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="universal",
+        amount=1.0,
+        feature="agent_workflow",
+        payment_type=PaymentType.BILLABLE_FEATURE,
+        cost_usd=Decimal("0.10"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        return billable_402_response(gate)
     from app.services.digitizer_chatbot_service import DigitizerChatbotService
     
     try:
@@ -4422,6 +4453,17 @@ async def extract_profile(
     Returns:
         Extracted profile data in UserProfileData format
     """
+    if current_user:
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=1.0,
+            feature="profile_extract",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=Decimal("0.10"),
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return billable_402_response(gate)
     from app.chains.profile_extraction_chain import extract_profile_data
     
     try:
@@ -11259,6 +11301,17 @@ async def extract_profile_from_documents(
     Returns:
         Profile extraction result with structured profile data
     """
+    if current_user:
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=1.0,
+            feature="profile_extract",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=Decimal("0.10"),
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return billable_402_response(gate)
     from app.services.profile_extraction_service import ProfileExtractionService
     from app.models.user_profile import UserProfileData
     import json
@@ -11444,10 +11497,22 @@ async def get_signup_details(
                 status_code=404,
                 detail={"status": "error", "message": f"User {user_id} not found"}
             )
-        
+        data = user.to_dict()
+        data["kyc_verification"] = user.kyc_verification.to_dict() if getattr(user, "kyc_verification", None) else None
+        kyc_docs = getattr(user, "kyc_documents", None) or []
+        data["kyc_documents"] = [
+            {
+                "id": d.id,
+                "document_type": d.document_type,
+                "document_category": d.document_category,
+                "verification_status": d.verification_status,
+                "document_id": d.document_id,
+            }
+            for d in kyc_docs
+        ]
         return {
             "status": "success",
-            "data": user.to_dict()
+            "data": data,
         }
     except HTTPException:
         raise
@@ -11501,6 +11566,15 @@ async def approve_signup(
         user.signup_reviewed_at = datetime.utcnow()
         user.signup_reviewed_by = current_user.id
         user.signup_rejection_reason = None
+
+        # If user was invited to an org (pending_organization_id + invited_role), assign org and role
+        if user.profile_data and isinstance(user.profile_data, dict):
+            pending_org_id = user.profile_data.get("pending_organization_id")
+            invited_role = user.profile_data.get("invited_role")
+            if pending_org_id is not None and invited_role is not None:
+                user.organization_id = int(pending_org_id) if pending_org_id is not None else None
+                user.organization_role = str(invited_role)
+                user.profile_data = {k: v for k, v in user.profile_data.items() if k not in ("pending_organization_id", "invited_role")}
         
         db.commit()
         db.refresh(user)
@@ -11617,6 +11691,47 @@ async def reject_signup(
             status_code=500,
             detail={"status": "error", "message": f"Failed to reject signup: {str(e)}"}
         )
+
+
+@router.post("/admin/signups/{user_id}/verify-certification")
+async def verify_signup_certification(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Mark a user's optional FINRA/certification as reviewed by admin (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "error", "message": f"User {user_id} not found"}
+        )
+    if not user.profile_data or not isinstance(user.profile_data, dict):
+        user.profile_data = {}
+    user.profile_data["certification_reviewed_at"] = datetime.utcnow().isoformat()
+    user.profile_data["certification_reviewed_by"] = current_user.id
+    db.commit()
+    db.refresh(user)
+    log_audit_action(
+        db=db,
+        action=AuditAction.UPDATE,
+        target_type="user",
+        target_id=user.id,
+        user_id=current_user.id,
+        metadata={"certification_verified": True},
+        request=request
+    )
+    return {
+        "status": "success",
+        "message": "Certification marked as reviewed",
+        "data": user.to_dict()
+    }
 
 
 # ============================================================================
@@ -12534,39 +12649,46 @@ async def request_document_signature(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Request signatures for a document via DigiSigner."""
-    from app.services.signature_service import SignatureService
-    
+    """Request signatures for a document via configured provider (internal by default)."""
+
+    provider = get_signature_provider(db)
+    ctx = SignatureRequestContext(
+        document_id=document_id,
+        signers=request.signers,
+        auto_detect_signers=request.auto_detect_signers,
+        expires_in_days=request.expires_in_days,
+        subject=request.subject,
+        message=request.message,
+        urgency=request.urgency,
+        requested_by_user_id=current_user.id,
+    )
+
     try:
-        signature_service = SignatureService(db)
-        signature = signature_service.request_signature(
-            document_id=document_id,
-            signers=request.signers,
-            auto_detect_signers=request.auto_detect_signers,
-            expires_in_days=request.expires_in_days,
-            subject=request.subject,
-            message=request.message,
-            urgency=request.urgency
-        )
-        
+        signature = await provider.request_signature(ctx)
+
         log_audit_action(
             db=db,
             action=AuditAction.CREATE,
             target_type="signature_request",
             target_id=signature.id,
             user_id=current_user.id,
-            metadata={"document_id": document_id, "signature_request_id": signature.signature_request_id}
+            metadata={
+                "document_id": document_id,
+                "signature_provider": getattr(signature, "signature_provider", None),
+                "signature_request_id": getattr(signature, "signature_request_id", None),
+            },
         )
-        
+
         return {
             "status": "success",
-            "signature": signature.to_dict()
+            "signature": signature.to_dict() if hasattr(signature, "to_dict") else None,
         }
     except Exception as e:
         logger.error(f"Error requesting signature: {e}")
+
         raise HTTPException(
             status_code=500,
-            detail={"status": "error", "message": f"Failed to request signature: {str(e)}"}
+            detail={"status": "error", "message": f"Failed to request signature: {str(e)}"},
         )
 
 
@@ -12636,79 +12758,6 @@ async def get_document_signatures(
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": f"Failed to get document signatures: {str(e)}"}
-        )
-
-
-@router.get("/signatures/{signature_id}/status")
-async def get_signature_status(
-    signature_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get signature status."""
-    from app.services.signature_service import SignatureService
-    from app.db.models import DocumentSignature
-    
-    signature = db.query(DocumentSignature).filter(DocumentSignature.id == signature_id).first()
-    if not signature:
-        raise HTTPException(status_code=404, detail="Signature not found")
-    
-    try:
-        signature_service = SignatureService(db)
-        status = signature_service.check_signature_status(signature.signature_request_id)
-        
-        # Update local status if changed
-        if status.get("status") != signature.signature_status:
-            signature_service.update_signature_status(
-                signature_id=signature_id,
-                status=status.get("status", signature.signature_status),
-                signed_document_url=status.get("signed_document_url")
-            )
-        
-        return {
-            "status": "success",
-            "signature": signature.to_dict(),
-            "provider_status": status
-        }
-    except Exception as e:
-        logger.error(f"Error checking signature status: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "error", "message": f"Failed to check signature status: {str(e)}"}
-        )
-
-
-@router.get("/signatures/{signature_id}/download")
-async def download_signed_document(
-    signature_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth)
-):
-    """Download signed document."""
-    from app.services.signature_service import SignatureService
-    from app.db.models import DocumentSignature
-    
-    signature = db.query(DocumentSignature).filter(DocumentSignature.id == signature_id).first()
-    if not signature:
-        raise HTTPException(status_code=404, detail="Signature not found")
-    
-    if signature.signature_status != "completed":
-        raise HTTPException(status_code=400, detail="Document not yet signed")
-    
-    try:
-        signature_service = SignatureService(db)
-        content = signature_service.download_signed_document(signature.signature_request_id)
-        
-        return StreamingResponse(
-            io.BytesIO(content),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=signed_document_{signature_id}.pdf"}
-        )
-    except Exception as e:
-        logger.error(f"Error downloading signed document: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={"status": "error", "message": f"Failed to download signed document: {str(e)}"}
         )
 
 
@@ -12826,21 +12875,37 @@ async def digisigner_webhook(
 @router.get("/documents/{document_id}/filing/requirements")
 async def get_filing_requirements(
     document_id: int,
-    deal_id: Optional[int] = Query(None, description="Optional deal ID for context"),
+    deal_id: Optional[str] = Query(
+        None,
+        description="Optional deal ID for context (empty or missing will be treated as None)",
+    ),
     agreement_type: str = Query("facility_agreement", description="Type of agreement"),
     use_ai_evaluation: bool = Query(True, description="Use AI for filing requirement evaluation"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get filing requirements for a document."""
     from app.services.filing_service import FilingService
     
     try:
         filing_service = FilingService(db)
+
+        # Gracefully handle empty or invalid deal_id query values.
+        parsed_deal_id: Optional[int]
+        if deal_id is None or (isinstance(deal_id, str) and not deal_id.strip()):
+            parsed_deal_id = None
+        else:
+            try:
+                parsed_deal_id = int(deal_id)
+            except (TypeError, ValueError):
+                # Log and fall back to no deal context instead of raising 422
+                logger.warning("Received non-numeric deal_id '%s' for document %s; treating as None", deal_id, document_id)
+                parsed_deal_id = None
+
         requirements = filing_service.determine_filing_requirements(
             document_id=document_id,
             agreement_type=agreement_type,
-            deal_id=deal_id,
+            deal_id=parsed_deal_id,
             use_ai_evaluation=use_ai_evaluation,
             user_id=current_user.id
         )

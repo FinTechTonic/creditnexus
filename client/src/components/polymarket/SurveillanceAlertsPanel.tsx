@@ -42,7 +42,7 @@ export function SurveillanceAlertsPanel() {
   const [runCycleLoading, setRunCycleLoading] = useState(false);
   const [reviewingId, setReviewingId] = useState<number | null>(null);
 
-  const load = useCallback(() => {
+  const load = useCallback((runCycleIfEmpty = false) => {
     setLoading(true);
     setError(null);
     setSubscriptionRequired(false);
@@ -51,6 +51,7 @@ export function SurveillanceAlertsPanel() {
     if (reviewed === 'yes') params.set('reviewed', 'true');
     if (reviewed === 'no') params.set('reviewed', 'false');
     params.set('limit', '50');
+    if (runCycleIfEmpty) params.set('run_cycle_if_empty', '1');
     fetchWithAuth(`/api/polymarket/surveillance/alerts?${params.toString()}`)
       .then((res) => {
         if (res.status === 403) {
@@ -78,6 +79,15 @@ export function SurveillanceAlertsPanel() {
   }, [severity, reviewed]);
 
   useEffect(() => { load(); }, [load]);
+
+  // When alerts load empty, retry once with run_cycle_if_empty so instance admin can auto-populate
+  const [didRunCycleIfEmpty, setDidRunCycleIfEmpty] = useState(false);
+  useEffect(() => {
+    if (!loading && alerts.length === 0 && !subscriptionRequired && !error && !didRunCycleIfEmpty) {
+      setDidRunCycleIfEmpty(true);
+      load(true);
+    }
+  }, [loading, alerts.length, subscriptionRequired, error, didRunCycleIfEmpty, load]);
 
   const runCycle = async () => {
     setRunCycleLoading(true);
@@ -198,7 +208,10 @@ export function SurveillanceAlertsPanel() {
           </Button>
         </div>
         {alerts.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No alerts. Run a detection cycle to populate.</p>
+          <p className="text-muted-foreground text-sm">
+            No alerts yet. Alerts are created when a detection cycle runs (use &quot;Run cycle&quot; above).
+            Enable POLYMARKET_SURVEILLANCE_ENABLED and set POLYMARKET_DATA_API_URL on the server for the cycle to fetch data.
+          </p>
         ) : (
           <div className="rounded border divide-y max-h-64 overflow-y-auto">
             {alerts.map((a) => (

@@ -1640,7 +1640,7 @@ class PolicyService:
         profile_type: str,  # "individual" or "business"
         deal_id: Optional[int] = None,
         individual_profile_id: Optional[int] = None,
-        business_profile_id: Optional[int] = None
+        business_profile_id: Optional[int] = None,
     ) -> PolicyDecision:
         """
         Evaluate KYC (Know Your Customer) compliance for individual or business profiles.
@@ -1782,7 +1782,7 @@ class PolicyService:
             transaction_data["has_linkedin"] = bool(profile.get("linkedin_url"))
             transaction_data["has_profile_data"] = bool(profile.get("profile_data"))
             transaction_data["has_psychometric_profile"] = bool(psychometric)
-            
+
         elif profile_type == "business":
             # Extract business profile data
             transaction_data["business_name"] = profile.get("business_name", "")
@@ -1822,5 +1822,30 @@ class PolicyService:
             transaction_data["has_lei"] = bool(profile.get("business_lei"))
             transaction_data["has_profile_data"] = bool(profile.get("profile_data"))
             transaction_data["has_key_executives"] = bool(key_executives)
-        
+
+        # Attach generic KYC fields if present (used for deal-type/role-specific rules)
+        extra_fields = [
+            "deal_type",
+            "user_role",
+            "kyc_status",
+            "kyc_level",
+            "identity_verified",
+            "address_verified",
+            "document_verified",
+            "license_verified",
+            "sanctions_check_passed",
+            "pep_check_passed",
+            "has_id_document",
+            "has_proof_of_address",
+            "has_professional_license",
+            "has_banking_license",
+            "has_legal_license",
+            "has_accounting_license",
+            "verified_kyc_doc_count",
+            "verified_license_count",
+        ]
+        for field in extra_fields:
+            if field in profile:
+                transaction_data[field] = profile[field]
+
         return transaction_data

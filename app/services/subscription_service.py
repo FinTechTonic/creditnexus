@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     User, UserSubscription, SubscriptionUsage,
-    SubscriptionTier, SubscriptionType
+    SubscriptionTier, SubscriptionType, Organization
 )
 from app.services.rolling_credits_service import RollingCreditsService
 
@@ -71,8 +71,8 @@ class SubscriptionService:
         self.db.add(subscription)
         self.db.flush()  # ensure subscription.id for credit generation
 
-        # Generate rolling credits for pro/premium (activate)
-        if tier in ("pro", "premium"):
+        # Generate rolling credits for pro/premium/tier_10/tier_15 (activate)
+        if tier in ("pro", "premium", "tier_10", "tier_15"):
             period_start = subscription.started_at or now
             period_end = subscription.expires_at if subscription.expires_at else (period_start + timedelta(days=30))
             try:
@@ -85,8 +85,8 @@ class SubscriptionService:
                 )
                 if result.get("transactions_created", 0) or result.get("generated_credits"):
                     logger.info(
-                        "Rolling credits generated on activate: user_id=%s sub_id=%s credits=%s",
-                        user_id, subscription.id, result.get("generated_credits"),
+                        "Rolling credits generated on activate: user_id=%s sub_id=%s tier=%s credits=%s",
+                        user_id, subscription.id, tier, result.get("generated_credits"),
                     )
             except Exception as e:
                 logger.warning("Rolling credits on activate failed (subscription created): %s", e)
@@ -99,6 +99,46 @@ class SubscriptionService:
         self.db.commit()
         self.db.refresh(subscription)
         return subscription
+
+    def mark_org_admin_paid(self, user_id: int, *, payment_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Mark a user as having completed org-admin signup payment.
+        This is used to gate organization admin access during signup.
+        """
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return {"ok": False, "reason": "user_not_found"}
+
+        user.org_admin_payment_status = "paid"
+        user.org_admin_payment_id = payment_id
+        user.org_admin_paid_at = datetime.utcnow()
+        self.db.commit()
+        return {"ok": True}
+
+    def ensure_org_for_paying_user(self, user_id: int) -> Dict[str, Any]:
+        """
+        On first successful $2 (org-admin) payment, create an organisation for the user
+        and set them as org admin. Idempotent: if user already has organization_id, no-op.
+        """
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return {"ok": False, "reason": "user_not_found"}
+        if user.organization_id is not None:
+            return {"ok": True, "organization_id": user.organization_id}
+        name = (user.display_name or user.email or "User").strip()
+        if not name:
+            name = "User"
+        org_name = f"{name}'s Organisation"
+        if len(org_name) > 255:
+            org_name = org_name[:252] + "..."
+        org = Organization(name=org_name, slug=None, is_active=True)
+        self.db.add(org)
+        self.db.flush()
+        user.organization_id = org.id
+        user.organization_role = "admin"
+        self.db.commit()
+        self.db.refresh(user)
+        return {"ok": True, "organization_id": org.id}
 
     def renew_subscription(self, subscription_id: int) -> Optional[UserSubscription]:
         """Renew a subscription for the next billing period and generate rolling credits (pro/premium).
@@ -120,7 +160,7 @@ class SubscriptionService:
         else:
             period_end = period_start + timedelta(days=30)
 
-        if sub.tier in ("pro", "premium"):
+        if sub.tier in ("pro", "premium", "tier_10", "tier_15"):
             try:
                 result = RollingCreditsService(self.db).generate_subscription_credits(
                     user_id=sub.user_id,
@@ -131,8 +171,8 @@ class SubscriptionService:
                 )
                 if result.get("transactions_created", 0) or result.get("generated_credits"):
                     logger.info(
-                        "Rolling credits generated on renew: user_id=%s sub_id=%s credits=%s",
-                        sub.user_id, sub.id, result.get("generated_credits"),
+                        "Rolling credits generated on renew: user_id=%s sub_id=%s tier=%s credits=%s",
+                        sub.user_id, sub.id, sub.tier, result.get("generated_credits"),
                     )
             except Exception as e:
                 logger.warning("Rolling credits on renew failed (renewal will still extend expires_at): %s", e)
@@ -148,10 +188,10 @@ class SubscriptionService:
         feature: str,
         increment: int = 1
     ) -> Dict[str, Any]:
-        """Track usage for pay-as-you-go subscriptions."""
+        """Track usage for pay-as-you-go / subscription tiers (pro, premium, tier_10, tier_15)."""
         tier = self.get_user_tier(user_id)
-        if tier != SubscriptionTier.PRO.value:
-            return {"tracked": False, "reason": "not_pro_tier"}
+        if tier not in (SubscriptionTier.PRO.value, SubscriptionTier.PREMIUM.value, SubscriptionTier.TIER_10.value, SubscriptionTier.TIER_15.value):
+            return {"tracked": False, "reason": "not_subscribed_tier"}
         
         # Get current billing period
         now = datetime.utcnow()

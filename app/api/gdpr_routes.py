@@ -10,7 +10,7 @@ import logging
 import json
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
@@ -22,11 +22,14 @@ from app.db.models import (
     Application, Deal, Inquiry, Meeting, RefreshToken
 )
 from app.services.data_retention_service import (
-    DataRetentionService, get_retention_policy_summary
+    DataRetentionService,
+    get_retention_policy_summary,
 )
 from app.auth.jwt_auth import require_auth
+from app.services.consent_service import ConsentService
+from app.services.breach_notification_service import BreachNotificationService
 from app.utils.audit import log_audit_action
-from app.db.models import AuditAction
+from app.db.models import AuditAction, BreachRecord
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,22 @@ class GDPRExportResponse(BaseModel):
     exported_at: str
     data: Dict[str, Any]
     format: str
+
+
+class ConsentRequest(BaseModel):
+    """Request model for recording consent."""
+    consent_type: str
+    consent_purpose: str
+    legal_basis: str
+    consent_given: bool
+    consent_source: str = "settings"
+
+
+class ProcessingRequestCreate(BaseModel):
+    """Request model for creating a data processing request."""
+    request_type: str  # rectification, restriction, objection, portability
+    description: str
+    requested_changes: Optional[Dict[str, Any]] = None
 
 
 def export_user_data(user: User, db: Session) -> Dict[str, Any]:
@@ -309,9 +328,11 @@ async def export_user_data_endpoint(
             detail="You can only export your own data unless you are an admin"
         )
     
-    # Export data
+    # Export data (base legacy export)
     user_data = export_user_data(target_user, db)
-    
+    # Note: extended KYC / consent / privacy metadata is handled by dedicated services
+    # and can be added later in a non-circular way if needed.
+
     # Log audit action
     log_audit_action(
         db, 
@@ -328,13 +349,13 @@ async def export_user_data_endpoint(
             email=target_user.email,
             exported_at=datetime.utcnow().isoformat(),
             data=user_data,
-            format="json"
+            format="json",
         )
     else:
-        # CSV format (simplified - would need proper CSV generation)
+        # For now, only JSON export is supported without additional services.
         raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="CSV export not yet implemented"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported format: {request.format}",
         )
 
 
@@ -463,4 +484,180 @@ async def run_data_retention_cleanup(
         "status": "success",
         "dry_run": dry_run,
         "results": results
+    }
+
+
+@gdpr_router.get("/consents")
+async def get_consents(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get all consent records for the current user."""
+    service = ConsentService(db)
+    consents = service.get_user_consents(current_user.id)
+    return {"consents": [c.to_dict() for c in consents]}
+
+
+@gdpr_router.post("/consents")
+async def record_consent(
+    payload: ConsentRequest,
+    request: Request,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Record user consent."""
+    service = ConsentService(db)
+    consent = await service.record_consent(
+        user_id=current_user.id,
+        consent_type=payload.consent_type,
+        consent_purpose=payload.consent_purpose,
+        legal_basis=payload.legal_basis,
+        consent_given=payload.consent_given,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        consent_source=payload.consent_source
+    )
+    return consent.to_dict()
+
+
+@gdpr_router.post("/requests")
+async def create_processing_request(
+    payload: ProcessingRequestCreate,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Create a new data processing request."""
+    service = ConsentService(db)
+    request = await service.create_processing_request(
+        user_id=current_user.id,
+        request_type=payload.request_type,
+        description=payload.description,
+        requested_changes=payload.requested_changes
+    )
+    return {"status": "success", "request_id": request.id}
+
+
+class BreachCreateRequest(BaseModel):
+    """Request model for creating a breach record."""
+    breach_type: str
+    breach_description: str
+    affected_users: List[int]
+    affected_data_types: Optional[List[str]] = None
+    risk_level: str = "medium"
+
+
+@gdpr_router.post("/breaches")
+async def create_breach(
+    payload: BreachCreateRequest,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Create a data breach record (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    service = BreachNotificationService(db)
+    breach = await service.record_breach(
+        breach_type=payload.breach_type,
+        breach_description=payload.breach_description,
+        affected_users=payload.affected_users,
+        affected_data_types=payload.affected_data_types,
+        risk_level=payload.risk_level,
+        discovered_by_user_id=current_user.id
+    )
+    
+    return {
+        "status": "success",
+        "breach_id": breach.id,
+        "message": "Breach recorded and notifications sent if required"
+    }
+
+
+@gdpr_router.get("/breaches")
+async def list_breaches(
+    risk_level: Optional[str] = None,
+    notified_only: bool = False,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """List breach records (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    service = BreachNotificationService(db)
+    breaches = service.list_breaches(
+        risk_level=risk_level,
+        notified_only=notified_only,
+        limit=100
+    )
+    
+    return {
+        "breaches": [
+            {
+                "id": b.id,
+                "breach_type": b.breach_type,
+                "breach_description": b.breach_description,
+                "breach_discovered_at": b.breach_discovered_at.isoformat(),
+                "breach_contained_at": b.breach_contained_at.isoformat() if b.breach_contained_at else None,
+                "affected_users_count": b.affected_users_count,
+                "risk_level": b.risk_level,
+                "supervisory_authority_notified": b.supervisory_authority_notified,
+                "supervisory_authority_notified_at": b.supervisory_authority_notified_at.isoformat() if b.supervisory_authority_notified_at else None,
+                "users_notified": b.users_notified,
+                "users_notified_at": b.users_notified_at.isoformat() if b.users_notified_at else None,
+                "created_at": b.created_at.isoformat()
+            }
+            for b in breaches
+        ]
+    }
+
+
+@gdpr_router.get("/breaches/statistics")
+async def get_breach_statistics(
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Get breach statistics (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    service = BreachNotificationService(db)
+    stats = service.get_breach_statistics()
+    
+    return stats
+
+
+@gdpr_router.post("/breaches/{breach_id}/contain")
+async def contain_breach(
+    breach_id: int,
+    containment_actions: Optional[List[str]] = None,
+    current_user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """Mark breach as contained (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    service = BreachNotificationService(db)
+    breach = await service.contain_breach(
+        breach_id=breach_id,
+        containment_actions=containment_actions
+    )
+    
+    return {
+        "status": "success",
+        "breach_id": breach.id,
+        "contained_at": breach.breach_contained_at.isoformat() if breach.breach_contained_at else None
     }

@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from app.db.models import Order, OrderStatus, OrderSide, OrderType, User
+from app.db.models import Order, OrderStatus, OrderSide, OrderType, User, AlpacaCustomerAccount
 from app.services.trading_api_service import TradingAPIService, TradingAPIError
 from app.services.commission_service import CommissionService
 from app.utils.audit import log_audit_action
@@ -163,8 +163,20 @@ class OrderService:
         # Generate unique order ID
         order_id = f"ORD-{uuid.uuid4().hex[:12].upper()}"
         
-        # Determine trading API name
-        trading_api = "alpaca"  # Default, can be made configurable
+        # Determine trading API and Alpaca account (Broker vs legacy)
+        trading_api = "alpaca"
+        alpaca_account_id = None
+        acc = (
+            self.db.query(AlpacaCustomerAccount)
+            .filter(
+                AlpacaCustomerAccount.user_id == user_id,
+                AlpacaCustomerAccount.status == "ACTIVE",
+            )
+            .first()
+        )
+        if acc:
+            trading_api = "alpaca_broker"
+            alpaca_account_id = acc.alpaca_account_id
         
         # Create order
         order = Order(
@@ -180,6 +192,7 @@ class OrderService:
             time_in_force=time_in_force.lower(),
             expires_at=expires_at,
             trading_api=trading_api,
+            alpaca_account_id=alpaca_account_id,
             order_metadata=metadata or {}
         )
         
@@ -187,14 +200,23 @@ class OrderService:
         self.db.commit()
         self.db.refresh(order)
         
-        # Log audit action
+        # Log audit action (include brokerage context when applicable)
+        audit_meta = {
+            "order_id": order_id,
+            "symbol": symbol,
+            "side": side,
+            "order_type": order_type,
+        }
+        if trading_api == "alpaca_broker" and alpaca_account_id:
+            audit_meta["trading_api"] = "alpaca_broker"
+            audit_meta["alpaca_account_id"] = alpaca_account_id
         log_audit_action(
             db=self.db,
             action=AuditAction.CREATE,
             target_type="order",
             target_id=order.id,
             user_id=user_id,
-            metadata={"order_id": order_id, "symbol": symbol, "side": side, "order_type": order_type}
+            metadata=audit_meta,
         )
         
         logger.info(f"Created order {order_id} for user {user_id}: {side} {quantity} {symbol}")

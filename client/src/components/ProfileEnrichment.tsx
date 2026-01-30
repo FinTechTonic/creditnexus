@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Upload, FileText, X, Loader2, CheckCircle2, AlertCircle, User, Building2 } from 'lucide-react';
+import { Upload, FileText, X, Loader2, CheckCircle2, AlertCircle, User, Building2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { SignupFormApplicant } from './SignupFormApplicant';
@@ -333,6 +333,99 @@ export function ProfileEnrichment({ role, formData, onChange, errors = {} }: Pro
         </p>
         {renderRoleSpecificForm()}
       </div>
+
+      {/* Optional professional certifications (e.g. FINRA) – admin reviews in signup dashboard */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 text-slate-300">
+          <FileText className="h-5 w-5" />
+          <h3 className="font-semibold">Professional certifications (optional)</h3>
+        </div>
+        <p className="text-sm text-slate-400">
+          Add FINRA or equivalent certifications; an admin will review during signup approval.
+        </p>
+        <CertificationsBlock
+          certifications={Array.isArray(formData.certifications) ? formData.certifications : []}
+          onChange={(certs) => onChange({ ...formData, certifications: certs })}
+        />
+      </div>
+    </div>
+  );
+}
+
+interface CertificationsBlockProps {
+  certifications: Array<{ certification_type?: string; number?: string; expiry?: string }>;
+  onChange: (certs: Array<{ certification_type: string; number?: string; expiry?: string }>) => void;
+}
+
+function CertificationsBlock({ certifications, onChange }: CertificationsBlockProps) {
+  const [type, setType] = useState('');
+  const [number, setNumber] = useState('');
+  const [expiry, setExpiry] = useState('');
+
+  const list = certifications.map((c) => ({
+    certification_type: c.certification_type ?? '',
+    number: c.number,
+    expiry: c.expiry,
+  }));
+
+  const add = () => {
+    if (!type.trim()) return;
+    onChange([...list, { certification_type: type.trim(), number: number.trim() || undefined, expiry: expiry.trim() || undefined }]);
+    setType('');
+    setNumber('');
+    setExpiry('');
+  };
+
+  const remove = (index: number) => {
+    onChange(list.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2 items-end">
+        <input
+          type="text"
+          placeholder="Type (e.g. FINRA Series 7)"
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="flex-1 min-w-[140px] rounded border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500"
+        />
+        <input
+          type="text"
+          placeholder="Number"
+          value={number}
+          onChange={(e) => setNumber(e.target.value)}
+          className="w-32 rounded border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500"
+        />
+        <input
+          type="text"
+          placeholder="Expiry (e.g. YYYY-MM-DD)"
+          value={expiry}
+          onChange={(e) => setExpiry(e.target.value)}
+          className="w-36 rounded border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500"
+        />
+        <Button type="button" variant="outline" size="sm" onClick={add} className="border-slate-600 text-slate-300">
+          <Plus className="h-4 w-4 mr-1" />
+          Add
+        </Button>
+      </div>
+      {list.length > 0 && (
+        <ul className="space-y-2">
+          {list.map((c, i) => (
+            <li key={i} className="flex items-center justify-between p-2 bg-slate-800 rounded border border-slate-700 text-sm">
+              <span className="text-slate-200">{c.certification_type}</span>
+              {(c.number || c.expiry) && (
+                <span className="text-slate-400 text-xs ml-2">
+                  {c.number && `#${c.number}`} {c.expiry && `· ${c.expiry}`}
+                </span>
+              )}
+              <button type="button" onClick={() => remove(i)} className="text-slate-400 hover:text-red-400">
+                <X className="h-4 w-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

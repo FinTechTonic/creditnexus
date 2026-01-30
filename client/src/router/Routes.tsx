@@ -14,11 +14,14 @@ import { BusinessLanding } from '@/sites/businesses/BusinessLanding';
 import { DisbursementPage } from '@/sites/payments/DisbursementPage';
 import { ReceiptPage } from '@/sites/payments/ReceiptPage';
 import { MetaMaskLogin } from '@/sites/metamask/MetaMaskLogin';
+import { SignerPortal } from '@/sites/signers/SignerPortal';
 import { VerificationPage } from '@/apps/verification/VerificationPage';
 import { VerificationFileConfigEditor } from '@/apps/verification-config/VerificationFileConfigEditor';
 import { WorkflowProcessingPage } from '@/components/WorkflowProcessingPage';
 import { WorkflowShareInterface } from '@/components/WorkflowShareInterface';
 import { LicenseViewer } from '@/components/LicenseViewer';
+import { UserSettings } from '@/pages/UserSettings';
+import { PrivacyPolicy } from '@/components/PrivacyPolicy';
 
 // Placeholder components for microsites (to be implemented)
 // Note: /project and /docs are deployed separately (GitHub Pages and Mintlify)
@@ -76,6 +79,14 @@ export const router = createAppRouter([
     path: '/signup',
     element: <SignupFlow />,
   },
+  {
+    path: '/privacy-policy',
+    element: <PrivacyPolicy />,
+  },
+  {
+    path: '/signers/:token',
+    element: <SignerPortal />,
+  },
   
   // Application selection
   {
@@ -129,6 +140,14 @@ export const router = createAppRouter([
     ),
   },
   {
+    path: '/app/trading',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/app/link-accounts',
     element: (
       <ProtectedRoute>
@@ -146,6 +165,22 @@ export const router = createAppRouter([
   },
   {
     path: '/app/portfolio-risk',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/polymarket',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/bridge',
     element: (
       <ProtectedRoute>
         <DesktopAppLayout />
@@ -419,6 +454,22 @@ export const router = createAppRouter([
     element: (
       <AdminRoute>
         <div className="p-8">Inbox (Coming Soon)</div>
+      </AdminRoute>
+    ),
+  },
+  {
+    path: '/settings',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin-settings',
+    element: (
+      <AdminRoute>
+        <DesktopAppLayout />
       </AdminRoute>
     ),
   },

@@ -27,7 +27,7 @@
 [![Green Finance](https://img.shields.io/badge/Green-Finance-green?style=flat-square)](https://tonic-ai.mintlify.app/features/green-finance)
 [![Join us on Discord](https://img.shields.io/discord/1109943800132010065?label=Discord&logo=discord&style=flat-square)](https://discord.gg/qdfnvSPcqP) 
 
-CreditNexus is a next-generation financial operating system that bridges the gap between **Sustainabiity-Linked Loans (Legal Contracts)** and **Physical Reality (Satellite Data)**. It uses AI agents to extract covenants from PDF agreements and orchestrates "Ground Truth" verification using geospatial deep learning.
+CreditNexus is a next-generation financial operating system that bridges the gap between **Sustainabiity-Linked Loans (Legal Contracts)** and **Physical Reality (Satellite Data)**. It uses AI agents to extract covenants from PDF agreements and orchestrates "Ground Truth" verification using geospatial deep learning. **Multiuser trading brokerage** is supported via the Alpaca Broker API (one Alpaca customer account per user), with optional Plaid bank linking and onboarding fees.
 
 > 📚 **[Full Documentation](https://tonic-ai.mintlify.app)** | 🏢 **[Company Site](https://josephrp.github.io/creditnexus)** | 🎥 **[Demo Video](https://www.youtube.com/watch?v=jg25So46Wks)**
 

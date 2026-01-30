@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchWithAuth, useAuth } from '@/context/AuthContext';
 import { resolveApiUrl } from '@/utils/apiBase';
-import { Loader2, Layers, Percent, DollarSign, Plus, Trash2, Package, ShoppingCart, List, Coins } from 'lucide-react';
+import { Loader2, Layers, Percent, DollarSign, Plus, Trash2, Package, ShoppingCart, List, Coins, Sparkles } from 'lucide-react';
 
 interface Pool {
   id: number;
@@ -494,7 +494,12 @@ export function StructuredProductsTab() {
   const [loadingPools, setLoadingPools] = useState(true);
   const [loadingPricing, setLoadingPricing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'pricing' | 'build' | 'internal'>('pricing');
+  const [activeSubTab, setActiveSubTab] = useState<'pricing' | 'build' | 'internal' | 'generic'>('pricing');
+
+  // Generic SIP state
+  const [sipTemplates, setSipTemplates] = useState<any[]>([]);
+  const [sipInstances, setSipInstances] = useState<any[]>([]);
+  const [loadingSip, setLoadingSip] = useState(false);
 
   // Build bundle state
   const [basket, setBasket] = useState<BasketAsset[]>([]);
@@ -671,6 +676,26 @@ export function StructuredProductsTab() {
 
   const byName = (name: string) => tranchesList.find((t) => t.tranche_name === name);
 
+  const loadSipData = useCallback(async () => {
+    setLoadingSip(true);
+    try {
+      const [tplRes, instRes] = await Promise.all([
+        fetchWithAuth('/api/structured-products/templates'),
+        fetchWithAuth('/api/structured-products/instances')
+      ]);
+      if (tplRes.ok) setSipTemplates(await tplRes.json());
+      if (instRes.ok) setSipInstances(await instRes.json());
+    } catch (e) {
+      console.error("Failed to load SIP data", e);
+    } finally {
+      setLoadingSip(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSubTab === 'generic') loadSipData();
+  }, [activeSubTab, loadSipData]);
+
   return (
     <div className="space-y-4">
       <div>
@@ -680,12 +705,66 @@ export function StructuredProductsTab() {
         </p>
       </div>
 
-      <Tabs value={activeSubTab} onValueChange={(v) => setActiveSubTab(v as 'pricing' | 'build' | 'internal')}>
+      <Tabs value={activeSubTab} onValueChange={(v) => setActiveSubTab(v as 'pricing' | 'build' | 'internal' | 'generic')}>
         <TabsList>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="build">Build bundle</TabsTrigger>
+          <TabsTrigger value="generic">Generic SIPs</TabsTrigger>
           <TabsTrigger value="internal">Internal market</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="generic" className="space-y-4 mt-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4" />Available Templates</CardTitle>
+                <CardDescription>Bespoke structured product types</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingSip ? <div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div> : (
+                  <div className="space-y-3">
+                    {sipTemplates.length === 0 ? <p className="text-muted-foreground text-sm">No templates available.</p> : 
+                      sipTemplates.map(t => (
+                        <div key={t.id} className="p-3 border rounded-lg flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{t.name}</p>
+                            <p className="text-xs text-muted-foreground">{t.product_type} • {t.underlying_symbol}</p>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => {/* TODO: Issue modal */}}>Issue</Button>
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><BarChart2 className="h-4 w-4" />Live Instances</CardTitle>
+                <CardDescription>Issued products tracking performance</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {sipInstances.length === 0 ? <p className="text-muted-foreground text-sm">No live instances.</p> : 
+                    sipInstances.map(i => (
+                      <div key={i.id} className="p-3 border rounded-lg flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">Instance #{i.id}</p>
+                          <p className="text-xs text-muted-foreground">Matures: {i.maturity_date}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-emerald-500">${i.current_value?.toLocaleString()}</p>
+                          <Button size="xs" variant="link" className="h-auto p-0">Subscribe</Button>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
 
         <TabsContent value="internal" className="space-y-4 mt-4">
           <InternalMarketSection pools={pools} />

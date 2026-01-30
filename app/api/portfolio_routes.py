@@ -18,6 +18,8 @@ from app.api.trading_routes import get_trading_api_service
 from app.services.trading_api_service import TradingAPIService
 from app.services.subscription_service import SubscriptionService
 from app.services.portfolio_risk_service import PortfolioRiskService
+from app.services.technical_indicators_service import TechnicalIndicatorsService
+from app.services import portfolio_aggregation_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,15 +80,32 @@ async def get_portfolio_overview(
     if not has_permission(current_user, PERMISSION_TRADE_VIEW):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    trading_equity = 0.0
-    positions: List[Dict[str, Any]] = []
-    account_info: Dict[str, Any] = {}
-    unrealized_pl = 0.0
+    # Calculate manual assets value
+    manual_assets_value = 0.0
+    for a in db.query(ManualAsset).filter(ManualAsset.user_id == current_user.id).all():
+        v = a.current_value if a.current_value is not None else a.purchase_price
+        if v is not None:
+            manual_assets_value += float(v)
+
+    # Use the new portfolio aggregation service for Plaid data
+    overview = portfolio_aggregation_service.get_unified_portfolio(
+        db, current_user.id, manual_assets_value=manual_assets_value
+    )
+
+    # Merge trading API positions if available
+    positions = list(overview.get("positions") or [])
+    account_info = overview.get("account_info") or {}
+    unrealized_pl = float(overview.get("unrealized_pl") or 0.0)
+    trading_equity = float(overview.get("trading_equity") or 0.0)
 
     try:
         pos_list = list(trading_api_service.get_positions())
-        account_info = trading_api_service.get_account_info() or {}
-        trading_equity = float(account_info.get("portfolio_value") or 0.0)
+        trading_account_info = trading_api_service.get_account_info() or {}
+        account_info.update(trading_account_info)
+        trading_equity_from_api = float(trading_account_info.get("portfolio_value") or 0.0)
+        if trading_equity_from_api > 0:
+            trading_equity = trading_equity_from_api
+        
         for p in pos_list:
             positions.append({
                 "symbol": p.get("symbol", ""),
@@ -101,6 +120,7 @@ async def get_portfolio_overview(
     except TradingAPIError:
         pass
 
+    # Add manual holdings
     manual = db.query(ManualHolding).filter(ManualHolding.user_id == current_user.id).all()
     for m in manual:
         po = _manual_to_position(m)
@@ -108,30 +128,19 @@ async def get_portfolio_overview(
         if po.get("market_value"):
             trading_equity += po["market_value"]
 
-    bank_balances = 0.0
-    conn = get_plaid_connection(db, current_user.id)
-    if conn and conn.connection_data and isinstance(conn.connection_data, dict):
-        at = conn.connection_data.get("access_token")
-        if at:
-            bal = get_balances(at)
-            if "accounts" in bal and "error" not in bal:
-                for acc in bal["accounts"]:
-                    b = acc.get("balances") if isinstance(acc, dict) else {}
-                    if isinstance(b, dict):
-                        bank_balances += float(b.get("current") or b.get("available") or 0)
-
-    manual_assets_value = 0.0
-    for a in db.query(ManualAsset).filter(ManualAsset.user_id == current_user.id).all():
-        v = a.current_value if a.current_value is not None else a.purchase_price
-        if v is not None:
-            manual_assets_value += float(v)
-
-    total_equity = trading_equity + bank_balances + manual_assets_value
-    buying_power = float(account_info.get("buying_power") or account_info.get("cash") or 0.0)
+    # Recalculate metrics with merged data
+    metrics = portfolio_aggregation_service.calculate_portfolio_metrics(
+        bank_balances=float(overview.get("bank_balances") or 0.0),
+        trading_equity=trading_equity,
+        manual_assets_value=manual_assets_value,
+        unrealized_pl=unrealized_pl,
+    )
+    
+    buying_power = float(account_info.get("buying_power") or account_info.get("cash") or metrics.get("buying_power") or 0.0)
 
     return PortfolioOverviewResponse(
-        total_equity=total_equity,
-        bank_balances=bank_balances,
+        total_equity=metrics["total_equity"],
+        bank_balances=metrics["bank_balances"],
         trading_equity=trading_equity,
         manual_assets_value=manual_assets_value,
         unrealized_pl=unrealized_pl,
@@ -277,3 +286,78 @@ async def get_portfolio_performance(
     except Exception as e:
         logger.error(f"Failed to calculate portfolio performance: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to calculate performance: {str(e)}")
+
+
+@router.get("/transactions")
+async def get_portfolio_transactions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    days: int = Query(30, ge=1, le=365, description="Number of days to fetch transactions"),
+):
+    """Get aggregated transactions from Plaid. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = portfolio_aggregation_service.aggregate_transactions(db, current_user.id, days=days)
+    return {
+        "transactions": result.transactions,
+        "total_transactions": result.total_transactions,
+    }
+
+
+@router.get("/investments")
+async def get_portfolio_investments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get aggregated investment holdings from Plaid. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = portfolio_aggregation_service.aggregate_investments(db, current_user.id)
+    return {
+        "positions": result.positions,
+        "total_market_value": result.total_market_value,
+        "unrealized_pl": result.unrealized_pl,
+    }
+
+
+@router.get("/liabilities")
+async def get_portfolio_liabilities(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get aggregated liabilities from Plaid. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = portfolio_aggregation_service.aggregate_liabilities(db, current_user.id)
+    return {
+        "liabilities": result.liabilities,
+    }
+
+
+@router.get("/technical-indicators")
+async def get_technical_indicators(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    days: int = Query(30, ge=1, le=365, description="Number of days for calculation")
+):
+    """Get technical indicators for user's portfolio.
+    
+    Returns RSI, MACD, Bollinger Bands, and Moving Averages.
+    Requires PERMISSION_TRADE_VIEW.
+    """
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        service = TechnicalIndicatorsService(db)
+        indicators = service.get_portfolio_technical_indicators(
+            user_id=current_user.id,
+            days=days
+        )
+        return indicators
+    except Exception as e:
+        logger.error(f"Failed to calculate technical indicators: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to calculate technical indicators: {str(e)}")

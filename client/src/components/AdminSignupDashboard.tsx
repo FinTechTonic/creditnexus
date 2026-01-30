@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { 
   User, 
   Search, 
-  // Filter removed - unused 
   CheckCircle, 
   XCircle, 
   Clock,
@@ -14,7 +13,8 @@ import {
   FileText,
   Building2,
   Mail,
-  Calendar
+  Calendar,
+  Shield,
 } from 'lucide-react';
 import { fetchWithAuth, useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -55,6 +55,19 @@ interface SignupListResponse {
   };
 }
 
+interface KYCDocumentItem {
+  id: number;
+  document_type: string;
+  document_category: string;
+  verification_status: string;
+  document_id: number;
+}
+
+interface SignupDetailUser extends SignupUser {
+  kyc_verification?: Record<string, unknown> | null;
+  kyc_documents?: KYCDocumentItem[];
+}
+
 export function AdminSignupDashboard() {
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
@@ -75,6 +88,10 @@ export function AdminSignupDashboard() {
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [approvalUser, setApprovalUser] = useState<SignupUser | null>(null);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
+  const [signupDetails, setSignupDetails] = useState<SignupDetailUser | null>(null);
+  const [signupDetailsLoading, setSignupDetailsLoading] = useState(false);
+  const [kycActionLoading, setKycActionLoading] = useState<number | string | null>(null);
+  const [certVerifyLoading, setCertVerifyLoading] = useState(false);
 
   useEffect(() => {
     fetchSignups();
@@ -466,9 +483,22 @@ export function AdminSignupDashboard() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
+                      onClick={async () => {
                         setSelectedSignup(signup);
                         setShowViewModal(true);
+                        setSignupDetails(null);
+                        setSignupDetailsLoading(true);
+                        try {
+                          const r = await fetchWithAuth(`/api/admin/signups/${signup.id}`);
+                          if (r.ok) {
+                            const json = await r.json();
+                            setSignupDetails(json.data);
+                          }
+                        } catch {
+                          setSignupDetails(signup as SignupDetailUser);
+                        } finally {
+                          setSignupDetailsLoading(false);
+                        }
                       }}
                       className="border-slate-600 text-slate-300 hover:bg-slate-700"
                     >
@@ -694,6 +724,7 @@ export function AdminSignupDashboard() {
                   onClick={() => {
                     setShowViewModal(false);
                     setSelectedSignup(null);
+                    setSignupDetails(null);
                   }}
                   className="text-slate-400 hover:text-slate-100"
                 >
@@ -702,61 +733,68 @@ export function AdminSignupDashboard() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {signupDetailsLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
+                </div>
+              ) : (
+                <>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Display Name</label>
-                  <p className="text-slate-100 font-medium">{selectedSignup.display_name}</p>
+                  <p className="text-slate-100 font-medium">{(signupDetails ?? selectedSignup).display_name}</p>
                 </div>
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Email</label>
-                  <p className="text-slate-100 font-medium">{selectedSignup.email}</p>
+                  <p className="text-slate-100 font-medium">{(signupDetails ?? selectedSignup).email}</p>
                 </div>
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Role</label>
-                  <p className="text-slate-100 font-medium">{selectedSignup.role.replace('_', ' ')}</p>
+                  <p className="text-slate-100 font-medium">{(signupDetails ?? selectedSignup).role.replace('_', ' ')}</p>
                 </div>
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Status</label>
-                  <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getStatusColor(selectedSignup.signup_status)}`}>
-                    {selectedSignup.signup_status}
+                  <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getStatusColor((signupDetails ?? selectedSignup).signup_status)}`}>
+                    {(signupDetails ?? selectedSignup).signup_status}
                   </span>
                 </div>
-                {selectedSignup.signup_submitted_at && (
+                {(signupDetails ?? selectedSignup).signup_submitted_at && (
                   <div>
                     <label className="text-xs text-slate-400 mb-1 block">Submitted At</label>
                     <p className="text-slate-100 font-medium">
-                      {new Date(selectedSignup.signup_submitted_at).toLocaleString()}
+                      {new Date((signupDetails ?? selectedSignup).signup_submitted_at!).toLocaleString()}
                     </p>
                   </div>
                 )}
-                {selectedSignup.signup_reviewed_at && (
+                {(signupDetails ?? selectedSignup).signup_reviewed_at && (
                   <div>
                     <label className="text-xs text-slate-400 mb-1 block">Reviewed At</label>
                     <p className="text-slate-100 font-medium">
-                      {new Date(selectedSignup.signup_reviewed_at).toLocaleString()}
+                      {new Date((signupDetails ?? selectedSignup).signup_reviewed_at!).toLocaleString()}
                     </p>
                   </div>
                 )}
-                {selectedSignup.organization && (
+                {(signupDetails ?? selectedSignup).organization && (
                   <div className="col-span-2">
                     <label className="text-xs text-slate-400 mb-1 block">Organization</label>
                     <div className="flex items-center gap-2">
-                      <p className="text-slate-100 font-medium">{selectedSignup.organization.name}</p>
-                      {!selectedSignup.organization.is_active && (
+                      <p className="text-slate-100 font-medium">{(signupDetails ?? selectedSignup).organization!.name}</p>
+                      {!(signupDetails ?? selectedSignup).organization!.is_active && (
                         <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded text-xs">
                           Pending Approval
                         </span>
                       )}
-                      {!selectedSignup.organization.is_active && (
+                      {!(signupDetails ?? selectedSignup).organization!.is_active && (
                         <Button
                           size="sm"
                           onClick={async () => {
                             try {
-                              const response = await fetchWithAuth(`/api/organizations/${selectedSignup.organization!.id}/approve`, {
+                              const response = await fetchWithAuth(`/api/organizations/${(signupDetails ?? selectedSignup).organization!.id}/approve`, {
                                 method: 'POST',
                               });
                               if (response.ok) {
                                 await fetchSignups();
+                                setSignupDetails(null);
                                 setSelectedSignup(null);
                                 setShowViewModal(false);
                               } else {
@@ -778,11 +816,77 @@ export function AdminSignupDashboard() {
                 )}
               </div>
 
-              {selectedSignup.profile_data && Object.keys(selectedSignup.profile_data).length > 0 && (
+              {/* Certifications (FINRA / equivalent) – optional; admin can verify */}
+              {(() => {
+                const pd = (signupDetails ?? selectedSignup).profile_data;
+                const certs = pd && typeof pd === 'object' && Array.isArray(pd.certifications) ? pd.certifications : [];
+                const certReviewedAt = pd && typeof pd === 'object' ? (pd as Record<string, unknown>).certification_reviewed_at : null;
+                if (certs.length === 0 && !certReviewedAt) return null;
+                return (
+                  <div className="border-t border-slate-700 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-slate-300">Certifications (FINRA / equivalent)</label>
+                      {certs.length > 0 && !certReviewedAt && (
+                        <Button
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-500"
+                          disabled={certVerifyLoading}
+                          onClick={async () => {
+                            if (!selectedSignup) return;
+                            setCertVerifyLoading(true);
+                            try {
+                              const r = await fetchWithAuth(`/api/admin/signups/${selectedSignup.id}/verify-certification`, { method: 'POST' });
+                              if (r.ok) {
+                                const detailR = await fetchWithAuth(`/api/admin/signups/${selectedSignup.id}`);
+                                if (detailR.ok) {
+                                  const json = await detailR.json();
+                                  setSignupDetails(json.data);
+                                }
+                              } else {
+                                const err = await r.json().catch(() => ({}));
+                                setError(err.detail?.message || 'Failed to verify certification');
+                              }
+                            } catch {
+                              setError('Failed to verify certification');
+                            } finally {
+                              setCertVerifyLoading(false);
+                            }
+                          }}
+                        >
+                          {certVerifyLoading ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+                          Verify certification
+                        </Button>
+                      )}
+                    </div>
+                    {certReviewedAt && (
+                      <p className="text-xs text-emerald-400 mb-2">
+                        Reviewed {new Date(String(certReviewedAt)).toLocaleString()}
+                      </p>
+                    )}
+                    {certs.length > 0 && (
+                      <div className="space-y-2 mb-2">
+                        {certs.map((c: Record<string, unknown>, i: number) => (
+                          <div key={i} className="p-2 bg-slate-900 rounded-lg text-sm">
+                            <span className="text-slate-300 font-medium">{String(c.certification_type || '—')}</span>
+                            {c.number != null && String(c.number) && (
+                              <span className="text-slate-400 ml-2">#{String(c.number)}</span>
+                            )}
+                            {c.expiry != null && String(c.expiry) && (
+                              <span className="text-slate-400 ml-2">Expiry: {String(c.expiry)}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {(signupDetails ?? selectedSignup).profile_data && Object.keys((signupDetails ?? selectedSignup).profile_data!).length > 0 && (
                 <div>
                   <label className="text-xs text-slate-400 mb-2 block">Profile Data</label>
                   <div className="p-3 bg-slate-900 rounded-lg space-y-2">
-                    {Object.entries(selectedSignup.profile_data).map(([key, value]) => {
+                    {Object.entries((signupDetails ?? selectedSignup).profile_data!).map(([key, value]) => {
                       // Handle objects, arrays, and null/undefined values
                       let displayValue: string;
                       if (value === null || value === undefined) {
@@ -813,12 +917,152 @@ export function AdminSignupDashboard() {
                 </div>
               )}
 
-              {selectedSignup.signup_rejection_reason && (
+              {(signupDetails ?? selectedSignup).signup_rejection_reason && (
                 <div>
                   <label className="text-xs text-slate-400 mb-2 block">Rejection Reason</label>
                   <p className="text-sm text-slate-100 p-3 bg-red-900/30 border border-red-700 rounded-lg">
-                    {selectedSignup.signup_rejection_reason}
+                    {(signupDetails ?? selectedSignup).signup_rejection_reason}
                   </p>
+                </div>
+              )}
+
+              {/* KYC & Documents section */}
+              {(signupDetails?.kyc_verification != null || (signupDetails?.kyc_documents?.length ?? 0) > 0) && (
+                <div className="border-t border-slate-700 pt-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Shield className="h-5 w-5 text-slate-400" />
+                    <label className="text-sm font-medium text-slate-300">KYC & Documents</label>
+                  </div>
+                  {signupDetails?.kyc_verification && (
+                    <div className="text-xs text-slate-400 mb-2">
+                      KYC status: {(signupDetails.kyc_verification as Record<string, unknown>).kyc_status ?? '—'}
+                    </div>
+                  )}
+                  {signupDetails?.kyc_documents && signupDetails.kyc_documents.length > 0 && (
+                    <div className="space-y-2">
+                      {signupDetails.kyc_documents.map((doc) => (
+                        <div
+                          key={doc.id}
+                          className="flex items-center justify-between p-2 bg-slate-900 rounded-lg"
+                        >
+                          <span className="text-sm text-slate-300">
+                            {doc.document_type} / {doc.document_category}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              doc.verification_status === 'verified' ? 'bg-emerald-500/20 text-emerald-400' :
+                              doc.verification_status === 'rejected' ? 'bg-red-500/20 text-red-400' :
+                              'bg-yellow-500/20 text-yellow-400'
+                            }`}>
+                              {doc.verification_status}
+                            </span>
+                            {doc.verification_status === 'pending' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-emerald-600 text-emerald-400 hover:bg-emerald-500/20"
+                                  disabled={kycActionLoading === `verify-${doc.id}`}
+                                  onClick={async () => {
+                                    setKycActionLoading(`verify-${doc.id}`);
+                                    try {
+                                      const r = await fetchWithAuth(`/api/kyc/admin/documents/${doc.id}/verify`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ verification_status: 'verified' }),
+                                      });
+                                      if (r.ok) {
+                                        const detailR = await fetchWithAuth(`/api/admin/signups/${selectedSignup.id}`);
+                                        if (detailR.ok) {
+                                          const json = await detailR.json();
+                                          setSignupDetails(json.data);
+                                        }
+                                      } else {
+                                        const err = await r.json().catch(() => ({}));
+                                        setError(err.detail?.message || 'Failed to verify document');
+                                      }
+                                    } catch {
+                                      setError('Failed to verify document');
+                                    } finally {
+                                      setKycActionLoading(null);
+                                    }
+                                  }}
+                                >
+                                  {kycActionLoading === `verify-${doc.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Verify'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-red-600 text-red-400 hover:bg-red-500/20"
+                                  disabled={kycActionLoading === `reject-${doc.id}`}
+                                  onClick={async () => {
+                                    setKycActionLoading(`reject-${doc.id}`);
+                                    try {
+                                      const r = await fetchWithAuth(`/api/kyc/admin/documents/${doc.id}/verify`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ verification_status: 'rejected' }),
+                                      });
+                                      if (r.ok) {
+                                        const detailR = await fetchWithAuth(`/api/admin/signups/${selectedSignup.id}`);
+                                        if (detailR.ok) {
+                                          const json = await detailR.json();
+                                          setSignupDetails(json.data);
+                                        }
+                                      } else {
+                                        const err = await r.json().catch(() => ({}));
+                                        setError(err.detail?.message || 'Failed to reject document');
+                                      }
+                                    } catch {
+                                      setError('Failed to reject document');
+                                    } finally {
+                                      setKycActionLoading(null);
+                                    }
+                                  }}
+                                >
+                                  {kycActionLoading === `reject-${doc.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Reject'}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {signupDetails?.kyc_verification && (signupDetails.kyc_verification as Record<string, unknown>).kyc_status === 'pending' && (
+                    <Button
+                      size="sm"
+                      className="mt-2 bg-emerald-600 hover:bg-emerald-500"
+                      disabled={kycActionLoading === 'kyc-complete'}
+                      onClick={async () => {
+                        setKycActionLoading('kyc-complete');
+                        try {
+                          const r = await fetchWithAuth(`/api/kyc/admin/users/${selectedSignup.id}/kyc-review`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ kyc_status: 'completed' }),
+                          });
+                          if (r.ok) {
+                            const detailR = await fetchWithAuth(`/api/admin/signups/${selectedSignup.id}`);
+                            if (detailR.ok) {
+                              const json = await detailR.json();
+                              setSignupDetails(json.data);
+                            }
+                          } else {
+                            const err = await r.json().catch(() => ({}));
+                            setError(err.detail?.message || 'Failed to complete KYC review');
+                          }
+                        } catch {
+                          setError('Failed to complete KYC review');
+                        } finally {
+                          setKycActionLoading(null);
+                        }
+                      }}
+                    >
+                      {kycActionLoading === 'kyc-complete' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+                      Mark KYC completed
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -828,12 +1072,15 @@ export function AdminSignupDashboard() {
                   onClick={() => {
                     setShowViewModal(false);
                     setSelectedSignup(null);
+                    setSignupDetails(null);
                   }}
                   className="border-slate-600 text-slate-300"
                 >
                   Close
                 </Button>
               </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
