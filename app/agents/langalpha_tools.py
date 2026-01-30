@@ -41,7 +41,7 @@ from app.core import data_cache as dc
 from app.core.llm_client import get_chat_model
 from app.services.web_search_service import WebSearchService, get_web_search_service
 from app.utils.audit import log_audit_action
-from app.db.models import AuditAction
+from app.db.models import AuditAction, UserByokKey
 
 logger = logging.getLogger(__name__)
 
@@ -132,21 +132,32 @@ def get_web_search_service_instance() -> WebSearchService:
 # ============================================================================
 
 def _get_polygon_client() -> Optional[RESTClient]:
-    """Get Polygon REST client."""
+    """Get Polygon REST client. Prefer user BYOK key when audit context has user_id and db."""
     api_key = None
-    if hasattr(settings, "POLYGON_API_KEY") and settings.POLYGON_API_KEY:
+    user_id = _audit_user_id.get()
+    db = _audit_db.get()
+    if user_id and db:
+        row = (
+            db.query(UserByokKey)
+            .filter(
+                UserByokKey.user_id == user_id,
+                UserByokKey.provider == "polygon",
+            )
+            .first()
+        )
+        if row and getattr(row, "credentials_encrypted", None) and isinstance(row.credentials_encrypted, dict):
+            api_key = row.credentials_encrypted.get("api_key")
+    if not api_key and hasattr(settings, "POLYGON_API_KEY") and settings.POLYGON_API_KEY:
         api_key = settings.POLYGON_API_KEY.get_secret_value()
-    elif os.getenv("POLYGON_API_KEY"):
+    if not api_key and os.getenv("POLYGON_API_KEY"):
         api_key = os.getenv("POLYGON_API_KEY")
-    
     if not api_key:
         logger.warning("POLYGON_API_KEY not configured. Market data tools will fail.")
         return None
-    
     try:
         return RESTClient(api_key=api_key)
     except Exception as e:
-        logger.error(f"Failed to initialize Polygon client: {e}")
+        logger.error("Failed to initialize Polygon client: %s", e)
         return None
 
 

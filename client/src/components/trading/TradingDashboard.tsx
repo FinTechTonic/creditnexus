@@ -8,7 +8,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { OrderForm } from './OrderForm';
+import { fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
+import { Link } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
 import { PortfolioView } from './PortfolioView';
 import { MarketData } from './MarketData';
 import { OrderHistory } from './OrderHistory';
@@ -38,6 +43,18 @@ export function TradingDashboard() {
   
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const isInitialMount = useRef(true);
+  const [brokerageStatus, setBrokerageStatus] = useState<{ has_account: boolean; status?: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWithAuth(resolveApiUrl('/api/brokerage/account/status'))
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled && d) setBrokerageStatus(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const brokerageGate = brokerageStatus?.has_account && brokerageStatus?.status !== 'ACTIVE';
 
   // Save tab to sessionStorage whenever it changes
   useEffect(() => {
@@ -79,6 +96,15 @@ export function TradingDashboard() {
       }
     >
       <div className="space-y-6 p-6">
+        {brokerageGate && (
+          <Alert variant="destructive" className="border-amber-700 bg-amber-900/20">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Your trading account is not yet active ({brokerageStatus?.status ?? 'pending'}). Complete onboarding in{' '}
+              <Link to="/settings" className="underline font-medium">Settings → Trading account</Link> to place orders.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Trading Dashboard</h1>

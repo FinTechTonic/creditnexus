@@ -203,6 +203,13 @@ class KYCService:
             "deal_type": deal_type,
         }
 
+    def evaluate_kyc_for_brokerage(self, user_id: int) -> bool:
+        """Evaluate whether user meets KYC requirements for brokerage (Alpaca account opening).
+        Uses policy with deal_type='brokerage'; requires identity_verified (and optionally docs).
+        """
+        result = self.evaluate_kyc_compliance(user_id, deal_type="brokerage")
+        return result.get("compliant", False) is True
+
     def get_kyc_requirements(self, deal_type: str) -> List[Dict[str, Any]]:
         """Get KYC requirements for a specific deal type."""
         # This would typically come from a policy or config
@@ -215,3 +222,58 @@ class KYCService:
             requirements.append({"type": "professional_license", "required": True, "description": "Relevant professional certification"})
             
         return requirements
+
+    def verify_kyc_document(
+        self, kyc_document_id: int, verification_status: str, reviewer_id: int
+    ) -> KYCDocument:
+        """Set verification status of a KYC document (admin/reviewer)."""
+        if verification_status not in ("verified", "rejected", "expired"):
+            raise ValueError(f"Invalid verification_status: {verification_status}")
+        kyc_doc = self.db.query(KYCDocument).filter(KYCDocument.id == kyc_document_id).first()
+        if not kyc_doc:
+            raise ValueError(f"KYCDocument {kyc_document_id} not found")
+        kyc_doc.verification_status = verification_status
+        kyc_doc.reviewed_by = reviewer_id
+        kyc_doc.reviewed_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(kyc_doc)
+        return kyc_doc
+
+    def complete_kyc_review(
+        self,
+        user_id: int,
+        kyc_status: str,
+        reviewer_id: int,
+        rejection_reason: Optional[str] = None,
+    ) -> KYCVerification:
+        """Complete or reject a user's KYC verification (admin/reviewer)."""
+        if kyc_status not in ("completed", "rejected"):
+            raise ValueError(f"Invalid kyc_status: {kyc_status}")
+        verification = self.db.query(KYCVerification).filter(KYCVerification.user_id == user_id).first()
+        if not verification:
+            raise ValueError(f"KYCVerification for user {user_id} not found")
+        verification.kyc_status = kyc_status
+        verification.reviewed_at = datetime.utcnow()
+        verification.reviewed_by = reviewer_id
+        if kyc_status == "rejected" and rejection_reason:
+            meta = verification.verification_metadata or {}
+            meta["rejection_reason"] = rejection_reason
+            verification.verification_metadata = meta
+        if kyc_status == "completed":
+            verification.completed_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(verification)
+        try:
+            from app.services.kyc_brokerage_notification import notify_kyc_brokerage_status
+
+            subject = "KYC verification update"
+            if kyc_status == "completed":
+                msg = "Your KYC verification has been completed."
+            else:
+                msg = "Your KYC verification has been reviewed. Please check the app for details."
+                if rejection_reason:
+                    msg += f" Reason: {rejection_reason}"
+            notify_kyc_brokerage_status(self.db, user_id, subject, msg)
+        except Exception as exc:
+            logger.warning("KYC/brokerage notification failed after complete_kyc_review: %s", exc)
+        return verification

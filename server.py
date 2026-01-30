@@ -48,8 +48,11 @@ from app.api.implementation_routes import router as implementation_router
 from app.api.trading_routes import router as trading_router
 from app.api.stock_prediction_routes import router as stock_prediction_router
 from app.api.banking_routes import router as banking_router
+from app.api.transfer_routes import router as transfer_router
+from app.api.funding_routes import router as funding_router, credits_router
 from app.api.asset_routes import router as asset_router
 from app.api.portfolio_routes import router as portfolio_router
+from app.api.brokerage_routes import router as brokerage_router
 from app.api.polymarket_routes import router as polymarket_router
 from app.api.cross_chain_routes import router as cross_chain_router
 from app.api.challenge_coin_routes import router as challenge_coin_router
@@ -717,8 +720,12 @@ app.include_router(twilio_router)
 app.include_router(trading_router)
 app.include_router(stock_prediction_router)
 app.include_router(banking_router)
+app.include_router(transfer_router)
+app.include_router(funding_router)
+app.include_router(credits_router)
 app.include_router(asset_router)
 app.include_router(portfolio_router)
+app.include_router(brokerage_router, prefix="/api")
 app.include_router(polymarket_router)
 app.include_router(cross_chain_router)
 app.include_router(challenge_coin_router)

@@ -295,6 +295,8 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
 
   // Org-admin payment gating
   const [showOrgAdminPayment, setShowOrgAdminPayment] = useState(false);
+  const [showPlaidPrompt, setShowPlaidPrompt] = useState(false);
+  const [signupSkippedPayment, setSignupSkippedPayment] = useState(false);
   const [orgAdminPaid, setOrgAdminPaid] = useState(false);
   
   const navigate = useNavigate();
@@ -374,47 +376,15 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
       });
       
       if (success) {
-        // If user is signing up as an org admin (role=admin), require $2 org-admin payment before Plaid link + dashboard access.
-        if (formData.role === 'admin' && !orgAdminPaid) {
+        // If user is signing up as an org admin (role=admin), show payment modal (or skip).
+        if (formData.role === 'admin' && !orgAdminPaid && !signupSkippedPayment) {
           setShowOrgAdminPayment(true);
           return;
         }
 
-        // Require Plaid Link before allowing dashboard access
+        // Show Plaid link prompt (optional: Connect or Skip for now)
         setPlaidError(null);
-        setPlaidLinking(true);
-        try {
-          const statusResp = await fetchWithAuth('/api/banking/status');
-          const statusData = await statusResp.json().catch(() => ({}));
-          if (!statusResp.ok) {
-            setPlaidError(statusData.detail || 'Failed to verify Plaid status.');
-            return;
-          }
-
-          if (!statusData.plaid_enabled) {
-            setPlaidError('Plaid is not enabled for this environment. Contact your administrator.');
-            return;
-          }
-
-          if (statusData.connected) {
-            setPlaidLinked(true);
-            if (onComplete) onComplete();
-            else navigate('/dashboard', { replace: true });
-            return;
-          }
-
-          const linkTokenResp = await fetchWithAuth('/api/banking/link-token');
-          const linkTokenData = await linkTokenResp.json().catch(() => ({}));
-          if (!linkTokenResp.ok || !linkTokenData.link_token) {
-            setPlaidError(linkTokenData.detail || linkTokenData.error || 'Failed to start Plaid Link.');
-            return;
-          }
-
-          setPlaidLinkToken(linkTokenData.link_token);
-          // Navigation will happen after Plaid Link onSuccess
-        } finally {
-          setPlaidLinking(false);
-        }
+        setShowPlaidPrompt(true);
       }
     } catch (error) {
       console.error('Signup error:', error);
@@ -445,6 +415,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         setPlaidLinked(true);
         setPlaidLinkToken(null);
         openedPlaidTokenRef.token = null;
+        await persistCertifications();
         if (onComplete) onComplete();
         else navigate('/dashboard', { replace: true });
       } catch {
@@ -467,7 +438,86 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
   const proceedAfterOrgAdminPaid = () => {
     setOrgAdminPaid(true);
     setShowOrgAdminPayment(false);
-    void handleSubmit();
+    setShowPlaidPrompt(true);
+  };
+
+  const handleSkipPayment = async () => {
+    try {
+      await fetchWithAuth('/api/user-settings/signup-flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signup_skipped_payment: true }),
+      });
+    } catch {
+      // Non-blocking
+    }
+    setSignupSkippedPayment(true);
+    proceedAfterOrgAdminPaid();
+  };
+
+  const handlePlaidConnect = async () => {
+    setPlaidError(null);
+    setPlaidLinking(true);
+    try {
+      const statusResp = await fetchWithAuth('/api/banking/status');
+      const statusData = await statusResp.json().catch(() => ({}));
+      if (statusData.connected) {
+        setPlaidLinked(true);
+        setShowPlaidPrompt(false);
+        await persistCertifications();
+        if (onComplete) onComplete();
+        else navigate('/dashboard', { replace: true });
+        return;
+      }
+      const linkTokenResp = await fetchWithAuth('/api/banking/link-token');
+      const linkTokenData = await linkTokenResp.json().catch(() => ({}));
+      if (!linkTokenResp.ok || !linkTokenData.link_token) {
+        setPlaidError(linkTokenData.detail || linkTokenData.error || 'Failed to start Plaid Link.');
+        return;
+      }
+      setPlaidLinkToken(linkTokenData.link_token);
+    } catch {
+      setPlaidError('Failed to start Plaid.');
+    } finally {
+      setPlaidLinking(false);
+    }
+  };
+
+  const persistCertifications = async () => {
+    const certs = formData.profileData?.certifications;
+    if (Array.isArray(certs) && certs.length > 0) {
+      try {
+        await fetchWithAuth('/api/user-settings/certifications', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            certifications: certs.map((c: { certification_type?: string; number?: string; expiry?: string }) => ({
+              certification_type: c.certification_type ?? '',
+              number: c.number ?? undefined,
+              expiry: c.expiry ?? undefined,
+            })),
+          }),
+        });
+      } catch {
+        // Non-blocking
+      }
+    }
+  };
+
+  const handlePlaidSkip = async () => {
+    try {
+      await fetchWithAuth('/api/user-settings/signup-flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signup_skipped_plaid: true }),
+      });
+    } catch {
+      // Non-blocking
+    }
+    await persistCertifications();
+    setShowPlaidPrompt(false);
+    if (onComplete) onComplete();
+    else navigate('/dashboard', { replace: true });
   };
 
   const renderStepContent = () => {
@@ -851,6 +901,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         open={showOrgAdminPayment}
         onClose={() => setShowOrgAdminPayment(false)}
         onPaid={proceedAfterOrgAdminPaid}
+        onSkip={handleSkipPayment}
         canBypass={false}
       />
       <Card className="w-full max-w-2xl">
@@ -907,7 +958,36 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         </CardHeader>
         
         <CardContent>
-          {renderStepContent()}
+          {showPlaidPrompt ? (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-100">Link your bank (optional)</h3>
+              <p className="text-slate-400 text-sm">
+                Connect your accounts for a full dashboard. You can skip and link later in User Settings.
+              </p>
+              {plaidError && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/50 rounded-lg">
+                  <p className="text-sm text-amber-400">{plaidError}</p>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <Button onClick={handlePlaidConnect} disabled={plaidLinking}>
+                  {plaidLinking ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Connecting…
+                    </>
+                  ) : (
+                    'Connect with Plaid'
+                  )}
+                </Button>
+                <Button variant="outline" onClick={handlePlaidSkip}>
+                  Skip for now
+                </Button>
+              </div>
+            </div>
+          ) : (
+            renderStepContent()
+          )}
           
           <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-700">
             <Button

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for Modal remote() so it runs outside the async event loop (avoids gRPC errors)
+_MODAL_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="modal_chronos")
 
 
 def _run_local_chronos(
@@ -67,13 +71,19 @@ class ChronosModelManager:
             import modal
 
             fn = modal.Function.from_name(self._app_name, "chronos_inference")
-            out = fn.remote(
-                symbol=symbol,
-                context=context,
-                horizon=horizon,
-                model_id=mid,
-                device=self._device,
-            )
+
+            def _call_remote() -> Dict[str, Any]:
+                return fn.remote(
+                    symbol=symbol,
+                    context=context,
+                    horizon=horizon,
+                    model_id=mid,
+                    device=self._device,
+                )
+
+            # Run Modal remote() in a thread so it doesn't conflict with the async event loop / gRPC
+            future = _MODAL_EXECUTOR.submit(_call_remote)
+            out = future.result(timeout=120)
             if isinstance(out, dict) and "error" in out:
                 return {"forecast": [], "model_id": mid, "symbol": symbol, "error": out["error"]}
             return out if isinstance(out, dict) else {"forecast": [], "model_id": mid, "error": "invalid response"}

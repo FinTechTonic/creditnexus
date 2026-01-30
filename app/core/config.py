@@ -246,6 +246,27 @@ class Settings(BaseSettings):
         default=False,
         description="When True, attempt to register SFP markets with Polymarket Gamma/CLOB (if supported)"
     )
+    # Polymarket Builders Program: order attribution and relayer (obtain keys from polymarket.com/settings?tab=builder)
+    POLY_BUILDER_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Polymarket builder API key for order attribution and relayer auth",
+    )
+    POLY_BUILDER_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        description="Polymarket builder secret for HMAC signing (never expose to client)",
+    )
+    POLY_BUILDER_PASSPHRASE: Optional[SecretStr] = Field(
+        default=None,
+        description="Polymarket builder passphrase for builder headers",
+    )
+    POLYMARKET_BUILDER_SIGNING_MODE: str = Field(
+        default="remote",
+        description="remote = our POST /api/polymarket/builder/sign returns headers; local = backend signs with builder creds",
+    )
+    POLYMARKET_RELAYER_URL: str = Field(
+        default="https://relayer-v2.polymarket.com/",
+        description="Polymarket relayer URL for gasless Safe/proxy deploy and CTF execute",
+    )
 
     # Polymarket Cross-Chain (bridge, outcome tokens on L2s)
     CROSS_CHAIN_ENABLED: bool = Field(
@@ -271,6 +292,16 @@ class Settings(BaseSettings):
     PLAID_SECRET: Optional[SecretStr] = Field(default=None, description="Plaid secret (use development/sandbox secret for non-production)")
     PLAID_ENV: str = Field(default="sandbox", description="Plaid environment: sandbox, development, production")
 
+    # Plaid Transfer API (instant interbank: RTP when eligible, else ACH)
+    PLAID_TRANSFER_ENABLED: bool = Field(
+        default=False,
+        description="Enable Plaid Transfer API for instant/same-day transfers; requires Transfer product and origination account in Plaid dashboard",
+    )
+    PLAID_TRANSFER_ORIGINATION_ACCOUNT_ID: Optional[str] = Field(
+        default=None,
+        description="Plaid origination account ID for debits (required when PLAID_TRANSFER_ENABLED=true)",
+    )
+
     # Alpaca (Trading + Stock Prediction Market Data)
     ALPACA_API_KEY: Optional[SecretStr] = Field(default=None, description="Alpaca API key (trading and historical bars)")
     ALPACA_API_SECRET: Optional[SecretStr] = Field(default=None, description="Alpaca API secret")
@@ -281,6 +312,41 @@ class Settings(BaseSettings):
     ALPACA_DATA_ENABLED: bool = Field(
         default=False,
         description="Use Alpaca for historical bars in stock prediction and backtesting when ALPACA_API_KEY/SECRET set",
+    )
+
+    # Alpaca Broker API (multiuser brokerage; each user gets an Alpaca customer account)
+    ALPACA_BROKER_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Alpaca Broker API key (for account opening and per-account trading)",
+    )
+    ALPACA_BROKER_API_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        description="Alpaca Broker API secret",
+    )
+    ALPACA_BROKER_BASE_URL: Optional[str] = Field(
+        default="https://broker-api.sandbox.alpaca.markets",
+        description="Alpaca Broker API base URL (sandbox: broker-api.sandbox.alpaca.markets; live: broker-api.alpaca.markets)",
+    )
+    # Brokerage onboarding product and optional fee (Plaid link-for-brokerage + payment)
+    BROKERAGE_ONBOARDING_PRODUCT_ID: str = Field(
+        default="brokerage_onboarding",
+        description="Product ID for brokerage onboarding (used with Plaid link and billing)",
+    )
+    BROKERAGE_ONBOARDING_FEE_ENABLED: bool = Field(
+        default=False,
+        description="When True, require payment (fee) before or after brokerage account application",
+    )
+    BROKERAGE_ONBOARDING_FEE_AMOUNT: Decimal = Field(
+        default=Decimal("0.00"),
+        description="Optional onboarding fee amount (e.g. 9.99)",
+    )
+    BROKERAGE_ONBOARDING_FEE_CURRENCY: Currency = Field(
+        default=Currency.USD,
+        description="Currency for brokerage onboarding fee",
+    )
+    ALPACA_BROKER_PAPER: bool = Field(
+        default=True,
+        description="Use Alpaca Broker sandbox/paper when True",
     )
 
     # Stock Prediction

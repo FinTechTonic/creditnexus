@@ -13,7 +13,6 @@ Expanded (Portfolio-First / Plaid-First):
 
 import logging
 from datetime import date, timedelta
-import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -27,30 +26,6 @@ logger = logging.getLogger(__name__)
 # Lazy Plaid imports (plaid-python)
 _plaid_api = None
 _plaid_config = None
-
-
-def _agent_debug_log(*, hypothesisId: str, location: str, message: str, data: Dict[str, Any]) -> None:
-    """
-    Debug-mode NDJSON logger (no secrets / no PII).
-    Writes to workspace debug log path.
-    """
-    try:
-        path = r"c:\Users\MeMyself\creditnexus\.cursor\debug.log"
-        payload = {
-            "sessionId": "debug-session",
-            "runId": "pre-fix",
-            "hypothesisId": hypothesisId,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(__import__("time").time() * 1000),
-        }
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        # Never break runtime on debug logging
-        pass
 
 
 def _get_plaid_client():
@@ -132,6 +107,43 @@ def create_link_token(user_id: int) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+def create_link_token_for_brokerage(user_id: int) -> Dict[str, Any]:
+    """
+    Create a Plaid Link token for brokerage onboarding (link-for-brokerage).
+    Uses auth + identity products for account verification and form prefill.
+    Returns {"link_token": str} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        from plaid.model.link_token_create_request import LinkTokenCreateRequest
+        from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+        from plaid.model.country_code import CountryCode
+        from plaid.model.products import Products
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+
+    user = LinkTokenCreateRequestUser(client_user_id=str(user_id))
+    # Auth (routing/account verification) + Identity (name, address) for brokerage prefill
+    products = [Products("auth"), Products("identity")]
+    country_codes = [CountryCode("US")]
+    req = LinkTokenCreateRequest(
+        user=user,
+        client_name="CreditNexus Brokerage",
+        products=products,
+        country_codes=country_codes,
+        language="en",
+    )
+    try:
+        resp = api.link_token_create(req)
+        return {"link_token": resp.link_token}
+    except Exception as e:
+        logger.warning("Plaid link_token_create (brokerage) failed: %s", e)
+        return {"error": str(e)}
+
+
 def exchange_public_token(public_token: str) -> Dict[str, Any]:
     """
     Exchange public_token for access_token and item_id.
@@ -150,6 +162,102 @@ def exchange_public_token(public_token: str) -> Dict[str, Any]:
         return {"error": f"Plaid models: {e}"}
     except Exception as e:
         logger.warning("Plaid item_public_token_exchange failed: %s", e)
+        return {"error": str(e)}
+
+
+def _get_plaid_base_url() -> tuple[str, str, str]:
+    """Return (base_url, client_id, secret) for direct API calls; or raise. Used for processor token."""
+    if not getattr(settings, "PLAID_ENABLED", False):
+        return "", "", ""
+    cid = getattr(settings, "PLAID_CLIENT_ID", None)
+    secret = getattr(settings, "PLAID_SECRET", None)
+    if not cid or not secret:
+        return "", "", ""
+    cid = cid.get_secret_value() if hasattr(cid, "get_secret_value") else str(cid)
+    secret = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+    env = (getattr(settings, "PLAID_ENV", None) or "sandbox").lower()
+    hosts = {
+        "production": "https://production.plaid.com",
+        "development": "https://development.plaid.com",
+        "sandbox": "https://sandbox.plaid.com",
+    }
+    base = hosts.get(env, "https://sandbox.plaid.com")
+    return base, cid, secret
+
+
+def create_processor_token(
+    access_token: str,
+    account_id: str,
+    processor: str = "alpaca",
+) -> Dict[str, Any]:
+    """
+    Create a Plaid processor token for a partner (e.g. Alpaca).
+    Call POST /processor/token/create; returns {"processor_token": str} or {"error": str}.
+    Never log the processor_token value.
+    """
+    base, cid, secret = _get_plaid_base_url()
+    if not base or not cid or not secret:
+        return {"error": "Plaid is disabled or PLAID_CLIENT_ID/PLAID_SECRET missing"}
+    try:
+        import requests
+        url = f"{base}/processor/token/create"
+        payload = {
+            "client_id": cid,
+            "secret": secret,
+            "access_token": access_token,
+            "account_id": account_id,
+            "processor": processor,
+        }
+        r = requests.post(url, json=payload, timeout=30)
+        data = r.json() if r.content else {}
+        if r.status_code != 200:
+            err = data.get("error_message") or data.get("error") or r.text or f"HTTP {r.status_code}"
+            logger.warning("Plaid processor_token create failed: %s", err)
+            return {"error": err}
+        pt = data.get("processor_token")
+        if not pt:
+            return {"error": "processor_token missing in response"}
+        return {"processor_token": pt}
+    except ImportError:
+        return {"error": "requests not available"}
+    except Exception as e:
+        logger.warning("Plaid processor_token create failed: %s", e)
+        return {"error": str(e)}
+
+
+def create_link_token_for_funding(user_id: int) -> Dict[str, Any]:
+    """
+    Create a Plaid Link token for brokerage funding (link bank for ACH).
+    Auth product only, US; used to get public_token → exchange → processor_token → Alpaca ACH.
+    Returns {"link_token": str} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        from plaid.model.link_token_create_request import LinkTokenCreateRequest
+        from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+        from plaid.model.country_code import CountryCode
+        from plaid.model.products import Products
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+
+    user = LinkTokenCreateRequestUser(client_user_id=str(user_id))
+    products = [Products("auth")]
+    country_codes = [CountryCode("US")]
+    req = LinkTokenCreateRequest(
+        user=user,
+        client_name="CreditNexus Brokerage Funding",
+        products=products,
+        country_codes=country_codes,
+        language="en",
+    )
+    try:
+        resp = api.link_token_create(req)
+        return {"link_token": resp.link_token}
+    except Exception as e:
+        logger.warning("Plaid link_token_create (funding) failed: %s", e)
         return {"error": str(e)}
 
 
@@ -463,6 +571,11 @@ def monitor_aml_screening(*_: Any, **__: Any) -> Dict[str, Any]:
     return {"error": "monitor_not_implemented"}
 
 
+# Transfer billing: Plaid charges per transfer (see https://plaid.com/pricing).
+# Callers (e.g. brokerage fund/withdraw) should record transfer usage for billing/credits
+# via BillingService or RollingCreditsService when BROKERAGE_ONBOARDING_FEE or transfer fees apply.
+
+
 def create_transfer(
     *,
     access_token: str,
@@ -479,6 +592,8 @@ def create_transfer(
       1) POST /transfer/authorization/create
       2) POST /transfer/create (using authorization)
 
+    Billing: Plaid charges per transfer; record usage for billing/credits when applicable.
+
     Returns:
       - {"authorization": {...}, "transfer": {...}} on success
       - {"error": "..."} on failure
@@ -486,15 +601,6 @@ def create_transfer(
     api, err = _get_plaid_client()
     if err:
         return {"error": err}
-
-    # #region agent log
-    _agent_debug_log(
-        hypothesisId="H1",
-        location="app/services/plaid_service.py:create_transfer:entry",
-        message="create_transfer called",
-        data={"has_account_id": bool(account_id), "currency": currency, "transfer_type": transfer_type},
-    )
-    # #endregion
 
     try:
         from decimal import Decimal
@@ -541,18 +647,6 @@ def create_transfer(
         auth_resp = api.transfer_authorization_create(auth_req)
         auth = auth_resp.to_dict() if hasattr(auth_resp, "to_dict") else _plaid_obj_to_dict(auth_resp)
 
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H1",
-            location="app/services/plaid_service.py:create_transfer:auth",
-            message="transfer authorization result",
-            data={
-                "decision": auth.get("decision") or auth.get("authorization", {}).get("decision"),
-                "rationale": auth.get("rationale") or auth.get("authorization", {}).get("rationale"),
-            },
-        )
-        # #endregion
-
         # Decision handling
         decision = (auth.get("decision") or auth.get("authorization", {}).get("decision") or "").lower()
         if decision and decision not in ("approved",):
@@ -572,26 +666,9 @@ def create_transfer(
         create_resp = api.transfer_create(create_req)
         transfer = create_resp.to_dict() if hasattr(create_resp, "to_dict") else _plaid_obj_to_dict(create_resp)
 
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H1",
-            location="app/services/plaid_service.py:create_transfer:created",
-            message="transfer created",
-            data={"has_transfer_id": bool((transfer.get("transfer") or {}).get("id") or transfer.get("id"))},
-        )
-        # #endregion
-
         return {"authorization": auth, "transfer": transfer}
     except Exception as e:
         logger.warning("Plaid transfer flow failed: %s", e)
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H1",
-            location="app/services/plaid_service.py:create_transfer:exception",
-            message="transfer flow exception",
-            data={"error": str(e)[:300]},
-        )
-        # #endregion
         return {"error": str(e)}
 
 
@@ -618,15 +695,6 @@ def create_payment_initiation(
       - {"mode": "payment_initiation", "recipient": {...}, "payment": {...}}
       - {"error": "..."}
     """
-    # #region agent log
-    _agent_debug_log(
-        hypothesisId="H2",
-        location="app/services/plaid_service.py:create_payment_initiation:entry",
-        message="create_payment_initiation called",
-        data={"has_recipient": bool(recipient_name and iban), "currency": currency, "payment_type": payment_type},
-    )
-    # #endregion
-
     # UK/EU Payment Initiation path (requires recipient info)
     if recipient_name and iban:
         api, err = _get_plaid_client()
@@ -669,26 +737,9 @@ def create_payment_initiation(
             payment_resp = api.payment_initiation_payment_create(payment_req)
             payment = payment_resp.to_dict() if hasattr(payment_resp, "to_dict") else _plaid_obj_to_dict(payment_resp)
 
-            # #region agent log
-            _agent_debug_log(
-                hypothesisId="H2",
-                location="app/services/plaid_service.py:create_payment_initiation:pi_created",
-                message="payment initiation recipient+payment created",
-                data={"has_recipient_id": True, "has_payment_id": bool(payment.get("payment_id") or payment.get("id"))},
-            )
-            # #endregion
-
             return {"mode": "payment_initiation", "recipient": recipient, "payment": payment}
         except Exception as e:
             logger.warning("Plaid payment initiation flow failed: %s", e)
-            # #region agent log
-            _agent_debug_log(
-                hypothesisId="H2",
-                location="app/services/plaid_service.py:create_payment_initiation:pi_exception",
-                message="payment initiation exception",
-                data={"error": str(e)[:300]},
-            )
-            # #endregion
             return {"error": str(e)}
 
     # Default: US Transfer path
@@ -712,15 +763,6 @@ def create_layer_session(*, template_id: str, client_user_id: str) -> Dict[str, 
     if err:
         return {"error": err}
 
-    # #region agent log
-    _agent_debug_log(
-        hypothesisId="H3",
-        location="app/services/plaid_service.py:create_layer_session:entry",
-        message="create_layer_session called",
-        data={"has_template_id": bool(template_id), "has_client_user_id": bool(client_user_id)},
-    )
-    # #endregion
-
     try:
         # Not all plaid-python versions include Layer models/methods; use getattr defensively.
         from plaid.model.session_token_create_request import SessionTokenCreateRequest  # type: ignore
@@ -743,14 +785,6 @@ def create_layer_session(*, template_id: str, client_user_id: str) -> Dict[str, 
         return {"link_token": link_token, "raw": d}
     except Exception as e:
         logger.warning("Plaid layer session token create failed: %s", e)
-        # #region agent log
-        _agent_debug_log(
-            hypothesisId="H3",
-            location="app/services/plaid_service.py:create_layer_session:exception",
-            message="layer session exception",
-            data={"error": str(e)[:300]},
-        )
-        # #endregion
         return {"error": str(e)}
 
 

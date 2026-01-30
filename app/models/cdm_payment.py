@@ -44,6 +44,12 @@ class PaymentType(str, Enum):
     POLYMARKET_TRADE = "polymarket_trade"
     MARKET_CREATION_FEE = "market_creation_fee"
     SUBSCRIPTION_UPGRADE = "subscription_upgrade"
+    # Pay-as-you-go billable features (predictions, agents, satellite, people)
+    BILLABLE_FEATURE = "billable_feature"
+    # Unified funding (user pays to fund destination)
+    ALPACA_FUNDING = "alpaca_funding"
+    POLYMARKET_FUNDING = "polymarket_funding"
+    CREDIT_TOP_UP = "credit_top_up"
 
 
 class TradeIdentifier(BaseModel):

@@ -68,6 +68,7 @@ export function PortfolioDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [refetch, setRefetch] = useState(0);
   const [activeTab, setActiveTab] = useState('overview');
+  const [brokerageStatus, setBrokerageStatus] = useState<{ has_account: boolean; status?: string; account_number?: string } | null>(null);
 
   // Listen for FDC3 portfolio context updates
   useEffect(() => {
@@ -130,6 +131,20 @@ export function PortfolioDashboard() {
     }
   }, []);
 
+  const loadBrokerageStatus = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth('/api/brokerage/account/status', { method: 'GET' });
+      if (res.ok) {
+        const d = await res.json();
+        setBrokerageStatus(d);
+      } else {
+        setBrokerageStatus(null);
+      }
+    } catch {
+      setBrokerageStatus(null);
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -138,9 +153,10 @@ export function PortfolioDashboard() {
       loadTransactions(),
       loadInvestments(),
       loadLiabilities(),
+      loadBrokerageStatus(),
     ]);
     setLoading(false);
-  }, [loadOverview, loadTransactions, loadInvestments, loadLiabilities]);
+  }, [loadOverview, loadTransactions, loadInvestments, loadLiabilities, loadBrokerageStatus]);
 
   useTradingWebSocket(user?.id ?? null, () => setRefetch((r) => r + 1));
   useEffect(() => { loadAll(); }, [loadAll, refetch]);
@@ -170,6 +186,15 @@ export function PortfolioDashboard() {
       <div>
         <h2 className="text-2xl font-bold">Portfolio</h2>
         <p className="text-muted-foreground">Aggregated trading, bank, and manual assets</p>
+        {brokerageStatus !== null && (
+          <p className="text-sm text-muted-foreground mt-1">
+            Trading account: {brokerageStatus.has_account
+              ? brokerageStatus.status === 'ACTIVE'
+                ? `Active${brokerageStatus.account_number ? ` · #${brokerageStatus.account_number}` : ''}`
+                : (brokerageStatus.status ?? 'Pending')
+              : 'Not opened'}
+          </p>
+        )}
       </div>
 
       {overview && (

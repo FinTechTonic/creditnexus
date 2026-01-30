@@ -159,11 +159,22 @@ class InquiryStatus(str, enum.Enum):
 
 
 class SubscriptionTier(str, enum.Enum):
-    """Subscription tier levels."""
+    """Subscription tier levels. FREE = pay-as-you-go (no included credits). TIER_10/15 = $10/$15 per month with credits + Plaid cover."""
     FREE = "free"
     PRO = "pro"
     PREMIUM = "premium"
     LIFETIME = "lifetime"
+    TIER_10 = "tier_10"   # $10/month; monthly credits + N Plaid refreshes included
+    TIER_15 = "tier_15"   # $15/month; higher credits + more Plaid refreshes included
+
+
+class ByokProvider(str, enum.Enum):
+    """BYOK (Bring Your Own Keys) providers – crypto and trading only. Plaid is excluded (Link Accounts)."""
+
+    ALPACA = "alpaca"
+    POLYGON = "polygon"
+    POLYMARKET = "polymarket"
+    OTHER = "other"
 
 
 class SubscriptionType(str, enum.Enum):
@@ -310,6 +321,19 @@ class User(Base):
         "Meeting", back_populates="organizer", foreign_keys="Meeting.organizer_id"
     )
     implementation_connections = relationship("UserImplementationConnection", back_populates="user")
+    alpaca_customer_account = relationship(
+        "AlpacaCustomerAccount",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="AlpacaCustomerAccount.user_id",
+    )
+    brokerage_ach_relationships = relationship(
+        "BrokerageAchRelationship",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="BrokerageAchRelationship.user_id",
+    )
     organization_identifier = Column(EncryptedString(255), nullable=True, index=True)  # Organization alias, blockchain address, or key
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])
@@ -328,7 +352,13 @@ class User(Base):
         foreign_keys="KYCVerification.user_id",
     )
     licenses = relationship("UserLicense", back_populates="user", cascade="all, delete-orphan")
-    kyc_documents = relationship("KYCDocument", back_populates="user", cascade="all, delete-orphan")
+    # Explicit foreign_keys: KYCDocument has user_id and reviewed_by (both FK to users)
+    kyc_documents = relationship(
+        "KYCDocument",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="KYCDocument.user_id",
+    )
     
     # Admin fields
     is_instance_admin = Column(Boolean, default=False, nullable=False, index=True)
@@ -352,6 +382,14 @@ class User(Base):
     # Phase 7: GDPR relationships
     consent_records = relationship("ConsentRecord", back_populates="user", cascade="all, delete-orphan")
     data_processing_requests = relationship("DataProcessingRequest", foreign_keys="DataProcessingRequest.user_id", back_populates="user", cascade="all, delete-orphan")
+
+    # BYOK (Bring Your Own Keys) – crypto and trading keys only
+    byok_keys = relationship(
+        "UserByokKey",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="UserByokKey.user_id",
+    )
 
     def to_dict(self):
         """Convert model to dictionary."""
@@ -377,6 +415,26 @@ class User(Base):
             "organization_id": self.organization_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class UserByokKey(Base):
+    """Per-user BYOK (Bring Your Own Keys) – crypto and trading providers only. One row per (user, provider)."""
+
+    __tablename__ = "user_byok_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, index=True)  # ByokProvider value
+    provider_type = Column(String(64), nullable=True)  # e.g. alpaca_paper, alpaca_live
+    credentials_encrypted = Column(EncryptedJSON(), nullable=True)  # Provider-specific: api_key, api_secret, etc.
+    is_verified = Column(Boolean, default=False, nullable=False)
+    unlocks_trading = Column(Boolean, default=False, nullable=False)  # True only for Alpaca when set
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="byok_keys", foreign_keys=[user_id])
+
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_byok_provider"),)
 
 
 class Document(Base):
@@ -1495,10 +1553,12 @@ class KYCDocument(Base):
     extracted_data = Column(JSONB, nullable=True)  # OCR-extracted data
     ocr_confidence = Column(Float, nullable=True)
     
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Relationships
-    user = relationship("User", back_populates="kyc_documents")
+    # Relationships (foreign_keys: link to document owner, not reviewer)
+    user = relationship("User", back_populates="kyc_documents", foreign_keys=[user_id])
     kyc_verification = relationship("KYCVerification", back_populates="documents")
     document = relationship("Document")
 
@@ -1513,6 +1573,8 @@ class KYCDocument(Base):
             "verification_status": self.verification_status,
             "extracted_data": self.extracted_data,
             "ocr_confidence": self.ocr_confidence,
+            "reviewed_by": self.reviewed_by,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -3853,7 +3915,7 @@ class VerifiedImplementation(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user_connections = relationship("UserImplementationConnection", back_populates="implementation")
-    
+
     def to_dict(self):
         """Convert model to dictionary."""
         return {
@@ -3865,6 +3927,78 @@ class VerifiedImplementation(Base):
             "is_active": self.is_active,
             "configuration": self.configuration,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AlpacaCustomerAccount(Base):
+    """Alpaca Broker API customer account link (one per user)."""
+
+    __tablename__ = "alpaca_customer_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    alpaca_account_id = Column(String(64), unique=True, nullable=False, index=True)  # Alpaca account UUID
+    account_number = Column(String(64), nullable=True, index=True)  # Human-readable account number from Alpaca
+    status = Column(
+        String(32), nullable=False, index=True, default="SUBMITTED"
+    )  # SUBMITTED, APPROVED, ACTIVE, ACTION_REQUIRED, REJECTED, APPROVAL_PENDING
+    currency = Column(String(3), default="USD", nullable=False)
+    action_required_reason = Column(Text, nullable=True)  # Reason when status is ACTION_REQUIRED
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="alpaca_customer_account", foreign_keys=[user_id])
+
+    def to_dict(self):
+        """Convert model to dictionary."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "alpaca_account_id": self.alpaca_account_id,
+            "account_number": self.account_number,
+            "status": self.status,
+            "currency": self.currency,
+            "action_required_reason": self.action_required_reason,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class BrokerageAchRelationship(Base):
+    """ACH relationship for brokerage funding (Plaid processor token → Alpaca). One per linked bank per Alpaca account."""
+
+    __tablename__ = "brokerage_ach_relationships"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    alpaca_account_id = Column(String(64), nullable=False, index=True)
+    alpaca_relationship_id = Column(String(64), nullable=False, index=True)  # Alpaca relationship id
+    plaid_account_id = Column(String(64), nullable=True)
+    nickname = Column(String(255), nullable=True)
+    status = Column(String(32), nullable=True)  # e.g. QUEUED, APPROVED from Alpaca
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="brokerage_ach_relationships", foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "alpaca_account_id", "alpaca_relationship_id",
+            name="uq_brokerage_ach_user_account_relationship",
+        ),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "alpaca_account_id": self.alpaca_account_id,
+            "alpaca_relationship_id": self.alpaca_relationship_id,
+            "plaid_account_id": self.plaid_account_id,
+            "nickname": self.nickname,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -4213,7 +4347,8 @@ class Order(Base):
     commission_currency = Column(String(3), default="USD", nullable=False)
     
     # Trading API integration
-    trading_api = Column(String(50), nullable=True, index=True)  # "alpaca", "polygon", etc.
+    trading_api = Column(String(50), nullable=True, index=True)  # "alpaca", "alpaca_broker", "polygon", etc.
+    alpaca_account_id = Column(String(64), nullable=True, index=True)  # Alpaca Broker customer account ID (when trading_api=alpaca_broker)
     trading_api_order_id = Column(String(255), nullable=True, index=True)  # Order ID from trading API
     trading_api_response = Column(JSONB, nullable=True)  # Full response from trading API
     
@@ -4252,6 +4387,7 @@ class Order(Base):
             "commission": float(self.commission) if self.commission is not None else None,
             "commission_currency": self.commission_currency or "USD",
             "trading_api": self.trading_api,
+            "alpaca_account_id": self.alpaca_account_id,
             "trading_api_order_id": self.trading_api_order_id,
             "time_in_force": self.time_in_force or "day",
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,

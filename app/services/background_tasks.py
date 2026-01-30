@@ -20,6 +20,7 @@ from app.agents.signature_verifier import SignatureVerifier
 from app.agents.filing_verifier import FilingVerifier
 from app.services.loan_recovery_service import LoanRecoveryService
 from app.services.asset_amortization_service import AssetAmortizationService
+from app.services.alpaca_account_service import sync_all_pending_alpaca_accounts
 
 logger = logging.getLogger(__name__)
 
@@ -447,6 +448,42 @@ async def check_price_alerts() -> Dict[str, Any]:
             pass
 
 
+async def sync_alpaca_account_statuses_task() -> Dict[str, Any]:
+    """
+    Background task to poll Alpaca Broker API for account status updates.
+    Runs hourly; syncs AlpacaCustomerAccount records that are not yet ACTIVE or REJECTED.
+    """
+    logger.info("Starting Alpaca account status sync task")
+    db = None
+    try:
+        db = next(get_db())
+        result = sync_all_pending_alpaca_accounts(db)
+        logger.info(
+            "Alpaca account status sync completed: %s pending, %s synced, %s errors",
+            result.get("pending_count", 0),
+            result.get("synced", 0),
+            result.get("errors", 0),
+        )
+        return {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            **result,
+        }
+    except Exception as e:
+        logger.error("Error in Alpaca account status sync task: %s", e, exc_info=True)
+        return {
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e),
+        }
+    finally:
+        try:
+            if db is not None:
+                db.close()
+        except Exception:
+            pass
+
+
 # Task schedule configuration
 TASK_SCHEDULE = {
     "deadline_monitoring": {
@@ -485,6 +522,11 @@ TASK_SCHEDULE = {
     },
     "price_alerts_monitoring": {
         "task": check_price_alerts,
+        "schedule": "hourly",
+        "enabled": True
+    },
+    "alpaca_account_status_sync": {
+        "task": sync_alpaca_account_statuses_task,
         "schedule": "hourly",
         "enabled": True
     }

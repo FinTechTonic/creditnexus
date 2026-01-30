@@ -41,9 +41,12 @@ class AggregatedLiabilities:
 def _get_user_access_token(db: Session, user_id: int) -> Optional[str]:
   """
   Helper to fetch the user's Plaid access_token, if any.
+  Token is stored in connection_data (dict) on UserImplementationConnection.
   """
   conn = plaid_service.get_plaid_connection(db, user_id)
-  return getattr(conn, "access_token", None) if conn else None
+  if not conn or not conn.connection_data or not isinstance(conn.connection_data, dict):
+    return None
+  return conn.connection_data.get("access_token")
 
 
 def aggregate_transactions(
