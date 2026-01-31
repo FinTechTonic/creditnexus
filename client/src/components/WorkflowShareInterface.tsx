@@ -27,8 +27,6 @@ import { WorkflowLinkSharer } from './WorkflowLinkSharer'
 import { useFDC3 } from '@/context/FDC3Context'
 import type { WorkflowLinkContext } from '@/context/FDC3Context'
 import { useThemeClasses } from '@/utils/themeUtils'
-import { DashboardChatbotPanel } from './DashboardChatbotPanel'
-
 type ShareView = 'create' | 'process' | 'dashboard' | 'share'
 
 interface WorkflowShareInterfaceProps {
@@ -326,10 +324,6 @@ export function WorkflowShareInterface({
       {/* Active View Content */}
       {renderView()}
 
-      {/* Chatbot Panel */}
-      <div className="mt-6">
-        <DashboardChatbotPanel dealId={dealId} documentId={documentId} />
-      </div>
     </div>
   )
 }

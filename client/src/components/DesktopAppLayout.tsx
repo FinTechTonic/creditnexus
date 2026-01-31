@@ -19,7 +19,7 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { QuickAccessSettings } from '@/components/QuickAccessSettings';
 import { Breadcrumb, BreadcrumbContainer } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/button';
-import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2, TrendingUp, BarChart3, PieChart, PenTool, FileCheck, DollarSign, Calendar, Users, Settings, Layers, FileSearch } from 'lucide-react';
+import { FileText, ArrowLeftRight, Leaf, Sparkles, Radio, LogIn, LogOut, User, Loader2, BookOpen, LayoutDashboard, ChevronLeft, ChevronRight, Shield, RadioTower, Building2, Database, Share2, AlertTriangle, Link2, Bell, BarChart2, TrendingUp, BarChart3, PieChart, PenTool, FileCheck, DollarSign, Calendar, Users, Settings, Layers, FileSearch, MessageSquare, Headphones } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
 import { SidebarNavigation } from '@/components/SidebarNavigation';
 import { CookieBanner } from '@/components/CookieBanner';
@@ -47,10 +47,15 @@ import { FilingStatusDashboard } from '@/components/FilingStatusDashboard';
 import { MarketDashboard } from '@/components/polymarket/MarketDashboard';
 import { PolymarketTrading } from '@/components/polymarket/PolymarketTrading';
 import { PolymarketFunding } from '@/components/polymarket/PolymarketFunding';
+import { Newsfeed } from '@/components/dashboard-tabs/Newsfeed';
+import { BankProductsMarketplace } from '@/components/BankProductsMarketplace';
 import { BridgeBuilder } from '@/components/BridgeBuilder';
 import { TradingDashboard } from '@/components/trading/TradingDashboard';
 import { UserSettings } from '@/pages/UserSettings';
 import { AdminSettings } from '@/pages/AdminSettings';
+import { BillingDashboard } from '@/components/UnifiedDashboard';
+import { DashboardChatbotPanel } from '@/components/DashboardChatbotPanel';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useThemeClasses } from '@/utils/themeUtils';
 import { Link } from 'react-router-dom';
@@ -73,7 +78,7 @@ import {
   PERMISSION_BILLING_VIEW,
 } from '@/utils/permissions';
 
-type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'whitelisting-dashboard' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings' | 'link-accounts' | 'asset-alerts' | 'portfolio-risk' | 'trading' | 'polymarket' | 'bridge' | 'signatures' | 'compliance' | 'billing' | 'settings' | 'admin-settings';
+type AppView = 'dashboard' | 'document-parser' | 'trade-blotter' | 'green-lens' | 'library' | 'ground-truth' | 'verification-demo' | 'demo-data' | 'risk-war-room' | 'document-generator' | 'applications' | 'calendar' | 'admin-signups' | 'policy-editor' | 'deals' | 'auditor' | 'securitization' | 'verification-config' | 'whitelisting-dashboard' | 'workflow-processor' | 'workflow-share' | 'loan-recovery' | 'agent-dashboard' | 'filings' | 'link-accounts' | 'asset-alerts' | 'portfolio-risk' | 'trading' | 'polymarket' | 'newsfeed' | 'bank-products' | 'bridge' | 'signatures' | 'compliance' | 'billing' | 'settings' | 'admin-settings';
 
 interface AppConfig {
   id: AppView;
@@ -93,13 +98,40 @@ interface AppConfig {
 const mainApps: AppConfig[] = [];
 
 const sidebarApps: AppConfig[] = [
-  // Core Applications
+  // Core Applications (order: dashboard, newsfeed, link-accounts, settings, library, doc-parser, doc-generator)
   {
     id: 'dashboard',
     name: 'Dashboard',
     icon: <LayoutDashboard className="h-5 w-5" />,
     description: 'Portfolio overview & analytics',
     path: '/dashboard',
+    category: 'core',
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'newsfeed',
+    name: 'Social Feeds',
+    icon: <Share2 className="h-5 w-5" />,
+    description: 'Deals & markets feed, like, comment, share',
+    path: '/app/newsfeed',
+    category: 'core',
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'link-accounts',
+    name: 'Link Accounts',
+    icon: <Link2 className="h-5 w-5" />,
+    description: 'Connect bank and data sources',
+    path: '/app/link-accounts',
+    category: 'core',
+    subscriptionTier: 'free',
+  },
+  {
+    id: 'settings',
+    name: 'User Settings',
+    icon: <Settings className="h-5 w-5" />,
+    description: 'Manage your account preferences',
+    path: '/settings',
     category: 'core',
     subscriptionTier: 'free',
   },
@@ -414,16 +446,6 @@ const sidebarApps: AppConfig[] = [
     category: 'admin',
     subscriptionTier: 'free',
   },
-  // Settings
-  {
-    id: 'settings',
-    name: 'User Settings',
-    icon: <Settings className="h-5 w-5" />,
-    description: 'Manage your account preferences',
-    path: '/settings',
-    category: 'core',
-    subscriptionTier: 'free',
-  },
   {
     id: 'admin-settings',
     name: 'Admin Settings',
@@ -573,7 +595,7 @@ export function DesktopAppLayout() {
       'ground-truth', 'verification-demo', 'demo-data', 'risk-war-room',
       'policy-editor', 'library', 'auditor', 'securitization', 'verification-config', 'whitelisting-dashboard',
       'workflow-processor', 'workflow-share', 'loan-recovery', 'agent-dashboard', 'filings', 'link-accounts', 'asset-alerts', 'portfolio-risk',
-      'trading', 'polymarket', 'bridge', 'signatures', 'compliance', 'billing', 'settings', 'admin-settings'
+      'trading', 'polymarket', 'newsfeed', 'bank-products', 'bridge', 'signatures', 'compliance', 'billing', 'settings', 'admin-settings'
     ];
 
     if (typeof window !== 'undefined') {
@@ -637,6 +659,8 @@ export function DesktopAppLayout() {
     paymentError: null,
     paymentStatus: 'idle',
   });
+  const [globalChatOpen, setGlobalChatOpen] = useState(false);
+  const [supportChatOpen, setSupportChatOpen] = useState(false);
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const { isAvailable, pendingIntent, clearPendingIntent, onIntentReceived } = useFDC3();
   const { hasPermission, hasAnyPermission, hasAllPermissions } = usePermissions();
@@ -782,6 +806,8 @@ export function DesktopAppLayout() {
       '/app/asset-alerts': 'asset-alerts',
       '/app/portfolio-risk': 'portfolio-risk',
       '/app/polymarket': 'polymarket',
+      '/app/newsfeed': 'newsfeed',
+      '/app/bank-products': 'bank-products',
       '/app/bridge': 'bridge',
       '/app/green-lens': 'green-lens',
       '/app/ground-truth': 'ground-truth',
@@ -1185,7 +1211,18 @@ export function DesktopAppLayout() {
                 <Loader2 className="h-4 w-4 animate-spin" />
               </div>
             ) : isAuthenticated && user ? (
-              <UserMenu />
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSupportChatOpen(true)}
+                  className="flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700/50 transition-colors"
+                  aria-label="Customer service"
+                  title="Customer service"
+                >
+                  <Headphones className="h-5 w-5" />
+                </button>
+                <UserMenu />
+              </>
             ) : (
               <button
                 onClick={() => navigate('/login')}
@@ -1200,6 +1237,19 @@ export function DesktopAppLayout() {
       </header>
 
       <LoginForm isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+
+      {/* Customer service modal (placeholder) – top-right entry */}
+      <Dialog open={supportChatOpen} onOpenChange={setSupportChatOpen}>
+        <DialogContent className="max-w-sm p-6 bg-slate-800 border-slate-700" onClose={() => setSupportChatOpen(false)}>
+          <div className="flex items-center gap-3 text-slate-300">
+            <Headphones className="h-8 w-8 text-emerald-500" />
+            <div>
+              <h3 className="font-semibold text-slate-100">Customer service</h3>
+              <p className="text-sm text-slate-400 mt-1">Live support and help – coming soon.</p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex flex-1 overflow-hidden">
         <SidebarNavigation />
@@ -1251,6 +1301,8 @@ export function DesktopAppLayout() {
           {activeApp === 'asset-alerts' && <AssetAlertsView />}
           {activeApp === 'portfolio-risk' && <PortfolioRiskView />}
           {activeApp === 'trading' && <TradingDashboard />}
+          {activeApp === 'newsfeed' && <Newsfeed />}
+          {activeApp === 'bank-products' && <BankProductsMarketplace />}
           {activeApp === 'polymarket' && (() => {
             const tab = new URLSearchParams(location.search).get('tab') || 'markets';
             return (
@@ -1313,6 +1365,7 @@ export function DesktopAppLayout() {
           )}
           {activeApp === 'agent-dashboard' && <AgentDashboard />}
           {activeApp === 'filings' && <FilingStatusDashboard />}
+          {activeApp === 'billing' && <BillingDashboard />}
           {activeApp === 'securitization' && (() => {
             // Check if we're on a tranche purchase page
             if (location.pathname.includes('/tranches/') && location.pathname.includes('/purchase')) {
@@ -1333,6 +1386,29 @@ export function DesktopAppLayout() {
           {activeApp === 'admin-settings' && <AdminSettings />}
         </main>
       </div>
+
+      {/* Global chatbot: circular button bottom-right, single assistant for all apps */}
+      {isAuthenticated && (
+        <>
+          <button
+            type="button"
+            onClick={() => setGlobalChatOpen((v) => !v)}
+            className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-lg bg-emerald-600 hover:bg-emerald-700 text-white border-0 transition-all duration-200 hover:scale-110 active:scale-95 flex items-center justify-center"
+            aria-label={globalChatOpen ? 'Close assistant' : 'Open assistant'}
+            title={globalChatOpen ? 'Close assistant' : 'Open assistant'}
+          >
+            <MessageSquare className="h-6 w-6" />
+          </button>
+          <Dialog open={globalChatOpen} onOpenChange={setGlobalChatOpen}>
+            <DialogContent className="max-w-2xl max-h-[85vh] p-0 overflow-hidden bg-slate-800 border-slate-700" onClose={() => setGlobalChatOpen(false)}>
+              <div className="h-[75vh] min-h-[320px]">
+                <DashboardChatbotPanel className="h-full" />
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+
       <CookieBanner />
 
       <footer className={`border-t ${classes.border.default} mt-auto`}>

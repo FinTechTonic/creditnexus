@@ -1,0 +1,154 @@
+---
+title: Hardhat Local Blockchain for Organisations
+description: Configure and run the local Hardhat blockchain for development, demos, and organisation-specific deployments
+---
+
+This guide covers running a **local Hardhat blockchain** for CreditNexus: server-wide use (single RPC + contracts) and optional **organisation-specific** routing via `OrganizationBlockchainDeployment`.
+
+---
+
+## 1. Overview
+
+| Use case | Description |
+|----------|-------------|
+| **Server-wide local chain** | One Hardhat node; server uses `X402_NETWORK_RPC_URL=http://127.0.0.1:8545` and contract addresses in `.env`. All users share the same chain. |
+| **Organisation blockchain** | Optional: store a deployment row per organisation with `rpc_url`, `chain_id`, and contract addresses. `BlockchainRouterService` routes users by `User.organization_id` to their org’s chain (e.g. same local node with same or different contracts). |
+
+**Code**: `contracts/README.md`, `contracts/scripts/deploy.js`, `app/services/blockchain_service.py`, `app/services/blockchain_router.py`, `app/services/organization_service.py`
+
+---
+
+## 2. Prerequisites
+
+- Node.js and npm in `contracts/`
+- Project root `.env` (optional for localhost: no `PRIVATE_KEY` required; Hardhat uses a default mnemonic for `localhost`)
+
+---
+
+## 3. Start Local Node and Deploy (Server-Wide)
+
+### Step 1: Start a persistent Hardhat node
+
+In a terminal:
+
+```bash
+cd contracts
+npm install
+npm run node
+```
+
+The node runs at **http://127.0.0.1:8545** and uses the default Hardhat mnemonic (`test test test ... junk`). Leave this terminal open.
+
+### Step 2: Deploy contracts to localhost
+
+In a **second** terminal:
+
+```bash
+cd contracts
+npm run compile
+npm run deploy:localhost
+```
+
+This uses the same mnemonic (no `PRIVATE_KEY` in `.env` needed). The script deploys:
+
+- SecuritizationNotarization  
+- SecuritizationToken  
+- SecuritizationPaymentRouter  
+- CreditToken  
+
+It prints addresses. Example:
+
+```
+SecuritizationNotarization: 0x5FbDB2315678afecb367f032d93F642f64180aa3
+SecuritizationToken: 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+SecuritizationPaymentRouter: 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+CreditToken: 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
+```
+
+### Step 3: Configure project root `.env`
+
+In the **project root** (not inside `contracts/`), add or set:
+
+```env
+# Local Hardhat
+X402_NETWORK_RPC_URL=http://127.0.0.1:8545
+
+# Paste the addresses printed by deploy:localhost
+SECURITIZATION_NOTARIZATION_CONTRACT=0x5FbDB2315678afecb367f032d93F642f64180aa3
+SECURITIZATION_TOKEN_CONTRACT=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+SECURITIZATION_PAYMENT_ROUTER_CONTRACT=0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+CREDIT_TOKEN_CONTRACT=0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
+```
+
+Optional for rolling credits on-chain: set `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` to the **first** Hardhat account’s private key (printed when you run `npm run node`), so the server can call CreditToken `mintCredits` / `updateCredits`. If you omit it, credits are still stored in the DB but not registered on-chain.
+
+---
+
+## 4. Organisation-Specific Blockchain (Optional)
+
+If you want the server to **route** certain users to a specific chain (e.g. the same local node) by organisation:
+
+1. **Use the same local node** as above (one deploy per node, or one shared deploy for all orgs).
+2. **Add a row** to `organization_blockchain_deployments` for each organisation that should use this chain.
+
+Columns used by `BlockchainRouterService.get_user_blockchain()`:
+
+| Column | Example (local) |
+|--------|------------------|
+| `organization_id` | Your org’s ID |
+| `chain_id` | `1337` (Hardhat default) |
+| `deployment_type` | `private_chain` |
+| `rpc_url` | `http://127.0.0.1:8545` |
+| `network_name` | `Hardhat Local` |
+| `notarization_contract` | Same as `SECURITIZATION_NOTARIZATION_CONTRACT` |
+| `token_contract` | Same as `SECURITIZATION_TOKEN_CONTRACT` |
+| `payment_router_contract` | Same as `SECURITIZATION_PAYMENT_ROUTER_CONTRACT` |
+| `contract_address` | Any of the above (used as fallback) |
+| `is_primary` | `true` |
+
+**Ways to add the row:**
+
+- **API**: `POST /api/organizations/{id}/deploy` with body including `deployment_type`, `chain_id`, `rpc_url`, `notarization_contract`, `token_contract`, `payment_router_contract`. (Requires implementation to accept these; current implementation may use stubs.)
+- **DB**: Insert directly into `organization_blockchain_deployments` with the values above.
+- **Admin UI**: If you have an org admin screen for “blockchain deployment”, enter the same addresses and RPC URL.
+
+When a user has `organization_id` set and that org has a deployment row, the server uses this RPC and these contracts for that user (e.g. notarization, CreditToken). Otherwise it falls back to global `X402_NETWORK_RPC_URL` and contract addresses from `.env`.
+
+---
+
+## 5. Demo Wallets and Accounts
+
+For **demo users** with wallet addresses and private keys on the same local node, see [Demo Blockchain Wallets](/guides/DEMO_BLOCKCHAIN_WALLETS). Use the accounts printed by `npm run node` (address + private key) in `DEMO_BLOCKCHAIN_ACCOUNTS` and set `DEMO_BLOCKCHAIN_RPC_URL=http://127.0.0.1:8545`.
+
+---
+
+## 6. Scripts Reference
+
+| Command | Description |
+|--------|-------------|
+| `npm run compile` | Compile contracts |
+| `npm run node` | Start persistent Hardhat node at http://127.0.0.1:8545 |
+| `npm run deploy:local` | One-off in-memory Hardhat network (no persistent node) |
+| `npm run deploy:localhost` | Deploy to http://127.0.0.1:8545 (run `npm run node` first) |
+| `npm run deploy:base-sepolia` | Deploy to Base Sepolia (requires `PRIVATE_KEY`) |
+| `npm run deploy:base` | Deploy to Base mainnet (requires `PRIVATE_KEY`) |
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Check |
+|---------|--------|
+| Server cannot connect to chain | Ensure `npm run node` is running and `X402_NETWORK_RPC_URL=http://127.0.0.1:8545` in project root `.env`. |
+| Contract calls fail | Confirm contract addresses in `.env` match the output of `npm run deploy:localhost`. Restart the server after changing `.env`. |
+| Org users not using local chain | Ensure `organization_blockchain_deployments` has a row for that org with `rpc_url=http://127.0.0.1:8545` and correct contract addresses. |
+| CreditToken mint/update fails | Set `BLOCKCHAIN_DEPLOYER_PRIVATE_KEY` to the deployer account (first Hardhat account). See [Rolling Credits Setup](/guides/rolling-credits-setup). |
+
+---
+
+## 8. References
+
+- **Contracts**: [contracts/README.md](https://github.com/josephrp/creditnexus/blob/main/contracts/README.md) (in repo)
+- **Configuration**: [Configuration](/getting-started/configuration#blockchain--smart-contract-configuration) — Blockchain & Smart Contract
+- **Rolling credits**: [Rolling Credits Setup](/guides/rolling-credits-setup)
+- **Demo wallets**: [Demo Blockchain Wallets](/guides/DEMO_BLOCKCHAIN_WALLETS)

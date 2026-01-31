@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { BridgeTradeStatus } from '@/components/BridgeTradeStatus';
 import { ArrowRight, Lock, Loader2, Coins } from 'lucide-react';
 
 interface TokenRow {
@@ -255,9 +256,9 @@ export function BridgeBuilder() {
               </div>
             )}
 
-            {lastResult && (
-              <div className="pt-2 text-sm text-emerald-600">
-                Status: {String(lastResult.status)} • Lock tx: {String(lastResult.lock_tx_hash || '').slice(0, 18)}…
+            {lastResult && (lastResult.trade_id != null || lastResult.id != null) && (
+              <div className="pt-2">
+                <BridgeTradeStatus tradeId={Number(lastResult.trade_id ?? lastResult.id)} />
               </div>
             )}
           </CardContent>

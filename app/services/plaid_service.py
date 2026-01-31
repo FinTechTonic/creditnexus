@@ -789,18 +789,29 @@ def create_layer_session(*, template_id: str, client_user_id: str) -> Dict[str, 
 
 
 def get_plaid_connection(db: Session, user_id: int) -> Optional[UserImplementationConnection]:
-    """Return the user's Plaid UserImplementationConnection if any."""
+    """Return the user's first Plaid UserImplementationConnection if any (backward compat)."""
+    conns = get_plaid_connections(db, user_id)
+    return conns[0] if conns else None
+
+
+def get_plaid_connections(db: Session, user_id: int) -> List[UserImplementationConnection]:
+    """Return all active Plaid UserImplementationConnection rows for the user (multi-item)."""
     impl = db.query(VerifiedImplementation).filter(
         VerifiedImplementation.name == "plaid",
         VerifiedImplementation.is_active == True,
     ).first()
     if not impl:
-        return None
-    return db.query(UserImplementationConnection).filter(
-        UserImplementationConnection.user_id == user_id,
-        UserImplementationConnection.implementation_id == impl.id,
-        UserImplementationConnection.is_active == True,
-    ).first()
+        return []
+    return (
+        db.query(UserImplementationConnection)
+        .filter(
+            UserImplementationConnection.user_id == user_id,
+            UserImplementationConnection.implementation_id == impl.id,
+            UserImplementationConnection.is_active == True,
+        )
+        .order_by(UserImplementationConnection.id)
+        .all()
+    )
 
 
 def ensure_plaid_implementation(db: Session) -> Optional[VerifiedImplementation]:

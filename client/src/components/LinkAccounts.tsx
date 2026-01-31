@@ -22,6 +22,13 @@ interface BankingStatus {
   connected: boolean;
 }
 
+/** One Plaid connection (multi-item) from GET /api/banking/connections */
+interface PlaidConnectionItem {
+  id: number;
+  item_id_masked: string | null;
+  created_at: string | null;
+}
+
 interface BrokerageStatus {
   has_account: boolean;
   status?: string;
@@ -70,6 +77,17 @@ export function LinkAccounts() {
       if (r.ok) {
         const d = await r.json();
         setStatus({ plaid_enabled: d.plaid_enabled, connected: d.connected });
+        if (d.connected) {
+          const connR = await fetchWithPaymentHandling('/api/banking/connections');
+          if (connR.ok) {
+            const list = await connR.json();
+            setPlaidConnections(Array.isArray(list) ? list : []);
+          } else {
+            setPlaidConnections([]);
+          }
+        } else {
+          setPlaidConnections([]);
+        }
       } else {
         if (r.status === 403) {
           setStatus(null);
@@ -233,6 +251,18 @@ export function LinkAccounts() {
     }
   };
 
+  const handleDisconnectOne = async (connectionId: number) => {
+    setDisconnectingId(connectionId);
+    try {
+      const r = await fetchWithAuth(`/api/banking/connections/${connectionId}`, { method: 'DELETE' });
+      if (r.ok || r.status === 204) {
+        await fetchStatus();
+      }
+    } finally {
+      setDisconnectingId(null);
+    }
+  };
+
   const handleLinkBankForFunding = async () => {
     setLinkFundingError(null);
     try {
@@ -356,20 +386,61 @@ export function LinkAccounts() {
             </CardHeader>
             <CardContent className="space-y-4">
               {status.connected ? (
-                <div className="flex items-center justify-between">
+                <div className="space-y-3">
                   <div className="flex items-center gap-2 text-emerald-400">
                     <CheckCircle2 className="h-5 w-5" />
-                    <span>Bank account connected</span>
+                    <span>Bank account{plaidConnections.length !== 1 ? 's' : ''} connected</span>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDisconnect}
-                    disabled={disconnectLoading}
-                  >
-                    {disconnectLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4 mr-2" />}
-                    Disconnect
-                  </Button>
+                  {plaidConnections.length > 0 && (
+                    <ul className="space-y-2">
+                      {plaidConnections.map((c) => (
+                        <li
+                          key={c.id}
+                          className="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900/50 px-3 py-2"
+                        >
+                          <span className="text-sm text-slate-300">
+                            Bank {c.item_id_masked ?? `#${c.id}`}
+                            {c.created_at && (
+                              <span className="ml-2 text-slate-500 text-xs">
+                                linked {new Date(c.created_at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-slate-400 hover:text-red-400"
+                            onClick={() => handleDisconnectOne(c.id)}
+                            disabled={disconnectingId === c.id}
+                          >
+                            {disconnectingId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={handleLinkBank}
+                      disabled={connectLoading}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {connectLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Link2 className="h-4 w-4 mr-2" />}
+                      Link another bank
+                    </Button>
+                    {plaidConnections.length > 1 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDisconnect}
+                        disabled={disconnectLoading}
+                      >
+                        {disconnectLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4 mr-2" />}
+                        Disconnect all
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div>

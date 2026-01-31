@@ -180,6 +180,22 @@ export const router = createAppRouter([
     ),
   },
   {
+    path: '/app/newsfeed',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/app/bank-products',
+    element: (
+      <ProtectedRoute>
+        <DesktopAppLayout />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/app/bridge',
     element: (
       <ProtectedRoute>

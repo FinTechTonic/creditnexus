@@ -3,7 +3,9 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_auth import get_current_user, require_auth
@@ -21,14 +23,20 @@ from app.services.polymarket_builder_signing_service import build_builder_header
 from app.services.polymarket_clob_service import place_order as clob_place_order
 from app.services.polymarket_relayer_service import (
     deploy_safe as relayer_deploy_safe,
+    ensure_user_approvals as relayer_ensure_user_approvals,
     execute_transactions as relayer_execute,
     get_transaction as relayer_get_transaction,
 )
 from pydantic import BaseModel, Field
 
 from app.api.polymarket_surveillance_routes import router as polymarket_surveillance_router
+from app.services.unified_funding_service import after_funding_settled, request_funding
 
 logger = logging.getLogger(__name__)
+
+
+def _get_payment_router(request: Request):
+    return getattr(request.app.state, "payment_router_service", None)
 
 router = APIRouter(prefix="/api/polymarket", tags=["polymarket"])
 router.include_router(polymarket_surveillance_router)
@@ -293,6 +301,27 @@ async def polymarket_relayer_execute(
     }
 
 
+class RelayerApproveSetupRequest(BaseModel):
+    """Request for approval-setup transactions (USDCe/CTF for proxy)."""
+
+    proxy_address: str = Field(..., description="User's proxy/Safe address to approve for")
+
+
+@router.post("/relayer/approve-setup", response_model=Dict[str, Any])
+async def polymarket_relayer_approve_setup(
+    body: RelayerApproveSetupRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Return list of transactions (approve USDCe, approve CTF) for client to submit via POST /relayer/execute."""
+    transactions = relayer_ensure_user_approvals(
+        user_id=current_user.id,
+        db=db,
+        proxy_address=body.proxy_address.strip(),
+    )
+    return {"transactions": transactions, "proxy_address": body.proxy_address.strip()}
+
+
 @router.get("/relayer/transaction/{transaction_id}", response_model=Dict[str, Any])
 async def polymarket_relayer_transaction(
     transaction_id: str,
@@ -311,6 +340,95 @@ async def polymarket_relayer_transaction(
         "transaction_hash": result.get("transaction_hash"),
         "proxy_address": result.get("proxy_address"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Funding markets and fund via Polymarket (Week 17)
+# ---------------------------------------------------------------------------
+
+
+class PolymarketFundRequest(BaseModel):
+    """Request to fund a Polymarket funding market (uses linked account + payment router)."""
+
+    market_id: str = Field(..., min_length=1, description="Funding market ID (pool/tranche/loan listing)")
+    amount: float = Field(..., gt=0, description="Amount in USD to fund")
+
+
+@router.get("/funding-markets", response_model=List[Dict[str, Any]])
+async def polymarket_funding_markets(
+    visibility: Optional[str] = Query("public", description="Filter by visibility"),
+    resolved: bool = Query(False, description="Include resolved markets"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List markets suitable for funding (pool/tranche/loan listings only). Excludes platform equities and structured loan products."""
+    svc = PolymarketService(db)
+    try:
+        return svc.get_funding_markets(visibility=visibility, resolved=resolved, limit=limit, offset=offset)
+    except PolymarketServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.warning("funding-markets failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to list funding markets")
+
+
+@router.post("/fund", response_model=Dict[str, Any])
+async def polymarket_fund(
+    body: PolymarketFundRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Validate funding market and route payment via unified funding (polymarket_funding). Returns 402 with payment_request or success."""
+    svc = PolymarketService(db)
+    result = svc.fund_via_polymarket(current_user.id, body.market_id, amount=body.amount, require_linked=True)
+    if not result.get("ok") or not result.get("eligible"):
+        if result.get("error") == "polymarket_not_linked":
+            raise HTTPException(status_code=402, detail=result.get("message", "Link Polymarket account to fund."))
+        raise HTTPException(status_code=400, detail=result.get("message", "Not eligible to fund this market."))
+
+    pr = _get_payment_router(request)
+    if not pr:
+        raise HTTPException(status_code=503, detail="Payment router not available")
+
+    amount_decimal = Decimal(str(body.amount))
+    funding_result = await request_funding(
+        db=db,
+        user_id=current_user.id,
+        amount=amount_decimal,
+        payment_type="polymarket_funding",
+        destination_identifier=body.market_id,
+        payment_router=pr,
+        payment_payload=None,
+    )
+    if "error" in funding_result:
+        raise HTTPException(status_code=400, detail=funding_result["error"])
+
+    if funding_result.get("status_code") == 402 or funding_result.get("status") != "settled":
+        return JSONResponse(
+            status_code=402,
+            content={
+                "status": "Payment Required",
+                "payment_request": funding_result.get("payment_request"),
+                "amount": str(body.amount),
+                "currency": "USD",
+                "payment_type": "polymarket_funding",
+                "market_id": body.market_id,
+                "facilitator_url": getattr(pr.x402, "facilitator_url", None) if getattr(pr, "x402", None) else None,
+            },
+        )
+
+    after_funding_settled(
+        db=db,
+        user_id=current_user.id,
+        payment_type="polymarket_funding",
+        payment_result=funding_result,
+        destination_identifier=body.market_id,
+        amount=amount_decimal,
+    )
+    return {"success": True, "market_id": body.market_id, "amount": str(body.amount), "status": "settled"}
 
 
 # ---------------------------------------------------------------------------

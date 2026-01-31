@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import CreditBalance, CreditTransaction, User, UserSubscription
+from app.services.adaptive_pricing_service import AdaptivePricingService
 from app.services.blockchain_service import BlockchainService
+from app.services.bridge_credit_verification_service import BridgeCreditVerificationService
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +317,17 @@ class RollingCreditsService:
         if not balance:
             return {"ok": False, "reason": "no_balance"}
 
-        amt = Decimal(str(round(amount, 4)))
+        # Phase 12: use AdaptivePricingService when enabled for cost
+        effective_amount = amount
+        if getattr(settings, "ADAPTIVE_PRICING_ENABLED", False):
+            try:
+                pricing = AdaptivePricingService()
+                if pricing.is_enabled():
+                    cost = pricing.calculate_adaptive_cost(feature, quantity=1.0, include_server_fee=True)
+                    effective_amount = float(cost)
+            except Exception as e:
+                logger.debug("AdaptivePricingService cost lookup failed: %s", e)
+        amt = Decimal(str(round(effective_amount, 4)))
         if amt <= 0:
             return {"ok": True, "balance_after": float(balance.get_balance(credit_type))}
 
@@ -364,6 +376,19 @@ class RollingCreditsService:
         balance.balances = balances
         balance.total_balance = Decimal(str(round(total_balance, 4)))
         balance.last_updated = datetime.utcnow()
+
+        # Phase 12: optional bridge verification after spend
+        if getattr(settings, "BRIDGE_VERIFY_AFTER_SPEND", False):
+            try:
+                bridge = BridgeCreditVerificationService(self.db)
+                bridge.verify_credit_usage(
+                    user_id=user_id,
+                    credit_type=credit_type,
+                    amount=effective_amount,
+                    sync_from_chain=False,
+                )
+            except Exception as e:
+                logger.debug("BridgeCreditVerificationService after spend failed: %s", e)
 
         return {"ok": True, "balance_after": total_balance}
 

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchWithAuth, useAuth } from '@/context/AuthContext';
 import { resolveApiUrl } from '@/utils/apiBase';
-import { Loader2, Layers, Percent, DollarSign, Plus, Trash2, Package, ShoppingCart, List, Coins, Sparkles } from 'lucide-react';
+import { Loader2, Layers, Percent, DollarSign, Plus, Trash2, Package, ShoppingCart, List, Coins, Sparkles, BarChart2 } from 'lucide-react';
 
 interface Pool {
   id: number;

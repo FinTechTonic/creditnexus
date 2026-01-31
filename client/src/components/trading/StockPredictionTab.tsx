@@ -32,9 +32,19 @@ function symbolFromContext(ctx: { type?: string; symbol?: string; id?: { ticker?
 type Timeframe = 'daily' | 'hourly' | '15min';
 type Strategy = 'chronos' | 'technical';
 
+const STOCK_PREDICTION_SYMBOL_KEY = 'stockPredictionSymbol';
+
 export function StockPredictionTab() {
   const { context, broadcast } = useFDC3();
-  const [symbol, setSymbol] = useState('AAPL');
+  const getInitialSymbol = () => {
+    try {
+      const saved = sessionStorage.getItem(STOCK_PREDICTION_SYMBOL_KEY);
+      return (saved && saved.trim()) ? saved.trim() : 'AAPL';
+    } catch {
+      return 'AAPL';
+    }
+  };
+  const [symbol, setSymbol] = useState(getInitialSymbol);
   const [timeframe, setTimeframe] = useState<Timeframe>('daily');
   const [strategy, setStrategy] = useState<Strategy>('chronos');
   const [modelId, setModelId] = useState('');
@@ -69,6 +79,18 @@ export function StockPredictionTab() {
       resultRef.current = result;
     }
   }, [result]);
+
+  // Restore symbol from sessionStorage when opened via quick action (e.g. from Market tab)
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(STOCK_PREDICTION_SYMBOL_KEY);
+      if (saved && saved.trim() && saved.trim() !== symbol) {
+        setSymbol(saved.trim());
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     try {

@@ -38,7 +38,6 @@ import { PeopleHubResultView } from '@/components/agent-results/PeopleHubResultV
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
 import { SkeletonDocumentList } from '@/components/ui/skeleton';
-import { DashboardChatbotPanel } from '@/components/DashboardChatbotPanel';
 
 interface AgentResult {
   id: string;
@@ -535,10 +534,6 @@ export function AgentDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Chatbot Panel */}
-      <div className="mt-6">
-        <DashboardChatbotPanel />
-      </div>
     </div>
   );
 }

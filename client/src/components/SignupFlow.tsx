@@ -41,9 +41,18 @@ interface SignupFormData {
   documents: File[];
 }
 
+/** 'join_org' = sign up to an existing organisation; 'pro' = paid signup that creates/opens an org; 'pay_and_link_bank' = pay then open a new (linked) bank account via Plaid */
+export type SignupPath = 'join_org' | 'pro' | 'pay_and_link_bank';
+
 interface SignupFlowProps {
   onComplete?: () => void;
   onCancel?: () => void;
+  /**
+   * When true (e.g. mobile app already priced on app stores): skip payment paywalls,
+   * grey out optional steps, and require Link accounts to proceed (no "Skip for now").
+   * Sign-in/sign-up becomes: link accounts or existing sign-in / sign-up to organisation.
+   */
+  linkAccountsRequiredOnly?: boolean;
 }
 
 const STEPS = [
@@ -269,7 +278,9 @@ function ImplementationSelectionStep({
   );
 }
 
-export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
+export function SignupFlow({ onComplete, onCancel, linkAccountsRequiredOnly = false }: SignupFlowProps) {
+  /** null = show path choice (join org vs Pro); set after user picks */
+  const [signupPath, setSignupPath] = useState<SignupPath | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<SignupFormData>({
     email: '',
@@ -296,11 +307,13 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
   // Org-admin payment gating
   const [showOrgAdminPayment, setShowOrgAdminPayment] = useState(false);
   const [showPlaidPrompt, setShowPlaidPrompt] = useState(false);
+  const [showWaitlistMessage, setShowWaitlistMessage] = useState(false);
+  const [waitlistMessage, setWaitlistMessage] = useState('');
   const [signupSkippedPayment, setSignupSkippedPayment] = useState(false);
   const [orgAdminPaid, setOrgAdminPaid] = useState(false);
   
   const navigate = useNavigate();
-  const { register, authError, clearError } = useAuth();
+  const { register, authError, clearError, registrationWaitlistMessage } = useAuth();
 
   const validateStep1 = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -376,13 +389,31 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
       });
       
       if (success) {
-        // If user is signing up as an org admin (role=admin), show payment modal (or skip).
-        if (formData.role === 'admin' && !orgAdminPaid && !signupSkippedPayment) {
+        // Waitlist: instance admin must approve before login; show message and stop.
+        if (typeof success === 'object' && success.waitlist) {
+          setWaitlistMessage(success.message);
+          setShowWaitlistMessage(true);
+          return;
+        }
+        // When linkAccountsRequiredOnly (e.g. mobile app already priced), skip payment and go straight to Link accounts.
+        if (linkAccountsRequiredOnly) {
+          setSignupSkippedPayment(true);
+          setPlaidError(null);
+          setShowPlaidPrompt(true);
+          return;
+        }
+        // If user chose Pay & link bank, show payment first then Plaid.
+        if (signupPath === 'pay_and_link_bank' && !orgAdminPaid && !signupSkippedPayment) {
+          setShowOrgAdminPayment(true);
+          return;
+        }
+        // If user is signing up as org admin (Pro path), show payment modal unless skip.
+        if ((formData.role === 'admin' || signupPath === 'pro') && !orgAdminPaid && !signupSkippedPayment) {
           setShowOrgAdminPayment(true);
           return;
         }
 
-        // Show Plaid link prompt (optional: Connect or Skip for now)
+        // Show Plaid link prompt (optional: Connect or Skip for now; required when linkAccountsRequiredOnly)
         setPlaidError(null);
         setShowPlaidPrompt(true);
       }
@@ -455,18 +486,15 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
     proceedAfterOrgAdminPaid();
   };
 
-  const handlePlaidConnect = async () => {
+  const handlePlaidConnect = async (linkAnother?: boolean) => {
     setPlaidError(null);
     setPlaidLinking(true);
     try {
       const statusResp = await fetchWithAuth('/api/banking/status');
       const statusData = await statusResp.json().catch(() => ({}));
-      if (statusData.connected) {
+      if (statusData.connected && !linkAnother) {
         setPlaidLinked(true);
-        setShowPlaidPrompt(false);
-        await persistCertifications();
-        if (onComplete) onComplete();
-        else navigate('/dashboard', { replace: true });
+        setPlaidLinking(false);
         return;
       }
       const linkTokenResp = await fetchWithAuth('/api/banking/link-token');
@@ -902,7 +930,7 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
         onClose={() => setShowOrgAdminPayment(false)}
         onPaid={proceedAfterOrgAdminPaid}
         onSkip={handleSkipPayment}
-        canBypass={false}
+        canBypass={linkAccountsRequiredOnly}
       />
       <Card className="w-full max-w-2xl">
         <CardHeader>
@@ -918,119 +946,216 @@ export function SignupFlow({ onComplete, onCancel }: SignupFlowProps) {
             )}
           </div>
           
-          <div className="space-y-4">
-            <Progress value={progress} className="h-2" />
-            <div className="flex items-center justify-between text-sm">
-              {STEPS.map((step, _index) => ( // Prefix with _ - unused
-                <div
-                  key={step.id}
-                  onClick={() => handleStepClick(step.id)}
-                  className={`flex items-center gap-2 cursor-pointer transition-colors ${
-                    currentStep >= step.id ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-500 hover:text-slate-400'
-                  }`}
-                >
-                  {currentStep > step.id ? (
-                    <CheckCircle2 className="h-5 w-5" />
-                  ) : (
+          {signupPath !== null && (
+            <>
+              <div className="space-y-4">
+                <Progress value={progress} className="h-2" />
+                <div className="flex items-center justify-between text-sm">
+                  {STEPS.map((step, _index) => ( // Prefix with _ - unused
                     <div
-                      className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${
-                        currentStep === step.id
-                          ? 'border-emerald-500 bg-emerald-500'
-                          : currentStep > step.id
-                          ? 'border-emerald-500 bg-emerald-500'
-                          : 'border-slate-600'
+                      key={step.id}
+                      onClick={() => handleStepClick(step.id)}
+                      className={`flex items-center gap-2 cursor-pointer transition-colors ${
+                        currentStep >= step.id ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-500 hover:text-slate-400'
                       }`}
                     >
-                      {currentStep === step.id && (
-                        <div className="h-2 w-2 rounded-full bg-white" />
+                      {currentStep > step.id ? (
+                        <CheckCircle2 className="h-5 w-5" />
+                      ) : (
+                        <div
+                          className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${
+                            currentStep === step.id
+                              ? 'border-emerald-500 bg-emerald-500'
+                              : currentStep > step.id
+                              ? 'border-emerald-500 bg-emerald-500'
+                              : 'border-slate-600'
+                          }`}
+                        >
+                          {currentStep === step.id && (
+                            <div className="h-2 w-2 rounded-full bg-white" />
+                          )}
+                        </div>
                       )}
+                      <span className="hidden sm:inline">{step.title}</span>
                     </div>
-                  )}
-                  <span className="hidden sm:inline">{step.title}</span>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-          
-          <CardDescription className="mt-2">
-            {STEPS[currentStep].description}
-          </CardDescription>
+              </div>
+              <CardDescription className="mt-2">
+                {STEPS[currentStep].description}
+              </CardDescription>
+            </>
+          )}
+          {signupPath === null && (
+            <CardDescription className="mt-2">
+              Select one option to continue
+            </CardDescription>
+          )}
         </CardHeader>
         
         <CardContent>
-          {showPlaidPrompt ? (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-slate-100">Link your bank (optional)</h3>
+          {showWaitlistMessage ? (
+            <div className="space-y-6 py-4">
+              <div className="flex items-center gap-3 text-emerald-400">
+                <CheckCircle2 className="h-10 w-10 flex-shrink-0" />
+                <h3 className="text-lg font-semibold text-slate-100">You’re on the waitlist</h3>
+              </div>
+              <p className="text-slate-300">{waitlistMessage || registrationWaitlistMessage}</p>
               <p className="text-slate-400 text-sm">
-                Connect your accounts for a full dashboard. You can skip and link later in User Settings.
+                An instance administrator will review your signup and approve your account. You can try logging in after approval.
+              </p>
+              {onComplete && (
+                <Button onClick={onComplete}>Continue to login</Button>
+              )}
+            </div>
+          ) : showPlaidPrompt ? (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-100">
+                {plaidLinked
+                  ? 'Link another bank (optional)'
+                  : linkAccountsRequiredOnly
+                    ? 'Link your bank (required)'
+                    : 'Link your bank (optional)'}
+              </h3>
+              <p className="text-slate-400 text-sm">
+                {plaidLinked
+                  ? 'You can link more than one bank. Add another or continue.'
+                  : linkAccountsRequiredOnly
+                    ? 'Connect your accounts to proceed. This is required to use the app.'
+                    : 'Connect your accounts for a full dashboard. You can skip and link later in User Settings.'}
               </p>
               {plaidError && (
                 <div className="p-3 bg-amber-500/10 border border-amber-500/50 rounded-lg">
                   <p className="text-sm text-amber-400">{plaidError}</p>
                 </div>
               )}
-              <div className="flex gap-3">
-                <Button onClick={handlePlaidConnect} disabled={plaidLinking}>
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={() => handlePlaidConnect(!!plaidLinked)} disabled={plaidLinking}>
                   {plaidLinking ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       Connecting…
                     </>
+                  ) : plaidLinked ? (
+                    'Link another bank'
                   ) : (
                     'Connect with Plaid'
                   )}
                 </Button>
-                <Button variant="outline" onClick={handlePlaidSkip}>
-                  Skip for now
-                </Button>
+                {plaidLinked && (
+                  <Button variant="outline" onClick={handlePlaidSkip}>
+                    Done, continue to dashboard
+                  </Button>
+                )}
+                {!linkAccountsRequiredOnly && !plaidLinked && (
+                  <Button variant="outline" onClick={handlePlaidSkip}>
+                    Skip for now
+                  </Button>
+                )}
               </div>
+            </div>
+          ) : signupPath === null ? (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-xl font-semibold text-slate-100 mb-2">How do you want to sign up?</h3>
+                <p className="text-slate-400 text-sm">
+                  Choose whether you’re joining an existing organisation or creating one (Pro).
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupPath('join_org');
+                    updateFormData({ role: formData.role || 'applicant' });
+                  }}
+                  className="p-6 rounded-xl border-2 border-slate-600 hover:border-emerald-500 hover:bg-emerald-500/10 transition-all text-left"
+                >
+                  <div className="font-medium text-slate-100">Sign up to an organisation</div>
+                  <div className="text-sm text-slate-400 mt-1">
+                    Join an existing organisation. Select your org in the next steps.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupPath('pro');
+                    updateFormData({ role: 'admin' });
+                  }}
+                  className="p-6 rounded-xl border-2 border-slate-600 hover:border-emerald-500 hover:bg-emerald-500/10 transition-all text-left"
+                >
+                  <div className="font-medium text-slate-100">Sign up (Pro)</div>
+                  <div className="text-sm text-slate-400 mt-1">
+                    Create or open your own organisation. Paid; you can link accounts after.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupPath('pay_and_link_bank');
+                    updateFormData({ role: formData.role || 'applicant' });
+                  }}
+                  className="p-6 rounded-xl border-2 border-slate-600 hover:border-emerald-500 hover:bg-emerald-500/10 transition-all text-left"
+                >
+                  <div className="font-medium text-slate-100">Pay and open a new (linked) bank account</div>
+                  <div className="text-sm text-slate-400 mt-1">
+                    Pay once, then link your bank securely via Plaid. Simple way to get started.
+                  </div>
+                </button>
+              </div>
+              {linkAccountsRequiredOnly && (
+                <p className="text-xs text-slate-500 text-center">
+                  In this mode payment is skipped; Link accounts will be required to proceed after signup.
+                </p>
+              )}
             </div>
           ) : (
             renderStepContent()
           )}
           
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-700">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleBack}
-              disabled={currentStep === 0}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
-            
-            {currentStep < STEPS.length - 1 ? (
+          {signupPath !== null && (
+            <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-700">
               <Button
                 type="button"
-                onClick={handleNext}
+                variant="outline"
+                onClick={handleBack}
+                disabled={currentStep === 0}
                 className="flex items-center gap-2"
               >
-                Next
-                <ArrowRight className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4" />
+                Back
               </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="flex items-center gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Creating Account...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4" />
-                    Complete Signup
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
+              {currentStep < STEPS.length - 1 ? (
+                <Button
+                  type="button"
+                  onClick={handleNext}
+                  className="flex items-center gap-2"
+                >
+                  Next
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Creating Account...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" />
+                      Complete Signup
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

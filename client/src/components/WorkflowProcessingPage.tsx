@@ -22,8 +22,6 @@ import {
 import { fetchWithAuth } from '@/context/AuthContext'
 import { useFDC3 } from '@/context/FDC3Context'
 import type { WorkflowLinkContext } from '@/context/FDC3Context'
-import { DashboardChatbotPanel } from './DashboardChatbotPanel'
-
 interface WorkflowData {
   workflow_id: string
   workflow_type: string
@@ -601,10 +599,6 @@ export function WorkflowProcessingPage() {
         )}
       </div>
 
-      {/* Chatbot Panel */}
-      <div className="mt-6">
-        <DashboardChatbotPanel dealId={data?.workflow_metadata?.dealId} documentId={data?.workflow_metadata?.documentId} />
-      </div>
     </div>
   )
 }

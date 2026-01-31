@@ -36,6 +36,32 @@ def get_blockchain_service() -> BlockchainService:
     return BlockchainService()
 
 
+@router.get("/bridge-builder/trade/{trade_id}", response_model=Dict[str, Any])
+async def get_trade(
+    trade_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Get a bridge trade by id for the current user (Phase 9)."""
+    t = db.query(BridgeTrade).filter(BridgeTrade.id == trade_id, BridgeTrade.user_id == current_user.id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Trade not found or access denied")
+    return {
+        "id": t.id,
+        "user_id": t.user_id,
+        "token_id": t.token_id,
+        "source_chain_id": t.source_chain_id,
+        "target_chain_id": t.target_chain_id,
+        "target_address": t.target_address,
+        "trade_type": t.trade_type,
+        "status": t.status,
+        "lock_tx_hash": t.lock_tx_hash,
+        "bridge_external_id": t.bridge_external_id,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    }
+
+
 @router.post("/bridge-builder/create-trade", response_model=Dict[str, Any])
 async def create_trade(
     body: CreateTradeRequest,
