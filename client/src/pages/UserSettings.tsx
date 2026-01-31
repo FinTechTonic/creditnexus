@@ -980,6 +980,10 @@ export function UserSettings() {
           )}
         </TabsContent>
         
+        <TabsContent value="trading-account">
+          <BrokerageOnboarding />
+        </TabsContent>
+        
         <TabsContent value="notifications">
           <Card>
             <CardHeader>
