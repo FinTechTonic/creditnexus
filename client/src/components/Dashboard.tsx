@@ -41,7 +41,6 @@ import {
   PERMISSION_SATELLITE_VIEW,
 } from '@/utils/permissions';
 import { VerificationWidget } from '@/components/VerificationWidget';
-import { DashboardChatbotPanel } from '@/components/DashboardChatbotPanel';
 import { FilingDeadlineAlerts } from '@/components/FilingDeadlineAlerts';
 
 interface PortfolioAnalytics {
@@ -853,10 +852,6 @@ export function Dashboard() {
         </div>
       </PermissionGate>
 
-      {/* Dashboard Chatbot Panel */}
-      <div className="mt-6">
-        <DashboardChatbotPanel />
-      </div>
     </div>
   );
 }

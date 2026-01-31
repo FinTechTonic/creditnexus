@@ -4,11 +4,11 @@ import logging
 import io
 import json
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Request, Form, Body
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session, joinedload
 import pandas as pd
@@ -38,6 +38,8 @@ from app.services.clause_cache_service import ClauseCacheService
 from app.services.file_storage_service import FileStorageService
 from app.services.deal_service import DealService
 from app.services.profile_extraction_service import ProfileExtractionService
+from app.services.payment_gateway_service import PaymentGatewayService, billable_402_response
+from app.models.cdm_payment import PaymentType
 from app.chains.document_retrieval_chain import DocumentRetrievalService, add_user_profile, search_user_profiles
 from app.utils.audit import log_audit_action
 from fastapi import Request
@@ -958,6 +960,16 @@ async def research_person(
     - Updates deal timeline
     - Generates audit report
     """
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="universal",
+        amount=1.0,
+        feature="people_search",
+        payment_type=PaymentType.BILLABLE_FEATURE,
+        cost_usd=Decimal("0.10"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        return billable_402_response(gate)
     try:
         from app.workflows.peoplehub_research_graph import execute_peoplehub_research
         from app.services.psychometric_analysis_service import analyze_individual
@@ -4146,6 +4158,16 @@ async def digitizer_chatbot_launch_workflow(
     Returns:
         Workflow launch result with status and CDM events
     """
+    gate = await PaymentGatewayService(db).require_credits_or_402(
+        user_id=current_user.id,
+        credit_type="universal",
+        amount=1.0,
+        feature="agent_workflow",
+        payment_type=PaymentType.BILLABLE_FEATURE,
+        cost_usd=Decimal("0.10"),
+    )
+    if not gate.get("ok") and gate.get("status_code") == 402:
+        return billable_402_response(gate)
     from app.services.digitizer_chatbot_service import DigitizerChatbotService
     
     try:
@@ -4431,6 +4453,17 @@ async def extract_profile(
     Returns:
         Extracted profile data in UserProfileData format
     """
+    if current_user:
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=1.0,
+            feature="profile_extract",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=Decimal("0.10"),
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return billable_402_response(gate)
     from app.chains.profile_extraction_chain import extract_profile_data
     
     try:
@@ -4980,6 +5013,32 @@ async def get_portfolio_analytics(
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": f"Failed to fetch analytics: {str(e)}"}
+        )
+
+
+@router.get("/analytics/graph-data")
+async def get_graph_data(
+    days: int = Query(30, ge=1, le=365),
+    include_risk: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get Plaid-backed portfolio data aggregated for unified graphs (Week 18). Returns allocation, transaction series, and summary."""
+    from app.services.graph_aggregation_service import (
+        aggregate_graph_data,
+        calculate_metrics,
+        format_graph_data,
+    )
+    try:
+        aggregated = aggregate_graph_data(db, current_user.id, days=days, include_risk=include_risk)
+        metrics = calculate_metrics(aggregated)
+        formatted = format_graph_data(aggregated, metrics)
+        return formatted
+    except Exception as e:
+        logger.warning("Graph data aggregation failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": "Failed to fetch graph data"},
         )
 
 
@@ -10062,6 +10121,69 @@ async def list_meetings(
     return [MeetingResponse(**mtg.to_dict()) for mtg in meetings]
 
 
+class CalendarEventItem(BaseModel):
+    """Single calendar event for unified calendar view (meetings + watchlist-derived)."""
+    id: str = Field(..., description="Unique id, e.g. 'meeting-123' or 'watchlist-1-AAPL'")
+    title: str
+    start: str = Field(..., description="ISO 8601 start")
+    end: str = Field(..., description="ISO 8601 end")
+    source: str = Field("meeting", description="'meeting' or 'watchlist'")
+    meeting_id: Optional[int] = None
+    meeting: Optional[Dict[str, Any]] = None
+
+
+class CalendarEventsResponse(BaseModel):
+    """Unified calendar events (meetings + watchlist events)."""
+    events: List[CalendarEventItem] = Field(default_factory=list)
+
+
+@router.get("/calendar/events", response_model=CalendarEventsResponse)
+async def list_calendar_events(
+    start_date: Optional[str] = Query(None, description="Start date filter (ISO 8601)"),
+    end_date: Optional[str] = Query(None, description="End date filter (ISO 8601)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """List unified calendar events (meetings + watchlist-derived). CalendarView can fetch and merge."""
+    query = db.query(Meeting)
+    if current_user.role != "admin":
+        query = query.filter(Meeting.organizer_id == current_user.id)
+    if start_date:
+        try:
+            start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            query = query.filter(Meeting.scheduled_at >= start)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            query = query.filter(Meeting.scheduled_at <= end)
+        except ValueError:
+            pass
+    meetings = query.order_by(Meeting.scheduled_at.asc()).all()
+    out: List[CalendarEventItem] = []
+    for mtg in meetings:
+        d = mtg.to_dict()
+        start_dt = mtg.scheduled_at if hasattr(mtg.scheduled_at, "isoformat") else datetime.fromisoformat(d["scheduled_at"].replace("Z", "+00:00"))
+        if hasattr(start_dt, "isoformat"):
+            start_str = start_dt.isoformat()
+        else:
+            start_str = d["scheduled_at"]
+        end_dt = start_dt + timedelta(minutes=mtg.duration_minutes)
+        end_str = end_dt.isoformat()
+        out.append(CalendarEventItem(
+            id=f"meeting-{mtg.id}",
+            title=mtg.title,
+            start=start_str,
+            end=end_str,
+            source="meeting",
+            meeting_id=mtg.id,
+            meeting=d,
+        ))
+    # Watchlist-derived events (e.g. earnings/dividend dates): stub empty; integrate later
+    return CalendarEventsResponse(events=out)
+
+
 @router.get("/meetings/{meeting_id}", response_model=MeetingResponse)
 async def get_meeting(
     meeting_id: int,
@@ -11268,6 +11390,17 @@ async def extract_profile_from_documents(
     Returns:
         Profile extraction result with structured profile data
     """
+    if current_user:
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=1.0,
+            feature="profile_extract",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=Decimal("0.10"),
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return billable_402_response(gate)
     from app.services.profile_extraction_service import ProfileExtractionService
     from app.models.user_profile import UserProfileData
     import json
@@ -11373,14 +11506,14 @@ async def list_pending_signups(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """List pending signups (admin only).
+    """List pending signups (instance admin only).
     
     Returns a paginated list of user signups with their profile data.
     """
-    if current_user.role != "admin":
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11439,11 +11572,11 @@ async def get_signup_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Get signup details for a specific user (admin only)."""
-    if current_user.role != "admin":
+    """Get signup details for a specific user (instance admin only)."""
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11492,14 +11625,14 @@ async def approve_signup(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Approve a user signup (admin only).
+    """Approve a user signup (instance admin only).
     
     Activates the user account and sets signup_status to 'approved'.
     """
-    if current_user.role != "admin":
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11522,6 +11655,15 @@ async def approve_signup(
         user.signup_reviewed_at = datetime.utcnow()
         user.signup_reviewed_by = current_user.id
         user.signup_rejection_reason = None
+
+        # If user was invited to an org (pending_organization_id + invited_role), assign org and role
+        if user.profile_data and isinstance(user.profile_data, dict):
+            pending_org_id = user.profile_data.get("pending_organization_id")
+            invited_role = user.profile_data.get("invited_role")
+            if pending_org_id is not None and invited_role is not None:
+                user.organization_id = int(pending_org_id) if pending_org_id is not None else None
+                user.organization_role = str(invited_role)
+                user.profile_data = {k: v for k, v in user.profile_data.items() if k not in ("pending_organization_id", "invited_role")}
         
         db.commit()
         db.refresh(user)
@@ -11577,14 +11719,14 @@ async def reject_signup(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Reject a user signup (admin only).
+    """Reject a user signup (instance admin only).
     
     Sets signup_status to 'rejected' and stores the rejection reason.
     """
-    if current_user.role != "admin":
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11638,6 +11780,47 @@ async def reject_signup(
             status_code=500,
             detail={"status": "error", "message": f"Failed to reject signup: {str(e)}"}
         )
+
+
+@router.post("/admin/signups/{user_id}/verify-certification")
+async def verify_signup_certification(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Mark a user's optional FINRA/certification as reviewed by admin (instance admin only)."""
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Admin access required"}
+        )
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail={"status": "error", "message": f"User {user_id} not found"}
+        )
+    if not user.profile_data or not isinstance(user.profile_data, dict):
+        user.profile_data = {}
+    user.profile_data["certification_reviewed_at"] = datetime.utcnow().isoformat()
+    user.profile_data["certification_reviewed_by"] = current_user.id
+    db.commit()
+    db.refresh(user)
+    log_audit_action(
+        db=db,
+        action=AuditAction.UPDATE,
+        target_type="user",
+        target_id=user.id,
+        user_id=current_user.id,
+        metadata={"certification_verified": True},
+        request=request
+    )
+    return {
+        "status": "success",
+        "message": "Certification marked as reviewed",
+        "data": user.to_dict()
+    }
 
 
 # ============================================================================

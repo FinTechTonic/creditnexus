@@ -120,13 +120,31 @@ export function SidebarNavigation() {
   
   const sidebarApps: SidebarApp[] = useMemo(() => {
     const apps: SidebarApp[] = [
-      // Core Applications
+      // Core Applications (order: dashboard, newsfeed, link-accounts, settings, library, doc-parser, doc-generator)
       {
         id: 'dashboard',
         name: 'Dashboard',
         icon: <LayoutDashboard className="h-5 w-5" />,
         description: 'Portfolio overview & analytics',
         path: '/dashboard',
+        category: 'core',
+        subscriptionTier: 'free'
+      },
+      {
+        id: 'newsfeed',
+        name: 'Social Feeds',
+        icon: <Share2 className="h-5 w-5" />,
+        description: 'Deals & markets feed, like, comment, share',
+        path: '/app/newsfeed',
+        category: 'core',
+        subscriptionTier: 'free'
+      },
+      {
+        id: 'link-accounts',
+        name: 'Link Accounts',
+        icon: <Link2 className="h-5 w-5" />,
+        description: 'Connect bank and data sources',
+        path: '/app/link-accounts',
         category: 'core',
         subscriptionTier: 'free'
       },
@@ -192,6 +210,15 @@ export function SidebarNavigation() {
         subscriptionTier: 'pro'
       },
       {
+        id: 'bank-products',
+        name: 'Bank Products',
+        icon: <DollarSign className="h-5 w-5" />,
+        description: 'Marketplace for bank-held products',
+        path: '/app/bank-products',
+        category: 'trading',
+        subscriptionTier: 'free'
+      },
+      {
         id: 'bridge',
         name: 'Bridge',
         icon: <ArrowLeftRight className="h-5 w-5" />,
@@ -217,16 +244,6 @@ export function SidebarNavigation() {
         icon: <ArrowLeftRight className="h-5 w-5" />,
         description: 'LMA trade confirmation & settlement',
         path: '/app/trade-blotter',
-        category: 'trading',
-        requiredPermission: PERMISSION_TRADE_VIEW,
-        subscriptionTier: 'free'
-      },
-      {
-        id: 'link-accounts',
-        name: 'Link Accounts',
-        icon: <Link2 className="h-5 w-5" />,
-        description: 'Connect bank and data sources',
-        path: '/app/link-accounts',
         category: 'trading',
         requiredPermission: PERMISSION_TRADE_VIEW,
         subscriptionTier: 'free'

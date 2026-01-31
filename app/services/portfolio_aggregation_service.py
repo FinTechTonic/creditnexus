@@ -40,13 +40,26 @@ class AggregatedLiabilities:
 
 def _get_user_access_token(db: Session, user_id: int) -> Optional[str]:
   """
-  Helper to fetch the user's Plaid access_token, if any.
-  Token is stored in connection_data (dict) on UserImplementationConnection.
+  Helper to fetch the user's first Plaid access_token (backward compat).
   """
-  conn = plaid_service.get_plaid_connection(db, user_id)
-  if not conn or not conn.connection_data or not isinstance(conn.connection_data, dict):
-    return None
-  return conn.connection_data.get("access_token")
+  tokens = _get_user_access_tokens(db, user_id)
+  return tokens[0] if tokens else None
+
+
+def _get_user_access_tokens(db: Session, user_id: int) -> List[str]:
+  """
+  Return all Plaid access_tokens for the user (multi-item).
+  Each UserImplementationConnection (Plaid) row can hold one access_token in connection_data.
+  """
+  conns = plaid_service.get_plaid_connections(db, user_id)
+  tokens: List[str] = []
+  for conn in conns or []:
+    if not conn.connection_data or not isinstance(conn.connection_data, dict):
+      continue
+    at = conn.connection_data.get("access_token")
+    if at:
+      tokens.append(at)
+  return tokens
 
 
 def aggregate_transactions(
@@ -55,21 +68,93 @@ def aggregate_transactions(
   days: int = 30,
 ) -> AggregatedTransactions:
   """
-  Call Plaid Transactions API and aggregate recent transactions.
+  Call Plaid Transactions API for all linked items and aggregate (multi-item).
   """
-  access_token = _get_user_access_token(db, user_id)
-  if not access_token:
+  tokens = _get_user_access_tokens(db, user_id)
+  if not tokens:
     return AggregatedTransactions(transactions=[], total_transactions=0)
 
   end = date.today()
   start = end - timedelta(days=days)
-  resp = plaid_service.get_transactions(access_token, start_date=start, end_date=end)
-  if "error" in resp:
-    return AggregatedTransactions(transactions=[], total_transactions=0)
+  all_txs: List[Dict[str, Any]] = []
+  total_count = 0
+  for access_token in tokens:
+    resp = plaid_service.get_transactions(access_token, start_date=start, end_date=end)
+    if "error" in resp:
+      continue
+    txs = resp.get("transactions") or []
+    all_txs.extend(txs)
+    total_count += int(resp.get("total_transactions") or len(txs))
+  return AggregatedTransactions(transactions=all_txs, total_transactions=total_count)
 
-  txs = resp.get("transactions") or []
-  total = int(resp.get("total_transactions") or len(txs))
-  return AggregatedTransactions(transactions=txs, total_transactions=total)
+
+def spending_breakdown(
+  db: Session,
+  user_id: int,
+  days: int = 30,
+) -> Dict[str, Any]:
+  """
+  Aggregate Plaid transactions by category (and optionally merchant) for spending analysis.
+  Uses personal_finance_category.primary or category from each transaction.
+  Outflows (negative amount) are summed as positive "spend" per category.
+  """
+  aggregated = aggregate_transactions(db, user_id, days=days)
+  txs = aggregated.transactions
+
+  by_category: Dict[str, Dict[str, Any]] = {}
+  by_merchant: Dict[str, Dict[str, Any]] = {}
+  total_spend = 0.0
+
+  for tx in txs:
+    amount = float(tx.get("amount") or 0.0)
+    # Only count outflows (negative in Plaid) as spend
+    if amount < 0:
+      spend = abs(amount)
+      total_spend += spend
+
+      # Category: Plaid personal_finance_category.primary or category (array or string)
+      pfc = tx.get("personal_finance_category") or {}
+      category_key = None
+      if isinstance(pfc, dict):
+        category_key = pfc.get("primary") or pfc.get("detailed")
+      if not category_key and "category" in tx:
+        cat = tx["category"]
+        if isinstance(cat, list) and cat:
+          category_key = cat[0] if isinstance(cat[0], str) else str(cat[0])
+        elif isinstance(cat, str):
+          category_key = cat
+      if not category_key:
+        category_key = "Uncategorized"
+
+      if category_key not in by_category:
+        by_category[category_key] = {"amount": 0.0, "count": 0}
+      by_category[category_key]["amount"] += spend
+      by_category[category_key]["count"] += 1
+
+      # Merchant: merchant_name or name
+      merchant = (tx.get("merchant_name") or tx.get("name") or "").strip() or "Unknown"
+      if merchant not in by_merchant:
+        by_merchant[merchant] = {"amount": 0.0, "count": 0}
+      by_merchant[merchant]["amount"] += spend
+      by_merchant[merchant]["count"] += 1
+
+  # Return lists sorted by amount descending
+  by_category_list = [
+    {"category": k, "amount": round(v["amount"], 2), "count": v["count"]}
+    for k, v in sorted(by_category.items(), key=lambda x: -x[1]["amount"])
+  ]
+  by_merchant_list = [
+    {"merchant": k, "amount": round(v["amount"], 2), "count": v["count"]}
+    for k, v in sorted(by_merchant.items(), key=lambda x: -x[1]["amount"])
+  ]
+
+  return {
+    "by_category": by_category_list,
+    "by_merchant": by_merchant_list,
+    "total_spend": round(total_spend, 2),
+    "total_transactions": len(txs),
+    "days": days,
+  }
 
 
 def aggregate_investments(
@@ -77,44 +162,45 @@ def aggregate_investments(
   user_id: int,
 ) -> AggregatedInvestments:
   """
-  Call Plaid Investments API and aggregate positions / market value.
+  Call Plaid Investments API for all linked items and aggregate (multi-item).
   """
-  access_token = _get_user_access_token(db, user_id)
-  if not access_token:
+  tokens = _get_user_access_tokens(db, user_id)
+  if not tokens:
     return AggregatedInvestments(positions=[], total_market_value=0.0, unrealized_pl=0.0)
-
-  holdings_resp = plaid_service.get_investments_holdings(access_token)
-  if "error" in holdings_resp:
-    return AggregatedInvestments(positions=[], total_market_value=0.0, unrealized_pl=0.0)
-
-  holdings = holdings_resp.get("holdings") or []
-  securities = {s.get("security_id"): s for s in (holdings_resp.get("securities") or [])}
 
   positions: List[Dict[str, Any]] = []
   total_market_value = 0.0
 
-  for h in holdings:
-    security = securities.get(h.get("security_id") or "")
-    symbol = (security or {}).get("ticker_symbol") or (security or {}).get("name")
-    quantity = float(h.get("quantity") or 0.0)
-    current_price = float((security or {}).get("close_price") or 0.0)
-    market_value = quantity * current_price
-    cost_basis = float(h.get("cost_basis") or 0.0)
-    unrealized_pl = market_value - cost_basis if cost_basis else 0.0
+  for access_token in tokens:
+    holdings_resp = plaid_service.get_investments_holdings(access_token)
+    if "error" in holdings_resp:
+      continue
+    holdings = holdings_resp.get("holdings") or []
+    securities = {s.get("security_id"): s for s in (holdings_resp.get("securities") or [])}
 
-    positions.append(
-      {
-        "symbol": symbol,
-        "quantity": quantity,
-        "average_price": float(h.get("cost_basis") or 0.0) / quantity if quantity and h.get("cost_basis") else 0.0,
-        "current_price": current_price,
-        "market_value": market_value,
-        "unrealized_pl": unrealized_pl,
-      }
-    )
-    total_market_value += market_value
+    for h in holdings:
+      security = securities.get(h.get("security_id") or "")
+      symbol = (security or {}).get("ticker_symbol") or (security or {}).get("name")
+      quantity = float(h.get("quantity") or 0.0)
+      current_price = float((security or {}).get("close_price") or 0.0)
+      market_value = quantity * current_price
+      cost_basis = float(h.get("cost_basis") or 0.0)
+      unrealized_pl = market_value - cost_basis if cost_basis else 0.0
 
-  # For now, unrealized P&L is the sum across positions
+      positions.append(
+        {
+          "symbol": symbol,
+          "quantity": quantity,
+          "average_price": float(h.get("cost_basis") or 0.0) / quantity if quantity and h.get("cost_basis") else 0.0,
+          "current_price": current_price,
+          "market_value": market_value,
+          "unrealized_pl": unrealized_pl,
+          "source": "plaid_investments",
+          "type": "equity",
+        }
+      )
+      total_market_value += market_value
+
   total_unrealized = sum(float(p.get("unrealized_pl") or 0.0) for p in positions)
   return AggregatedInvestments(
     positions=positions,
@@ -128,17 +214,26 @@ def aggregate_liabilities(
   user_id: int,
 ) -> AggregatedLiabilities:
   """
-  Call Plaid Liabilities API and aggregate results.
+  Call Plaid Liabilities API for all linked items and merge (multi-item).
   """
-  access_token = _get_user_access_token(db, user_id)
-  if not access_token:
+  tokens = _get_user_access_tokens(db, user_id)
+  if not tokens:
     return AggregatedLiabilities(liabilities={})
 
-  resp = plaid_service.get_liabilities(access_token)
-  if "error" in resp:
-    return AggregatedLiabilities(liabilities={})
-
-  return AggregatedLiabilities(liabilities=resp.get("liabilities") or {})
+  merged: Dict[str, Any] = {}
+  for access_token in tokens:
+    resp = plaid_service.get_liabilities(access_token)
+    if "error" in resp:
+      continue
+    liab = resp.get("liabilities") or {}
+    for key, val in liab.items():
+      if key not in merged:
+        merged[key] = val if not isinstance(val, list) else []
+      elif isinstance(merged[key], list) and isinstance(val, list):
+        merged[key] = merged[key] + val
+      elif isinstance(merged[key], (int, float)) and isinstance(val, (int, float)):
+        merged[key] = (merged[key] or 0) + (val or 0)
+  return AggregatedLiabilities(liabilities=merged)
 
 
 def calculate_portfolio_metrics(
@@ -175,19 +270,20 @@ def get_unified_portfolio(
   Combine Plaid data into a single portfolio overview structure
   consumed by `PortfolioDashboard`.
   """
-  access_token = _get_user_access_token(db, user_id)
+  tokens = _get_user_access_tokens(db, user_id)
   bank_balances_value = 0.0
-  account_info: Dict[str, Any] = {}
+  all_accounts: List[Dict[str, Any]] = []
 
-  if access_token:
+  for access_token in tokens:
     balances_resp = plaid_service.get_balances(access_token)
     if "error" not in balances_resp:
       accounts = balances_resp.get("accounts") or []
-      bank_balances_value = sum(
+      bank_balances_value += sum(
         float((a.get("balances") or {}).get("current") or 0.0) for a in accounts
       )
-      account_info["accounts"] = accounts
+      all_accounts.extend(accounts)
 
+  account_info: Dict[str, Any] = {"accounts": all_accounts} if all_accounts else {}
   txs = aggregate_transactions(db, user_id)
   investments = aggregate_investments(db, user_id)
 

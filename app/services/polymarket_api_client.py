@@ -20,9 +20,20 @@ logger = logging.getLogger(__name__)
 
 
 class PolymarketAPIClient:
-    """Client for Polymarket Gamma (discovery) and CLOB (trading) APIs."""
+    """Client for Polymarket Gamma (discovery) and CLOB (trading) APIs.
 
-    def __init__(self) -> None:
+    Default constructor uses server POLYMARKET_API_KEY (Gamma, Data API, surveillance).
+    Use from_user_l2_creds() to build a client with user BYOK L2 credentials for
+    placing CLOB orders on behalf of that user.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        secret: Optional[str] = None,
+        passphrase: Optional[str] = None,
+    ) -> None:
         self.clob_url = (
             getattr(settings, "POLYMARKET_API_URL", None)
             or "https://clob.polymarket.com"
@@ -35,9 +46,26 @@ class PolymarketAPIClient:
             getattr(settings, "POLYMARKET_DATA_API_URL", None)
             or "https://data-api.polymarket.com"
         )
-        _key = getattr(settings, "POLYMARKET_API_KEY", None)
-        self._api_key = _key.get_secret_value() if hasattr(_key, "get_secret_value") else _key
         self.network = getattr(settings, "POLYMARKET_NETWORK", "polygon")
+        if api_key is not None:
+            self._api_key = api_key
+            self._secret = secret
+            self._passphrase = passphrase
+        else:
+            _key = getattr(settings, "POLYMARKET_API_KEY", None)
+            self._api_key = _key.get_secret_value() if hasattr(_key, "get_secret_value") else _key
+            self._secret = None
+            self._passphrase = None
+
+    @classmethod
+    def from_user_l2_creds(
+        cls,
+        api_key: str,
+        secret: str,
+        passphrase: str,
+    ) -> "PolymarketAPIClient":
+        """Build a client with user BYOK L2 credentials for CLOB order placement."""
+        return cls(api_key=api_key, secret=secret, passphrase=passphrase)
 
     def _headers(self) -> Dict[str, str]:
         h: Dict[str, str] = {"Content-Type": "application/json"}

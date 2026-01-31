@@ -8,6 +8,7 @@ This module provides API endpoints for green finance functionality:
 """
 
 import logging
+from decimal import Decimal
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -17,8 +18,10 @@ from app.db.models import GreenFinanceAssessment, Deal
 from app.models.loan_asset import LoanAsset
 from app.auth.dependencies import get_current_user
 from app.models.green_finance import GreenFinanceAssessment as GreenFinanceAssessmentModel
+from app.models.cdm_payment import PaymentType
 from app.services.policy_service import PolicyService
 from app.services.policy_engine_factory import get_policy_engine
+from app.services.payment_gateway_service import PaymentGatewayService, billable_402_response
 from app.models.cdm_events import generate_green_finance_assessment
 from app.core.config import settings
 
@@ -53,7 +56,17 @@ async def assess_green_finance(
             status_code=503,
             detail="Enhanced satellite verification is disabled"
         )
-    
+    if current_user:
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="verification",
+            amount=1.0,
+            feature="satellite_verification",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=Decimal("0.10"),
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return billable_402_response(gate)
     try:
         from app.agents.verifier import verify_asset_location
         from app.services.sustainability_scorer import SustainabilityScorer

@@ -11,9 +11,11 @@ interface OrgAdminPaymentModalProps {
   onClose: () => void;
   onPaid: () => void;
   canBypass?: boolean;
+  /** When provided, show "Skip for now" so user can complete signup without paying (e.g. REQUIRE_SIGNUP_PAYMENT=false). */
+  onSkip?: () => void;
 }
 
-export function OrgAdminPaymentModal({ open, onClose, onPaid, canBypass = false }: OrgAdminPaymentModalProps) {
+export function OrgAdminPaymentModal({ open, onClose, onPaid, canBypass = false, onSkip }: OrgAdminPaymentModalProps) {
   const { user } = useAuth();
   const { isConnected, account, connect } = useWallet();
   const { processPayment, isProcessing } = useX402Payment();
@@ -323,6 +325,11 @@ export function OrgAdminPaymentModal({ open, onClose, onPaid, canBypass = false 
               <Button variant="outline" onClick={onClose}>
                 Cancel
               </Button>
+              {onSkip && (
+                <Button variant="ghost" onClick={onSkip}>
+                  Skip for now
+                </Button>
+              )}
               {canBypass && (
                 <Button variant="secondary" onClick={onPaid}>
                   Bypass (instance admin)

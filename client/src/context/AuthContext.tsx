@@ -57,8 +57,10 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   authError: string | null;
+  /** Set when register returns waitlist (no tokens); instance admin must approve before login. */
+  registrationWaitlistMessage: string | null;
   login: (credentials: LoginCredentials) => Promise<boolean>;
-  register: (data: RegisterData) => Promise<boolean>;
+  register: (data: RegisterData) => Promise<boolean | { waitlist: true; message: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   clearError: () => void;
@@ -106,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [implementations, setImplementations] = useState<Implementation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [registrationWaitlistMessage, setRegistrationWaitlistMessage] = useState<string | null>(null);
 
   const refreshUser = async () => {
     const token = getStoredToken();
@@ -231,8 +234,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const register = async (data: RegisterData): Promise<boolean> => {
+  const register = async (data: RegisterData): Promise<boolean | { waitlist: true; message: string }> => {
     setAuthError(null);
+    setRegistrationWaitlistMessage(null);
     try {
       const response = await fetch(resolveApiUrl('/api/auth/register'), {
         method: 'POST',
@@ -241,7 +245,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (response.ok) {
-        const tokens: AuthTokens = await response.json();
+        const body = await response.json();
+        // Waitlist response: no tokens; instance admin must approve before login
+        if (body.signup_status === 'pending' && !body.access_token) {
+          const message = body.message || 'You have been added to the waitlist. An administrator will review your signup.';
+          setRegistrationWaitlistMessage(message);
+          return { waitlist: true, message };
+        }
+        const tokens = body as AuthTokens;
         storeTokens(tokens);
         // Store organization and implementations from TokenResponse
         if (tokens.organization !== undefined) {
@@ -285,7 +296,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const clearError = () => setAuthError(null);
+  const clearError = () => {
+    setAuthError(null);
+    setRegistrationWaitlistMessage(null);
+  };
 
   return (
     <AuthContext.Provider
@@ -296,6 +310,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         authError,
+        registrationWaitlistMessage,
         login,
         register,
         logout,

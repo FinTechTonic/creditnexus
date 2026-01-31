@@ -142,6 +142,8 @@
           "guides/ssl-troubleshooting",
           "guides/stock-prediction-setup",
           "guides/rolling-credits-setup",
+          "guides/hardhat-local-blockchain",
+          "guides/revenuecat-setup",
           "guides/polymarket-cross-chain-setup",
           "guides/polymarket-surveillance-signals",
           "guides/electron-testing-guide",

@@ -3,18 +3,40 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.auth.jwt_auth import get_current_user
+from app.auth.jwt_auth import get_current_user, require_auth
 from app.db import get_db
 from app.db.models import User
 from app.services.polymarket_service import PolymarketService, PolymarketServiceError
+from app.services.polymarket_account_service import (
+    get_link_status as get_polymarket_link_status,
+    get_user_l2_creds,
+    link_polymarket_account,
+    unlink_polymarket_account,
+)
+from app.services.entitlement_service import can_access_byok
+from app.services.polymarket_builder_signing_service import build_builder_headers
+from app.services.polymarket_clob_service import place_order as clob_place_order
+from app.services.polymarket_relayer_service import (
+    deploy_safe as relayer_deploy_safe,
+    ensure_user_approvals as relayer_ensure_user_approvals,
+    execute_transactions as relayer_execute,
+    get_transaction as relayer_get_transaction,
+)
 from pydantic import BaseModel, Field
 
 from app.api.polymarket_surveillance_routes import router as polymarket_surveillance_router
+from app.services.unified_funding_service import after_funding_settled, request_funding
 
 logger = logging.getLogger(__name__)
+
+
+def _get_payment_router(request: Request):
+    return getattr(request.app.state, "payment_router_service", None)
 
 router = APIRouter(prefix="/api/polymarket", tags=["polymarket"])
 router.include_router(polymarket_surveillance_router)
@@ -73,6 +95,389 @@ class PlaceOrderRequest(BaseModel):
     side: str = Field(..., description="yes or no")
     price: float = Field(..., ge=0, le=1, description="Price in [0, 1]")
     size: float = Field(..., gt=0, description="Order size")
+
+
+class PolymarketLinkRequest(BaseModel):
+    """Request to link Polymarket L2 credentials (api_key, secret, passphrase per CLOB)."""
+
+    api_key: str = Field(..., min_length=1, description="Polymarket CLOB API key")
+    secret: str = Field(..., min_length=1, description="Polymarket CLOB secret")
+    passphrase: str = Field(..., min_length=1, description="Polymarket CLOB passphrase")
+    funder_address: Optional[str] = Field(None, description="Optional Polygon proxy/Safe address for CLOB funder")
+
+
+class BuilderSignRequest(BaseModel):
+    """Request for remote builder signing (method, path, body for CLOB/relayer request)."""
+
+    method: str = Field(..., description="HTTP method (e.g. POST, GET)")
+    path: str = Field(..., description="Request path (e.g. /order)")
+    body: str = Field(default="", description="Request body as string (e.g. JSON)")
+
+
+class PlaceClobOrderRequest(BaseModel):
+    """Request to place a signed order on Polymarket CLOB (user L2 + builder headers applied server-side)."""
+
+    order: Dict[str, Any] = Field(..., description="Signed order from client (salt, maker, signer, taker, tokenId, etc.)")
+    order_type: str = Field(default="GTC", description="GTC, FOK, or GTD")
+    post_only: bool = Field(default=False, description="If true, order only rests on book (no immediate match)")
+
+
+# ---------------------------------------------------------------------------
+# Builder signing (remote mode: client gets headers to attach to CLOB/relayer)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/builder/sign", response_model=Dict[str, str])
+async def polymarket_builder_sign(
+    body: BuilderSignRequest,
+    current_user: User = Depends(require_auth),
+):
+    """Return Polymarket builder attribution headers for the given method/path/body. Auth required; rate-limit per user in production."""
+    headers = build_builder_headers(
+        method=body.method.strip() or "GET",
+        path=body.path.strip() or "/",
+        body=body.body or "",
+    )
+    if not headers:
+        raise HTTPException(
+            status_code=503,
+            detail="Builder signing not available (POLY_BUILDER_* not configured).",
+        )
+    return headers
+
+
+# ---------------------------------------------------------------------------
+# Account linking (per-user L2; same semantics as BYOK Polymarket)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/link-status", response_model=Dict[str, Any])
+async def polymarket_link_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Return Polymarket account link status (linked, funder_address if set). No raw creds."""
+    return get_polymarket_link_status(current_user.id, db)
+
+
+@router.post("/link", response_model=Dict[str, Any])
+async def polymarket_link(
+    body: PolymarketLinkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Link Polymarket L2 credentials (BYOK). Requires BYOK access. Same storage as user-settings BYOK Polymarket."""
+    if not can_access_byok(current_user, db):
+        raise HTTPException(status_code=402, detail="BYOK access required. Upgrade or pay to configure keys.")
+    ok = link_polymarket_account(
+        user_id=current_user.id,
+        db=db,
+        api_key=body.api_key,
+        secret=body.secret,
+        passphrase=body.passphrase,
+        funder_address=body.funder_address,
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid or missing api_key, secret, or passphrase.")
+    return {"linked": True}
+
+
+@router.delete("/link", response_model=Dict[str, Any])
+async def polymarket_unlink(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Unlink Polymarket account (remove stored L2 credentials)."""
+    if not can_access_byok(current_user, db):
+        raise HTTPException(status_code=402, detail="BYOK access required to manage keys.")
+    unlink_polymarket_account(current_user.id, db)
+    return {"linked": False}
+
+
+# ---------------------------------------------------------------------------
+# CLOB orders (place client-signed order with user L2 + builder headers)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/orders", response_model=Dict[str, Any])
+async def polymarket_place_order(
+    body: PlaceClobOrderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Place a client-signed order on Polymarket CLOB. Requires linked Polymarket account (BYOK) with funder_address. Returns orderId/status or 402 if not linked."""
+    result = clob_place_order(
+        user_id=current_user.id,
+        db=db,
+        signed_order=body.order,
+        order_type=body.order_type,
+        post_only=body.post_only,
+    )
+    if not result.get("ok") and result.get("error") in ("polymarket_not_linked", "funder_required"):
+        raise HTTPException(
+            status_code=402,
+            detail=result.get("message", "Link Polymarket account with funder_address to place orders."),
+        )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message", "Order placement failed."),
+        )
+    return {
+        "success": result.get("success", True),
+        "orderId": result.get("orderId"),
+        "orderHashes": result.get("orderHashes", []),
+        "status": result.get("status"),
+        "errorMsg": result.get("errorMsg"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Relayer (gasless Safe/proxy deploy and CTF execute)
+# ---------------------------------------------------------------------------
+
+
+class RelayerDeployRequest(BaseModel):
+    """Request to deploy Safe/proxy via Polymarket relayer."""
+
+    funder_address: Optional[str] = Field(None, description="User's EOA or existing proxy address")
+
+
+class RelayerExecuteRequest(BaseModel):
+    """Request to execute transactions via Polymarket relayer."""
+
+    proxy_address: str = Field(..., description="Proxy/Safe address to execute from")
+    transactions: List[Dict[str, Any]] = Field(..., description="List of { to, data, value }")
+    description: Optional[str] = Field(None, description="Optional description for the batch")
+
+
+@router.post("/relayer/deploy", response_model=Dict[str, Any])
+async def polymarket_relayer_deploy(
+    body: RelayerDeployRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Deploy Safe/proxy for current user via Polymarket relayer (gasless). Requires builder creds."""
+    result = relayer_deploy_safe(
+        user_id=current_user.id,
+        db=db,
+        funder_address=body.funder_address,
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=result.get("status_code", 502),
+            detail=result.get("message", "Relayer deploy failed."),
+        )
+    return {
+        "proxy_address": result.get("proxy_address"),
+        "transaction_id": result.get("transaction_id"),
+        "transaction_hash": result.get("transaction_hash"),
+    }
+
+
+@router.post("/relayer/execute", response_model=Dict[str, Any])
+async def polymarket_relayer_execute(
+    body: RelayerExecuteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Execute batch of transactions via Polymarket relayer for proxy_address. Require auth; verify proxy belongs to user in production."""
+    result = relayer_execute(
+        user_id=current_user.id,
+        db=db,
+        proxy_address=body.proxy_address,
+        transactions=body.transactions,
+        description=body.description or "",
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=result.get("status_code", 502),
+            detail=result.get("message", "Relayer execute failed."),
+        )
+    return {
+        "transaction_id": result.get("transaction_id"),
+        "transaction_hash": result.get("transaction_hash"),
+        "state": result.get("state"),
+    }
+
+
+class RelayerApproveSetupRequest(BaseModel):
+    """Request for approval-setup transactions (USDCe/CTF for proxy)."""
+
+    proxy_address: str = Field(..., description="User's proxy/Safe address to approve for")
+
+
+@router.post("/relayer/approve-setup", response_model=Dict[str, Any])
+async def polymarket_relayer_approve_setup(
+    body: RelayerApproveSetupRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Return list of transactions (approve USDCe, approve CTF) for client to submit via POST /relayer/execute."""
+    transactions = relayer_ensure_user_approvals(
+        user_id=current_user.id,
+        db=db,
+        proxy_address=body.proxy_address.strip(),
+    )
+    return {"transactions": transactions, "proxy_address": body.proxy_address.strip()}
+
+
+@router.get("/relayer/transaction/{transaction_id}", response_model=Dict[str, Any])
+async def polymarket_relayer_transaction(
+    transaction_id: str,
+    current_user: User = Depends(require_auth),
+):
+    """Get relayer transaction state by id."""
+    result = relayer_get_transaction(transaction_id)
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=result.get("status_code", 404),
+            detail=result.get("message", "Transaction not found."),
+        )
+    return {
+        "transaction_id": result.get("transaction_id"),
+        "state": result.get("state"),
+        "transaction_hash": result.get("transaction_hash"),
+        "proxy_address": result.get("proxy_address"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Funding markets and fund via Polymarket (Week 17)
+# ---------------------------------------------------------------------------
+
+
+class PolymarketFundRequest(BaseModel):
+    """Request to fund a Polymarket funding market (uses linked account + payment router)."""
+
+    market_id: str = Field(..., min_length=1, description="Funding market ID (pool/tranche/loan listing)")
+    amount: float = Field(..., gt=0, description="Amount in USD to fund")
+
+
+@router.get("/funding-markets", response_model=List[Dict[str, Any]])
+async def polymarket_funding_markets(
+    visibility: Optional[str] = Query("public", description="Filter by visibility"),
+    resolved: bool = Query(False, description="Include resolved markets"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List markets suitable for funding (pool/tranche/loan listings only). Excludes platform equities and structured loan products."""
+    svc = PolymarketService(db)
+    try:
+        return svc.get_funding_markets(visibility=visibility, resolved=resolved, limit=limit, offset=offset)
+    except PolymarketServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.warning("funding-markets failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to list funding markets")
+
+
+@router.post("/fund", response_model=Dict[str, Any])
+async def polymarket_fund(
+    body: PolymarketFundRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Validate funding market and route payment via unified funding (polymarket_funding). Returns 402 with payment_request or success."""
+    svc = PolymarketService(db)
+    result = svc.fund_via_polymarket(current_user.id, body.market_id, amount=body.amount, require_linked=True)
+    if not result.get("ok") or not result.get("eligible"):
+        if result.get("error") == "polymarket_not_linked":
+            raise HTTPException(status_code=402, detail=result.get("message", "Link Polymarket account to fund."))
+        raise HTTPException(status_code=400, detail=result.get("message", "Not eligible to fund this market."))
+
+    pr = _get_payment_router(request)
+    if not pr:
+        raise HTTPException(status_code=503, detail="Payment router not available")
+
+    amount_decimal = Decimal(str(body.amount))
+    funding_result = await request_funding(
+        db=db,
+        user_id=current_user.id,
+        amount=amount_decimal,
+        payment_type="polymarket_funding",
+        destination_identifier=body.market_id,
+        payment_router=pr,
+        payment_payload=None,
+    )
+    if "error" in funding_result:
+        raise HTTPException(status_code=400, detail=funding_result["error"])
+
+    if funding_result.get("status_code") == 402 or funding_result.get("status") != "settled":
+        return JSONResponse(
+            status_code=402,
+            content={
+                "status": "Payment Required",
+                "payment_request": funding_result.get("payment_request"),
+                "amount": str(body.amount),
+                "currency": "USD",
+                "payment_type": "polymarket_funding",
+                "market_id": body.market_id,
+                "facilitator_url": getattr(pr.x402, "facilitator_url", None) if getattr(pr, "x402", None) else None,
+            },
+        )
+
+    after_funding_settled(
+        db=db,
+        user_id=current_user.id,
+        payment_type="polymarket_funding",
+        payment_result=funding_result,
+        destination_identifier=body.market_id,
+        amount=amount_decimal,
+    )
+    return {"success": True, "market_id": body.market_id, "amount": str(body.amount), "status": "settled"}
+
+
+# ---------------------------------------------------------------------------
+# Positions and orders (user-scoped)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/positions", response_model=List[Dict[str, Any]])
+async def polymarket_positions(
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Get current user's Polymarket activity/positions (Data API). Requires linked account with funder_address."""
+    status = get_polymarket_link_status(current_user.id, db)
+    if not status.get("linked") or not status.get("funder_address"):
+        return []
+    try:
+        from app.services.polymarket_api_client import PolymarketAPIClient
+        client = PolymarketAPIClient()
+        return client.fetch_activity(user=status["funder_address"], limit=limit)
+    except Exception as e:
+        logger.warning("Polymarket positions failed: %s", e)
+        return []
+
+
+@router.get("/orders", response_model=List[Dict[str, Any]])
+async def polymarket_orders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Get current user's open orders (CLOB). Requires linked Polymarket account. Returns [] if not linked or CLOB unavailable."""
+    creds = get_user_l2_creds(current_user.id, db)
+    if not creds or not creds.get("api_key"):
+        return []
+    try:
+        from app.services.polymarket_api_client import PolymarketAPIClient
+        client = PolymarketAPIClient.from_user_l2_creds(
+            api_key=creds["api_key"],
+            secret=creds["secret"],
+            passphrase=creds["passphrase"],
+        )
+        # CLOB GET /orders - if client has get_orders use it; else return [] until we add it
+        if hasattr(client, "get_orders"):
+            return client.get_orders() or []
+        return []
+    except Exception as e:
+        logger.warning("Polymarket orders failed: %s", e)
+        return []
 
 
 # ---------------------------------------------------------------------------

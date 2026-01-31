@@ -91,6 +91,7 @@ export function AdminSignupDashboard() {
   const [signupDetails, setSignupDetails] = useState<SignupDetailUser | null>(null);
   const [signupDetailsLoading, setSignupDetailsLoading] = useState(false);
   const [kycActionLoading, setKycActionLoading] = useState<number | string | null>(null);
+  const [certVerifyLoading, setCertVerifyLoading] = useState(false);
 
   useEffect(() => {
     fetchSignups();
@@ -814,6 +815,72 @@ export function AdminSignupDashboard() {
                   </div>
                 )}
               </div>
+
+              {/* Certifications (FINRA / equivalent) – optional; admin can verify */}
+              {(() => {
+                const pd = (signupDetails ?? selectedSignup).profile_data;
+                const certs = pd && typeof pd === 'object' && Array.isArray(pd.certifications) ? pd.certifications : [];
+                const certReviewedAt = pd && typeof pd === 'object' ? (pd as Record<string, unknown>).certification_reviewed_at : null;
+                if (certs.length === 0 && !certReviewedAt) return null;
+                return (
+                  <div className="border-t border-slate-700 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-slate-300">Certifications (FINRA / equivalent)</label>
+                      {certs.length > 0 && !certReviewedAt && (
+                        <Button
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-500"
+                          disabled={certVerifyLoading}
+                          onClick={async () => {
+                            if (!selectedSignup) return;
+                            setCertVerifyLoading(true);
+                            try {
+                              const r = await fetchWithAuth(`/api/admin/signups/${selectedSignup.id}/verify-certification`, { method: 'POST' });
+                              if (r.ok) {
+                                const detailR = await fetchWithAuth(`/api/admin/signups/${selectedSignup.id}`);
+                                if (detailR.ok) {
+                                  const json = await detailR.json();
+                                  setSignupDetails(json.data);
+                                }
+                              } else {
+                                const err = await r.json().catch(() => ({}));
+                                setError(err.detail?.message || 'Failed to verify certification');
+                              }
+                            } catch {
+                              setError('Failed to verify certification');
+                            } finally {
+                              setCertVerifyLoading(false);
+                            }
+                          }}
+                        >
+                          {certVerifyLoading ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+                          Verify certification
+                        </Button>
+                      )}
+                    </div>
+                    {certReviewedAt && (
+                      <p className="text-xs text-emerald-400 mb-2">
+                        Reviewed {new Date(String(certReviewedAt)).toLocaleString()}
+                      </p>
+                    )}
+                    {certs.length > 0 && (
+                      <div className="space-y-2 mb-2">
+                        {certs.map((c: Record<string, unknown>, i: number) => (
+                          <div key={i} className="p-2 bg-slate-900 rounded-lg text-sm">
+                            <span className="text-slate-300 font-medium">{String(c.certification_type || '—')}</span>
+                            {c.number != null && String(c.number) && (
+                              <span className="text-slate-400 ml-2">#{String(c.number)}</span>
+                            )}
+                            {c.expiry != null && String(c.expiry) && (
+                              <span className="text-slate-400 ml-2">Expiry: {String(c.expiry)}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {(signupDetails ?? selectedSignup).profile_data && Object.keys((signupDetails ?? selectedSignup).profile_data!).length > 0 && (
                 <div>

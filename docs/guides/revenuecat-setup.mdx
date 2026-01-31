@@ -1,0 +1,175 @@
+---
+title: RevenueCat Setup for the Server
+description: Configure RevenueCat on your account and connect the CreditNexus server for entitlements and subscription upgrades
+---
+
+This guide explains how to set up **RevenueCat** on your account and configure the **CreditNexus server** so it can check entitlements and grant Pro (or custom) access after payments (x402 or in-app).
+
+---
+
+## 1. Overview
+
+| Component | Role |
+|-----------|------|
+| **RevenueCat Dashboard** | Create project, connect stores (Apple, Google, Stripe, etc.), add products, create entitlement(s), create offering(s), optional paywall. |
+| **RevenueCat Server API** | CreditNexus server uses the **Secret API key** (sk_...) to: (1) check subscriber entitlements (`GET /v1/subscribers/{app_user_id}`), (2) grant promotional entitlements (`POST .../promotional`). |
+| **CreditNexus server** | Uses `REVENUECAT_ENABLED`, `REVENUECAT_API_KEY`, `REVENUECAT_ENTITLEMENT_PRO`; identifies users as `app_user_id = str(user.id)` (CreditNexus user ID). |
+
+**Code**: `app/services/revenuecat_service.py`, `app/api/subscription_routes.py`, `app/services/payment_router_service.py`
+
+---
+
+## 2. RevenueCat Dashboard Setup
+
+### 2.1 Create or select a project
+
+1. Go to [RevenueCat](https://app.revenuecat.com).
+2. Create a **new project** or select an existing one. Projects are top-level containers for apps, products, entitlements, and paywalls.
+
+### 2.2 Connect to a store
+
+Depending on your platforms, connect at least one store:
+
+- **Apple App Store**: [iOS Product Setup](https://www.revenuecat.com/docs/offerings/products/setup-index#-ios-product-setup) — App Store Connect, in-app purchases.
+- **Google Play**: [Google Play Product Setup](https://www.revenuecat.com/docs/offerings/products/setup-index#-google-play-product-setup) — Google Play Console, subscriptions/products.
+- **Stripe**: [Stripe Product Setup](https://www.revenuecat.com/docs/offerings/products/setup-index) — for web or custom billing.
+- **Paddle**: [Paddle Product Setup](https://www.revenuecat.com/docs/offerings/products/setup-index#-paddle-product-setup) — for web.
+
+Add the **products** you plan to sell (e.g. monthly subscription, org-admin one-time, etc.) in each store.
+
+### 2.3 Create an entitlement
+
+An **entitlement** represents a level of access (e.g. “Pro”) that you grant when a customer purchases a product.
+
+1. In the RevenueCat dashboard, go to **Entitlements**.
+2. **Create** an entitlement, e.g. identifier: **`pro`** (this must match `REVENUECAT_ENTITLEMENT_PRO` on the server).
+3. Attach your **products** (from each store) to this entitlement.
+
+The server checks and grants this entitlement by identifier (e.g. `pro`).
+
+### 2.4 Create an offering (optional)
+
+An **offering** is a set of products you show on a paywall. Create one and attach your products so the SDK can present a paywall. The server does not require a specific offering; it only needs the entitlement identifier.
+
+### 2.5 Configure a paywall (optional)
+
+Use RevenueCat **Paywalls** to build the purchase UI remotely. The CreditNexus web app can still use x402 for web payments; the paywall is most useful for native (iOS/Android) or when you use RevenueCat’s paywall UI.
+
+---
+
+## 3. Get the Secret API key (for the server)
+
+The server must use a **Secret API key** (sk_...) — never a public key — for REST API calls.
+
+1. In the RevenueCat dashboard, open your **project**.
+2. Go to **Project settings** → **API keys** (or **Authentication**).
+3. Create or copy a **Secret API key** (starts with `sk_`).  
+   - Never expose this key in the client or in version control.  
+   - Use it only in server-side environment variables.
+
+Documentation: [RevenueCat API Keys & Authentication](https://www.revenuecat.com/docs/projects/authentication).
+
+---
+
+## 4. Server configuration (.env)
+
+In the **project root** `.env`:
+
+```env
+# RevenueCat
+REVENUECAT_ENABLED=true
+REVENUECAT_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+REVENUECAT_ENTITLEMENT_PRO=pro
+```
+
+| Variable | Description |
+|----------|-------------|
+| `REVENUECAT_ENABLED` | Set to `true` to enable entitlement checks and promotional grants. |
+| `REVENUECAT_API_KEY` | **Secret** API key (sk_...). Required when `REVENUECAT_ENABLED=true`. |
+| `REVENUECAT_ENTITLEMENT_PRO` | Entitlement identifier (e.g. `pro`). Must match the identifier created in the RevenueCat dashboard. |
+
+Optional:
+
+- `REVENUECAT_ENTITLEMENT_ORG_ADMIN` — if you use a separate entitlement for org-admin; otherwise server falls back to `REVENUECAT_ENTITLEMENT_PRO`.
+- `REVENUECAT_ENTITLEMENT_MARKET_INTELLIGENCE` — for surveillance/premium features; otherwise falls back to `REVENUECAT_ENTITLEMENT_PRO`.
+
+**Code reference**: `app/core/config.py`
+
+---
+
+## 5. How the server uses RevenueCat
+
+### 5.1 User identification
+
+The server identifies users to RevenueCat with **`app_user_id = str(user.id)`** (CreditNexus user ID). When you use the RevenueCat SDK on a client (e.g. mobile), you should **identify** the user with the same ID after login:
+
+```text
+Purchases.logIn(str(creditnexus_user_id))
+```
+
+So RevenueCat’s subscriber and the server’s user are the same entity.
+
+### 5.2 Entitlement check
+
+- **Endpoint**: `GET /api/subscriptions/entitlement`
+- **Server**: Calls RevenueCat REST API `GET /v1/subscribers/{app_user_id}` and checks the entitlement (e.g. `pro`) in the response. Returns e.g. `{ "has_pro": true }` or `{ "has_pro": false }`.
+
+### 5.3 After x402 payment (subscription upgrade / org-admin)
+
+When a user completes an x402 payment (e.g. subscription upgrade or org-admin signup), the server can **grant** a RevenueCat promotional entitlement so they get Pro (or org-admin) access in RevenueCat as well:
+
+- **Server**: Calls RevenueCat REST API `POST /v1/subscribers/{app_user_id}/entitlements/{entitlement_id}/promotional` with duration (e.g. P1M, P1Y).
+- **Code**: `PaymentRouterService.after_subscription_payment()` → `RevenueCatService.grant_promotional_entitlement()`.
+
+### 5.4 In-app purchase (mobile) → server
+
+When the user pays **in-app** (RevenueCat SDK), the client should call the CreditNexus server so the server can grant access and allocate credits:
+
+- **Endpoint**: `POST /api/subscriptions/revenuecat/purchase`
+- **Body**: `{ "product_id": "subscription_upgrade" | "org_admin" | "mobile_app", "transaction_id": "...", "purchase_token": "..." }` (transaction_id and purchase_token optional but useful for verification).
+
+The server uses the **product_id** to choose entitlement and duration, then calls `RevenueCatService.grant_promotional_entitlement()` and allocates credits (e.g. org_admin, subscription_upgrade, mobile_app). The server does **not** re-verify the receipt with RevenueCat in the current implementation; it trusts the client to have completed the purchase via the SDK. For stricter security you could add server-side receipt validation.
+
+---
+
+## 6. Product IDs the server expects
+
+When calling `POST /api/subscriptions/revenuecat/purchase`, the server maps **product_id** as follows:
+
+| product_id | Entitlement | Duration | Use case |
+|------------|-------------|----------|----------|
+| `subscription_upgrade` | `REVENUECAT_ENTITLEMENT_PRO` | P1M (1 month) | Monthly subscription upgrade. |
+| `org_admin` | `REVENUECAT_ENTITLEMENT_ORG_ADMIN` or `REVENUECAT_ENTITLEMENT_PRO` | P1Y (1 year) | Org-admin signup payment. |
+| `mobile_app` | `REVENUECAT_ENTITLEMENT_PRO` | P1Y | Mobile app one-time purchase; server allocates `MOBILE_APP_PURCHASE_CREDITS`. |
+
+Create **products** in RevenueCat (and in each store) with these **identifiers** (or align your client to send these product_id values when calling the server).
+
+---
+
+## 7. Payment flow summary
+
+| Flow | Client | Server |
+|------|--------|--------|
+| **Web (x402)** | User pays via x402; server receives payment and optionally grants RevenueCat entitlement. | `POST /api/subscriptions/upgrade` or `POST /api/subscriptions/org-admin/upgrade`; after settle, `after_subscription_payment()` grants entitlement. |
+| **Mobile (RevenueCat SDK)** | User purchases in-app; client calls CreditNexus server with product_id. | `POST /api/subscriptions/revenuecat/purchase` with product_id; server grants entitlement and allocates credits. |
+
+When RevenueCat is enabled, 402 responses from the server can include `revenuecat_available: true` and `revenuecat_endpoint: "/api/subscriptions/revenuecat/purchase"` so the client knows it can offer an in-app purchase path.
+
+---
+
+## 8. Troubleshooting
+
+| Symptom | Check |
+|---------|--------|
+| Entitlement always false | `REVENUECAT_ENABLED=true`, `REVENUECAT_API_KEY=sk_...` set in project root `.env`. Entitlement identifier in dashboard matches `REVENUECAT_ENTITLEMENT_PRO`. User identified in RevenueCat with same `app_user_id` (CreditNexus user ID). |
+| 503 RevenueCat not enabled | Set `REVENUECAT_ENABLED=true` and restart the server. |
+| Grant entitlement fails | Verify Secret API key has permission to grant entitlements. Check dashboard **API keys** and that the key is **Secret** (sk_). Check server logs for RevenueCat API error message. |
+| Mobile purchase not reflected | Ensure client calls `POST /api/subscriptions/revenuecat/purchase` with the correct `product_id` after purchase, and that the user is logged in (so `current_user.id` matches the RevenueCat app_user_id). |
+
+---
+
+## 9. References
+
+- **RevenueCat**: [Getting Started](https://www.revenuecat.com/docs/getting-started/installation/expo), [Projects & Authentication](https://www.revenuecat.com/docs/projects/authentication), [Products Setup](https://www.revenuecat.com/docs/offerings/products/setup-index)
+- **CreditNexus configuration**: [Configuration — RevenueCat](/getting-started/configuration#revenuecat-configuration)
+- **Payment systems**: [Payment Systems](/features/payment-systems)

@@ -12,11 +12,12 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import Deal, GreenFinanceAssessment, MarketEvent, MarketOrder, SFPPackage, User
+from app.services.newsfeed_service import NewsfeedService, NewsfeedServiceError
 from app.services.sfp_bundler_service import SFPBundlerService
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,15 @@ class PolymarketService:
             self.db.add(evt)
             self.db.commit()
             self.db.refresh(evt)
+            try:
+                newsfeed = NewsfeedService(self.db)
+                newsfeed.create_market_post(
+                    market_id=evt.id,
+                    author_id=created_by,
+                    organization_id=getattr(creator, "organization_id", None),
+                )
+            except NewsfeedServiceError as e:
+                logger.warning("create_market_post after listing create failed: %s", e)
             return {
                 "market_id": market_id,
                 "sfp_id": None,
@@ -189,6 +199,16 @@ class PolymarketService:
         self.db.add(evt)
         self.db.commit()
         self.db.refresh(evt)
+
+        try:
+            newsfeed = NewsfeedService(self.db)
+            newsfeed.create_market_post(
+                market_id=evt.id,
+                author_id=created_by,
+                organization_id=getattr(creator, "organization_id", None),
+            )
+        except NewsfeedServiceError as e:
+            logger.warning("create_market_post after deal create failed: %s", e)
 
         out: Dict[str, Any] = {
             "market_id": market_id,
@@ -280,6 +300,102 @@ class PolymarketService:
                 "block_number": pkg.block_number if pkg else None,
             })
         return out
+
+    def get_funding_markets(
+        self,
+        *,
+        visibility: Optional[str] = "public",
+        resolved: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """
+        List markets suitable for funding: pool, tranche, or loan listings only.
+        Excludes platform-created equities (deal_id-only SFP) and structured loan
+        products per Week 17 roadmap; aligns with linked account + relayer for funding.
+        """
+        self._check_enabled()
+
+        q = self.db.query(MarketEvent).filter(
+            or_(
+                MarketEvent.pool_id.isnot(None),
+                MarketEvent.tranche_id.isnot(None),
+                MarketEvent.loan_asset_id.isnot(None),
+            )
+        )
+        if resolved is False:
+            q = q.filter(MarketEvent.resolved_at.is_(None))
+        elif resolved is True:
+            q = q.filter(MarketEvent.resolved_at.isnot(None))
+        if visibility is not None:
+            q = q.filter(MarketEvent.visibility == visibility)
+
+        rows = q.order_by(MarketEvent.created_at.desc()).offset(offset).limit(limit).all()
+        out: List[Dict[str, Any]] = []
+        for evt in rows:
+            pkg = evt.sfp_package
+            out.append({
+                "market_id": evt.market_id,
+                "deal_id": evt.deal_id,
+                "pool_id": evt.pool_id,
+                "tranche_id": evt.tranche_id,
+                "loan_asset_id": evt.loan_asset_id,
+                "question": evt.question,
+                "outcome_type": evt.outcome_type,
+                "resolution_condition": evt.resolution_condition or {},
+                "resolved_at": evt.resolved_at.isoformat() if evt.resolved_at else None,
+                "resolution_outcome": evt.resolution_outcome,
+                "oracle_triggered": evt.oracle_triggered or False,
+                "created_at": evt.created_at.isoformat() if evt.created_at else None,
+                "sfp_id": pkg.sfp_id if pkg else None,
+                "merkle_root": pkg.merkle_root if pkg else None,
+                "transaction_hash": pkg.transaction_hash if pkg else None,
+                "block_number": pkg.block_number if pkg else None,
+            })
+        return out
+
+    def fund_via_polymarket(
+        self,
+        user_id: int,
+        market_id: str,
+        amount: Optional[float] = None,
+        *,
+        require_linked: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Validate funding eligibility for a market using linked Polymarket account.
+        Does not perform payment; caller (route) should call unified_funding_service
+        with payment_type=polymarket_funding. Returns ok, eligible, message, and
+        destination_id for payment routing.
+        """
+        self._check_enabled()
+
+        evt = self.db.query(MarketEvent).filter(MarketEvent.market_id == market_id).first()
+        if not evt:
+            return {"ok": False, "eligible": False, "error": "market_not_found", "message": f"Market {market_id} not found"}
+
+        if evt.resolved_at is not None:
+            return {"ok": False, "eligible": False, "error": "market_resolved", "message": "Market is already resolved"}
+
+        is_funding_market = evt.pool_id is not None or evt.tranche_id is not None or evt.loan_asset_id is not None
+        if not is_funding_market:
+            return {"ok": False, "eligible": False, "error": "not_funding_market", "message": "Market is not a funding market (pool/tranche/loan listing)"}
+
+        if require_linked:
+            from app.services.polymarket_account_service import get_user_l2_creds
+            creds = get_user_l2_creds(user_id, self.db)
+            if not creds or not creds.get("api_key"):
+                return {"ok": False, "eligible": False, "error": "polymarket_not_linked", "message": "Link Polymarket account (BYOK) to fund."}
+
+        amt = float(amount) if amount is not None else 0.0
+        return {
+            "ok": True,
+            "eligible": True,
+            "market_id": market_id,
+            "destination_id": market_id,
+            "amount": amt if amt > 0 else None,
+            "message": "Eligible; use POST /api/funding/request with payment_type=polymarket_funding.",
+        }
 
     def resolve_market(
         self,

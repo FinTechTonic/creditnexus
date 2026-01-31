@@ -25,6 +25,16 @@ from app.services.revenuecat_service import RevenueCatService
 logger = logging.getLogger(__name__)
 
 
+def billable_402_response(gate: Dict[str, Any]):
+    """
+    Return the same 402 JSONResponse for every billable-feature route.
+    Use when require_credits_or_402 returns ok=False and status_code=402.
+    Ensures identical response shape (payment_type, payment_request, etc.) across all services.
+    """
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=402, content={**gate, "payment_type": "billable_feature"})
+
+
 class PaymentGatewayService:
     def __init__(self, db: Session):
         self.db = db
@@ -95,10 +105,10 @@ class PaymentGatewayService:
             payment_type=payment_type.value if hasattr(payment_type, "value") else str(payment_type),
             cdm_reference=cdm_reference,
         )
-        # Check if RevenueCat is available for this payment type
+        # Check if RevenueCat is available for this payment type (subscription or billable pay-as-you-go)
         revenuecat_available = False
         revenuecat_service = RevenueCatService()
-        if payment_type in (PaymentType.SUBSCRIPTION_UPGRADE,) and revenuecat_service.enabled:
+        if payment_type in (PaymentType.SUBSCRIPTION_UPGRADE, PaymentType.BILLABLE_FEATURE) and revenuecat_service.enabled:
             revenuecat_available = True
         
         # Normalize for API layer

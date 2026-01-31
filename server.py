@@ -48,10 +48,15 @@ from app.api.implementation_routes import router as implementation_router
 from app.api.trading_routes import router as trading_router
 from app.api.stock_prediction_routes import router as stock_prediction_router
 from app.api.banking_routes import router as banking_router
+from app.api.transfer_routes import router as transfer_router
+from app.api.funding_routes import router as funding_router, credits_router
 from app.api.asset_routes import router as asset_router
 from app.api.portfolio_routes import router as portfolio_router
 from app.api.brokerage_routes import router as brokerage_router
 from app.api.polymarket_routes import router as polymarket_router
+from app.api.newsfeed_routes import router as newsfeed_router
+from app.api.bank_products_routes import router as bank_products_router
+from app.api.lender_scores_routes import router as lender_scores_router
 from app.api.cross_chain_routes import router as cross_chain_router
 from app.api.challenge_coin_routes import router as challenge_coin_router
 from app.api.bridge_builder_routes import router as bridge_builder_router
@@ -59,6 +64,9 @@ from app.api.subscription_routes import router as subscription_router
 from app.api.review_routes import router as review_router
 from app.api.nexus_routes import router as nexus_router
 from app.api.organization_routes import router as organization_router
+from app.api.billing_routes import router as billing_router
+from app.api.pricing_routes import router as pricing_router
+from app.api.bridge_verification_routes import router as bridge_verification_router
 from app.api.p2p_routes import router as p2p_router
 from app.api.whitelist_routes import router as whitelist_router
 from app.api.remote_profile_routes import router as remote_profile_router
@@ -718,10 +726,16 @@ app.include_router(twilio_router)
 app.include_router(trading_router)
 app.include_router(stock_prediction_router)
 app.include_router(banking_router)
+app.include_router(transfer_router)
+app.include_router(funding_router)
+app.include_router(credits_router)
 app.include_router(asset_router)
 app.include_router(portfolio_router)
 app.include_router(brokerage_router, prefix="/api")
 app.include_router(polymarket_router)
+app.include_router(newsfeed_router)
+app.include_router(bank_products_router)
+app.include_router(lender_scores_router)
 app.include_router(cross_chain_router)
 app.include_router(challenge_coin_router)
 app.include_router(bridge_builder_router)
@@ -729,6 +743,9 @@ app.include_router(subscription_router)
 app.include_router(review_router)
 app.include_router(nexus_router)
 app.include_router(organization_router)
+app.include_router(billing_router)
+app.include_router(pricing_router)
+app.include_router(bridge_verification_router)
 app.include_router(p2p_router)
 app.include_router(whitelist_router)
 app.include_router(remote_profile_router)

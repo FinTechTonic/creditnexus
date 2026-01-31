@@ -213,6 +213,20 @@ class Settings(BaseSettings):
         description="Allow admin users to skip payment requirement"
     )
 
+    # Adaptive pricing (Phase 12): feature-based costs and fees for rolling credits
+    ADAPTIVE_PRICING_ENABLED: bool = Field(
+        default=False,
+        description="Use AdaptivePricingService for credit costs (get_server_fee, get_client_call_fee, calculate_adaptive_cost)"
+    )
+    ADAPTIVE_PRICING_BASE_COSTS: Optional[str] = Field(
+        default=None,
+        description="JSON object of feature -> base cost (e.g. {\"stock_prediction_daily\": 0.10}). If unset, service defaults apply."
+    )
+    SERVER_FEES: Optional[str] = Field(
+        default=None,
+        description="JSON object of feature -> server fee or single number for default. If unset, service uses 0."
+    )
+
     # Polymarket (Prediction Markets / SFP) Configuration
     POLYMARKET_ENABLED: bool = Field(
         default=False,
@@ -246,6 +260,27 @@ class Settings(BaseSettings):
         default=False,
         description="When True, attempt to register SFP markets with Polymarket Gamma/CLOB (if supported)"
     )
+    # Polymarket Builders Program: order attribution and relayer (obtain keys from polymarket.com/settings?tab=builder)
+    POLY_BUILDER_API_KEY: Optional[SecretStr] = Field(
+        default=None,
+        description="Polymarket builder API key for order attribution and relayer auth",
+    )
+    POLY_BUILDER_SECRET: Optional[SecretStr] = Field(
+        default=None,
+        description="Polymarket builder secret for HMAC signing (never expose to client)",
+    )
+    POLY_BUILDER_PASSPHRASE: Optional[SecretStr] = Field(
+        default=None,
+        description="Polymarket builder passphrase for builder headers",
+    )
+    POLYMARKET_BUILDER_SIGNING_MODE: str = Field(
+        default="remote",
+        description="remote = our POST /api/polymarket/builder/sign returns headers; local = backend signs with builder creds",
+    )
+    POLYMARKET_RELAYER_URL: str = Field(
+        default="https://relayer-v2.polymarket.com/",
+        description="Polymarket relayer URL for gasless Safe/proxy deploy and CTF execute",
+    )
 
     # Polymarket Cross-Chain (bridge, outcome tokens on L2s)
     CROSS_CHAIN_ENABLED: bool = Field(
@@ -270,6 +305,30 @@ class Settings(BaseSettings):
     PLAID_CLIENT_ID: Optional[SecretStr] = Field(default=None, description="Plaid client ID")
     PLAID_SECRET: Optional[SecretStr] = Field(default=None, description="Plaid secret (use development/sandbox secret for non-production)")
     PLAID_ENV: str = Field(default="sandbox", description="Plaid environment: sandbox, development, production")
+    PLAID_COST_USD: float = Field(
+        default=0.05,
+        description="Approximate USD cost per Plaid API call for credits/402 (e.g. 0.02–0.10); used when deducting credits or returning payment_required.",
+    )
+
+    # Plaid Transfer API (instant interbank: RTP when eligible, else ACH)
+    PLAID_TRANSFER_ENABLED: bool = Field(
+        default=False,
+        description="Enable Plaid Transfer API for instant/same-day transfers; requires Transfer product and origination account in Plaid dashboard",
+    )
+    PLAID_TRANSFER_ORIGINATION_ACCOUNT_ID: Optional[str] = Field(
+        default=None,
+        description="Plaid origination account ID for debits (required when PLAID_TRANSFER_ENABLED=true)",
+    )
+
+    # Plaid Transfer API (instant interbank: RTP when eligible, else ACH)
+    PLAID_TRANSFER_ENABLED: bool = Field(
+        default=False,
+        description="Enable Plaid Transfer API for instant/same-day transfers; requires Transfer product and origination account in Plaid dashboard",
+    )
+    PLAID_TRANSFER_ORIGINATION_ACCOUNT_ID: Optional[str] = Field(
+        default=None,
+        description="Plaid origination account ID for debits (required when PLAID_TRANSFER_ENABLED=true)",
+    )
 
     # Alpaca (Trading + Stock Prediction Market Data)
     ALPACA_API_KEY: Optional[SecretStr] = Field(default=None, description="Alpaca API key (trading and historical bars)")
@@ -611,7 +670,11 @@ class Settings(BaseSettings):
     SECURITY_HEADERS_ENABLED: bool = True  # Enable security headers middleware
     JWT_SECRET_KEY: Optional[SecretStr] = None  # JWT secret key (required in production)
     JWT_REFRESH_SECRET_KEY: Optional[SecretStr] = None  # JWT refresh secret key (required in production)
-    
+    REQUIRE_SIGNUP_APPROVAL: bool = Field(
+        default=True,
+        description="When True, new signups are added to waitlist; instance admin must approve before login.",
+    )
+
     # Prometheus Metrics Configuration
     METRICS_ENABLED: bool = Field(default=True, description="Enable Prometheus metrics")
     METRICS_PATH: str = Field(default="/metrics", description="Metrics endpoint path")

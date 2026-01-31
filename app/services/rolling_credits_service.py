@@ -9,11 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import CreditBalance, CreditTransaction, User, UserSubscription
+from app.services.adaptive_pricing_service import AdaptivePricingService
 from app.services.blockchain_service import BlockchainService
+from app.services.bridge_credit_verification_service import BridgeCreditVerificationService
 
 logger = logging.getLogger(__name__)
 
 # Per-tier base allocation per billing period (prorated by billing days/30). Units: credits.
+# TIER_10 ($10/mo), TIER_15 ($15/mo) include Plaid cover via universal credits and PLAID_REFRESHES_INCLUDED.
 TIER_CREDIT_ALLOCATION: Dict[str, Dict[str, int]] = {
     "pro": {
         "signing": 20,
@@ -47,6 +50,46 @@ TIER_CREDIT_ALLOCATION: Dict[str, Dict[str, int]] = {
         "stock_prediction_15min": 15,
         "universal": 300,
     },
+    "tier_10": {
+        "signing": 10,
+        "document_review": 10,
+        "verification": 10,
+        "trading": 15,
+        "loaning": 10,
+        "borrowing": 10,
+        "compliance_check": 10,
+        "securitization": 8,
+        "risk_analysis": 10,
+        "quantitative_analysis": 8,
+        "stock_prediction_daily": 3,
+        "stock_prediction_hourly": 3,
+        "stock_prediction_15min": 3,
+        "universal": 50,
+    },
+    "tier_15": {
+        "signing": 25,
+        "document_review": 25,
+        "verification": 25,
+        "trading": 40,
+        "loaning": 25,
+        "borrowing": 25,
+        "compliance_check": 25,
+        "securitization": 20,
+        "risk_analysis": 25,
+        "quantitative_analysis": 20,
+        "stock_prediction_daily": 8,
+        "stock_prediction_hourly": 8,
+        "stock_prediction_15min": 8,
+        "universal": 150,
+    },
+}
+
+# Plaid cover: first N dashboard refreshes (or Plaid calls) per month included; beyond that use credits/pay-as-you-go.
+PLAID_REFRESHES_INCLUDED: Dict[str, int] = {
+    "tier_10": 10,
+    "tier_15": 25,
+    "pro": 20,
+    "premium": 50,
 }
 
 
@@ -274,7 +317,17 @@ class RollingCreditsService:
         if not balance:
             return {"ok": False, "reason": "no_balance"}
 
-        amt = Decimal(str(round(amount, 4)))
+        # Phase 12: use AdaptivePricingService when enabled for cost
+        effective_amount = amount
+        if getattr(settings, "ADAPTIVE_PRICING_ENABLED", False):
+            try:
+                pricing = AdaptivePricingService()
+                if pricing.is_enabled():
+                    cost = pricing.calculate_adaptive_cost(feature, quantity=1.0, include_server_fee=True)
+                    effective_amount = float(cost)
+            except Exception as e:
+                logger.debug("AdaptivePricingService cost lookup failed: %s", e)
+        amt = Decimal(str(round(effective_amount, 4)))
         if amt <= 0:
             return {"ok": True, "balance_after": float(balance.get_balance(credit_type))}
 
@@ -324,4 +377,80 @@ class RollingCreditsService:
         balance.total_balance = Decimal(str(round(total_balance, 4)))
         balance.last_updated = datetime.utcnow()
 
+        # Phase 12: optional bridge verification after spend
+        if getattr(settings, "BRIDGE_VERIFY_AFTER_SPEND", False):
+            try:
+                bridge = BridgeCreditVerificationService(self.db)
+                bridge.verify_credit_usage(
+                    user_id=user_id,
+                    credit_type=credit_type,
+                    amount=effective_amount,
+                    sync_from_chain=False,
+                )
+            except Exception as e:
+                logger.debug("BridgeCreditVerificationService after spend failed: %s", e)
+
         return {"ok": True, "balance_after": total_balance}
+
+    def add_credits(
+        self,
+        user_id: int,
+        credit_type: str,
+        amount: float,
+        *,
+        feature: str = "purchase",
+        description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Add credits to user balance (e.g. org_admin signup, subscription upgrade, mobile app purchase).
+        Gets or creates CreditBalance; creates CreditTransaction(transaction_type='subscription').
+        """
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return {"ok": False, "reason": "user_not_found"}
+        balance = (
+            self.db.query(CreditBalance)
+            .filter(CreditBalance.user_id == user_id, CreditBalance.organization_id.is_(None))
+            .first()
+        )
+        if not balance:
+            balance = CreditBalance(
+                user_id=user_id,
+                organization_id=None,
+                balances={},
+                total_balance=0,
+                lifetime_earned={},
+                lifetime_spent={},
+                blockchain_registered=False,
+            )
+            self.db.add(balance)
+            self.db.flush()
+        balances = dict(balance.balances or {})
+        lifetime_earned = dict(balance.lifetime_earned or {})
+        amt = Decimal(str(round(amount, 4)))
+        if amt <= 0:
+            return {"ok": True}
+        prev = float(balances.get(credit_type, 0) or 0)
+        new_val = round(prev + float(amt), 4)
+        balances[credit_type] = new_val
+        lifetime_earned[credit_type] = round(float(lifetime_earned.get(credit_type, 0) or 0) + float(amt), 4)
+        total_balance = sum(float(v) for v in balances.values())
+        balance.balances = balances
+        balance.lifetime_earned = lifetime_earned
+        balance.total_balance = Decimal(str(round(total_balance, 4)))
+        balance.last_updated = datetime.utcnow()
+        self.db.add(
+            CreditTransaction(
+                balance_id=balance.id,
+                user_id=user_id,
+                organization_id=balance.organization_id,
+                transaction_type="subscription",
+                credit_type=credit_type,
+                amount=amt,
+                balance_before={credit_type: prev},
+                balance_after=dict(balances),
+                feature=feature,
+                description=description or f"{feature} credits",
+            )
+        )
+        return {"ok": True, "balance_after": new_val}

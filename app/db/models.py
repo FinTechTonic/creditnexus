@@ -6,7 +6,7 @@ from typing import Dict, Any
 import math
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Numeric, Date, Float, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 import enum
 import sqlalchemy as sa
 
@@ -159,11 +159,22 @@ class InquiryStatus(str, enum.Enum):
 
 
 class SubscriptionTier(str, enum.Enum):
-    """Subscription tier levels."""
+    """Subscription tier levels. FREE = pay-as-you-go (no included credits). TIER_10/15 = $10/$15 per month with credits + Plaid cover."""
     FREE = "free"
     PRO = "pro"
     PREMIUM = "premium"
     LIFETIME = "lifetime"
+    TIER_10 = "tier_10"   # $10/month; monthly credits + N Plaid refreshes included
+    TIER_15 = "tier_15"   # $15/month; higher credits + more Plaid refreshes included
+
+
+class ByokProvider(str, enum.Enum):
+    """BYOK (Bring Your Own Keys) providers – crypto and trading only. Plaid is excluded (Link Accounts)."""
+
+    ALPACA = "alpaca"
+    POLYGON = "polygon"
+    POLYMARKET = "polymarket"
+    OTHER = "other"
 
 
 class SubscriptionType(str, enum.Enum):
@@ -204,9 +215,48 @@ class Organization(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+    # Registration and legal (Phase 8)
+    legal_name = Column(String(500), nullable=True)
+    registration_number = Column(EncryptedString(100), nullable=True, unique=True, index=True)
+    tax_id = Column(EncryptedString(50), nullable=True)
+    lei = Column(EncryptedString(20), nullable=True, unique=True, index=True)
+    industry = Column(String(100), nullable=True)
+    country = Column(String(2), nullable=True)  # ISO 3166-1 alpha-2
+    website = Column(String(500), nullable=True)
+    email = Column(EncryptedString(255), nullable=True)
+
+    # Blockchain (per-org deployment config at org level)
+    blockchain_type = Column(String(50), nullable=True)
+    blockchain_network = Column(String(100), nullable=True)
+    blockchain_rpc_url = Column(EncryptedString(500), nullable=True)
+    blockchain_chain_id = Column(Integer, nullable=True)
+    blockchain_contract_addresses = Column(JSONB, nullable=True)
+
+    # Bridge
+    bridge_contract_address = Column(String(66), nullable=True)
+    bridge_status = Column(String(50), default="pending", nullable=False)
+
+    # Lifecycle
+    status = Column(String(50), default="pending", nullable=False, index=True)
+    registration_date = Column(DateTime, nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+
+    # Subscription
+    subscription_tier = Column(String(50), default="free", nullable=False)
+    subscription_expires_at = Column(DateTime, nullable=True)
+
+    metadata_ = Column("metadata", JSONB, nullable=True)
+
     users = relationship("User", back_populates="organization", foreign_keys="User.organization_id")
     blockchain_deployments = relationship(
         "OrganizationBlockchainDeployment", back_populates="organization", cascade="all, delete-orphan"
+    )
+    social_feed_whitelist = relationship(
+        "OrganizationSocialFeedWhitelist",
+        foreign_keys="OrganizationSocialFeedWhitelist.organization_id",
+        back_populates="organization",
+        cascade="all, delete-orphan",
     )
 
     def to_dict(self):
@@ -217,6 +267,27 @@ class Organization(Base):
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "legal_name": self.legal_name,
+            "registration_number": getattr(self, "registration_number", None),
+            "tax_id": getattr(self, "tax_id", None),
+            "lei": getattr(self, "lei", None),
+            "industry": self.industry,
+            "country": self.country,
+            "website": self.website,
+            "email": getattr(self, "email", None),
+            "blockchain_type": self.blockchain_type,
+            "blockchain_network": self.blockchain_network,
+            "blockchain_chain_id": self.blockchain_chain_id,
+            "blockchain_contract_addresses": self.blockchain_contract_addresses,
+            "bridge_contract_address": self.bridge_contract_address,
+            "bridge_status": self.bridge_status,
+            "status": self.status,
+            "registration_date": self.registration_date.isoformat() if self.registration_date else None,
+            "approved_by": self.approved_by,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "subscription_tier": self.subscription_tier,
+            "subscription_expires_at": self.subscription_expires_at.isoformat() if self.subscription_expires_at else None,
+            "metadata": self.metadata_,
         }
 
 
@@ -233,6 +304,19 @@ class OrganizationBlockchainDeployment(Base):
     is_primary = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Phase 8: deployment details
+    network_name = Column(String(100), nullable=True)
+    rpc_url = Column(EncryptedString(500), nullable=True)
+    notarization_contract = Column(String(66), nullable=True)
+    token_contract = Column(String(66), nullable=True)
+    payment_router_contract = Column(String(66), nullable=True)
+    bridge_contract = Column(String(66), nullable=True)
+    status = Column(String(50), default="pending", nullable=False)
+    deployed_at = Column(DateTime, nullable=True)
+    deployed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    deployment_metadata = Column(JSONB, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
+
     organization = relationship("Organization", back_populates="blockchain_deployments")
 
     def to_dict(self):
@@ -243,6 +327,43 @@ class OrganizationBlockchainDeployment(Base):
             "deployment_type": self.deployment_type,
             "contract_address": self.contract_address,
             "is_primary": self.is_primary,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "network_name": self.network_name,
+            "rpc_url": getattr(self, "rpc_url", None),
+            "notarization_contract": self.notarization_contract,
+            "token_contract": self.token_contract,
+            "payment_router_contract": self.payment_router_contract,
+            "bridge_contract": self.bridge_contract,
+            "status": self.status,
+            "deployed_at": self.deployed_at.isoformat() if self.deployed_at else None,
+            "deployed_by": self.deployed_by,
+            "deployment_metadata": self.deployment_metadata,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class OrganizationSocialFeedWhitelist(Base):
+    """Org-level whitelist for social feeds: which other orgs' posts this org can see."""
+
+    __tablename__ = "organization_social_feed_whitelist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    whitelisted_organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("organization_id", "whitelisted_organization_id", name="uq_org_social_feed_whitelist"),)
+
+    organization = relationship(
+        "Organization", foreign_keys=[organization_id], back_populates="social_feed_whitelist"
+    )
+    whitelisted_organization = relationship("Organization", foreign_keys=[whitelisted_organization_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "organization_id": self.organization_id,
+            "whitelisted_organization_id": self.whitelisted_organization_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -317,6 +438,12 @@ class User(Base):
         cascade="all, delete-orphan",
         foreign_keys="AlpacaCustomerAccount.user_id",
     )
+    brokerage_ach_relationships = relationship(
+        "BrokerageAchRelationship",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="BrokerageAchRelationship.user_id",
+    )
     organization_identifier = Column(EncryptedString(255), nullable=True, index=True)  # Organization alias, blockchain address, or key
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True)
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])
@@ -366,6 +493,14 @@ class User(Base):
     consent_records = relationship("ConsentRecord", back_populates="user", cascade="all, delete-orphan")
     data_processing_requests = relationship("DataProcessingRequest", foreign_keys="DataProcessingRequest.user_id", back_populates="user", cascade="all, delete-orphan")
 
+    # BYOK (Bring Your Own Keys) – crypto and trading keys only
+    byok_keys = relationship(
+        "UserByokKey",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="UserByokKey.user_id",
+    )
+
     def to_dict(self):
         """Convert model to dictionary."""
         return {
@@ -390,6 +525,26 @@ class User(Base):
             "organization_id": self.organization_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class UserByokKey(Base):
+    """Per-user BYOK (Bring Your Own Keys) – crypto and trading providers only. One row per (user, provider)."""
+
+    __tablename__ = "user_byok_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, index=True)  # ByokProvider value
+    provider_type = Column(String(64), nullable=True)  # e.g. alpaca_paper, alpaca_live
+    credentials_encrypted = Column(EncryptedJSON(), nullable=True)  # Provider-specific: api_key, api_secret, etc.
+    is_verified = Column(Boolean, default=False, nullable=False)
+    unlocks_trading = Column(Boolean, default=False, nullable=False)  # True only for Alpaca when set
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="byok_keys", foreign_keys=[user_id])
+
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_byok_provider"),)
 
 
 class Document(Base):
@@ -1817,6 +1972,92 @@ class MarketOrder(Base):
     user = relationship("User", foreign_keys=[user_id])
 
 
+class NewsfeedPost(Base):
+    """Newsfeed post for deals and markets."""
+
+    __tablename__ = "newsfeed_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_type = Column(String(50), nullable=False, index=True)
+    title = Column(String(500), nullable=False)
+    content = Column(Text, nullable=True)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=True, index=True)
+    market_id = Column(Integer, ForeignKey("market_events.id", ondelete="CASCADE"), nullable=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    polymarket_market_id = Column(String(255), nullable=True, index=True)
+    polymarket_market_url = Column(String(500), nullable=True)
+    likes_count = Column(Integer, default=0, nullable=False)
+    comments_count = Column(Integer, default=0, nullable=False)
+    shares_count = Column(Integer, default=0, nullable=False)
+    views_count = Column(Integer, default=0, nullable=False)
+    visibility = Column(String(20), default="public", nullable=False)
+    is_pinned = Column(Boolean, default=False, nullable=False)
+    post_metadata = Column(JSONB, name="metadata", nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    deal = relationship("Deal", backref="newsfeed_posts")
+    market = relationship("MarketEvent", backref="newsfeed_posts")
+    organization = relationship("Organization", backref="newsfeed_posts")
+    author = relationship("User", foreign_keys=[author_id], backref="newsfeed_posts_authored")
+    likes = relationship("NewsfeedLike", back_populates="post", cascade="all, delete-orphan")
+    comments = relationship("NewsfeedComment", back_populates="post", cascade="all, delete-orphan")
+    shares = relationship("NewsfeedShare", back_populates="post", cascade="all, delete-orphan")
+
+
+class NewsfeedLike(Base):
+    """Like on newsfeed post."""
+
+    __tablename__ = "newsfeed_likes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("newsfeed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("post_id", "user_id", name="uq_newsfeed_like_post_user"),)
+
+    post = relationship("NewsfeedPost", back_populates="likes")
+    user = relationship("User", backref="newsfeed_likes")
+
+
+class NewsfeedComment(Base):
+    """Comment on newsfeed post."""
+
+    __tablename__ = "newsfeed_comments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("newsfeed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    parent_comment_id = Column(
+        Integer, ForeignKey("newsfeed_comments.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    post = relationship("NewsfeedPost", back_populates="comments")
+    user = relationship("User", backref="newsfeed_comments")
+    parent_comment = relationship("NewsfeedComment", remote_side=[id], backref="replies")
+
+
+class NewsfeedShare(Base):
+    """Share of newsfeed post."""
+
+    __tablename__ = "newsfeed_shares"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("newsfeed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    share_type = Column(String(20), default="internal", nullable=False)
+    shared_to = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    post = relationship("NewsfeedPost", back_populates="shares")
+    user = relationship("User", backref="newsfeed_shares")
+
+
 class PolymarketSurveillanceBaseline(Base):
     """Baseline metrics for Polymarket surveillance (wallet, market, condition)."""
 
@@ -1901,6 +2142,152 @@ class BridgeTrade(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     user = relationship("User", backref="bridge_trades")
+
+
+class Invoice(Base):
+    """Invoice for billing periods (Phase 10)."""
+
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    invoice_number = Column(String(100), unique=True, nullable=False, index=True)
+    invoice_date = Column(DateTime, nullable=False, index=True)
+    due_date = Column(DateTime, nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    subtotal = Column(Numeric(19, 4), nullable=False)
+    tax = Column(Numeric(19, 4), default=0, nullable=False)
+    total = Column(Numeric(19, 4), nullable=False)
+    currency = Column(String(3), default="USD", nullable=False)
+    status = Column(String(20), default="draft", nullable=False, index=True)
+    paid_at = Column(DateTime, nullable=True)
+    payment_event_id = Column(Integer, ForeignKey("payment_events.id", ondelete="SET NULL"), nullable=True, index=True)
+    line_items = Column(JSONB, nullable=True)
+    notes = Column(Text, nullable=True)
+    metadata_ = Column("metadata", JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    organization = relationship("Organization", backref="invoices")
+    user = relationship("User", backref="invoices")
+    payment_event = relationship("PaymentEvent", foreign_keys=[payment_event_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "invoice_number": self.invoice_number,
+            "invoice_date": self.invoice_date.isoformat() if self.invoice_date else None,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "organization_id": self.organization_id,
+            "user_id": self.user_id,
+            "subtotal": float(self.subtotal) if self.subtotal else 0,
+            "tax": float(self.tax) if self.tax else 0,
+            "total": float(self.total) if self.total else 0,
+            "currency": self.currency,
+            "status": self.status,
+            "paid_at": self.paid_at.isoformat() if self.paid_at else None,
+            "payment_event_id": self.payment_event_id,
+            "line_items": self.line_items,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class BillingPeriod(Base):
+    """Billing period for organizations and users (Phase 10)."""
+
+    __tablename__ = "billing_periods"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    period_type = Column(String(20), nullable=False)
+    period_start = Column(DateTime, nullable=False, index=True)
+    period_end = Column(DateTime, nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    total_cost = Column(Numeric(19, 4), default=0, nullable=False)
+    subscription_cost = Column(Numeric(19, 4), default=0, nullable=False)
+    usage_cost = Column(Numeric(19, 4), default=0, nullable=False)
+    commission_revenue = Column(Numeric(19, 4), default=0, nullable=False)
+    credit_purchases = Column(Numeric(19, 4), default=0, nullable=False)
+    credit_usage = Column(Numeric(19, 4), default=0, nullable=False)
+    payment_cost = Column(Numeric(19, 4), default=0, nullable=False)
+    currency = Column(String(3), default="USD", nullable=False)
+    status = Column(String(20), default="pending", nullable=False, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True, index=True)
+    metadata_ = Column("metadata", JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    organization = relationship("Organization", backref="billing_periods")
+    user = relationship("User", backref="billing_periods")
+    invoice_rel = relationship("Invoice", backref="billing_periods", foreign_keys=[invoice_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "period_type": self.period_type,
+            "period_start": self.period_start.isoformat() if self.period_start else None,
+            "period_end": self.period_end.isoformat() if self.period_end else None,
+            "organization_id": self.organization_id,
+            "user_id": self.user_id,
+            "total_cost": float(self.total_cost) if self.total_cost else 0,
+            "subscription_cost": float(self.subscription_cost) if self.subscription_cost else 0,
+            "usage_cost": float(self.usage_cost) if self.usage_cost else 0,
+            "commission_revenue": float(self.commission_revenue) if self.commission_revenue else 0,
+            "credit_purchases": float(self.credit_purchases) if self.credit_purchases else 0,
+            "credit_usage": float(self.credit_usage) if self.credit_usage else 0,
+            "payment_cost": float(self.payment_cost) if self.payment_cost else 0,
+            "currency": self.currency,
+            "status": self.status,
+            "invoice_id": self.invoice_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CostAllocation(Base):
+    """Cost allocation per organization and role (Phase 10)."""
+
+    __tablename__ = "cost_allocations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    billing_period_id = Column(Integer, ForeignKey("billing_periods.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_role = Column(String(50), nullable=True, index=True)
+    cost_type = Column(String(50), nullable=False, index=True)
+    feature = Column(String(100), nullable=True, index=True)
+    amount = Column(Numeric(19, 4), nullable=False)
+    currency = Column(String(3), default="USD", nullable=False)
+    allocation_method = Column(String(50), nullable=False)
+    allocation_percentage = Column(Numeric(5, 2), nullable=True)
+    source_transaction_id = Column(String(255), nullable=True, index=True)
+    source_transaction_type = Column(String(50), nullable=True)
+    metadata_ = Column("metadata", JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    billing_period = relationship("BillingPeriod", backref="cost_allocations")
+    organization = relationship("Organization", backref="cost_allocations")
+    user = relationship("User", backref="cost_allocations")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "billing_period_id": self.billing_period_id,
+            "organization_id": self.organization_id,
+            "user_id": self.user_id,
+            "user_role": self.user_role,
+            "cost_type": self.cost_type,
+            "feature": self.feature,
+            "amount": float(self.amount) if self.amount else 0,
+            "currency": self.currency,
+            "allocation_method": self.allocation_method,
+            "allocation_percentage": float(self.allocation_percentage) if self.allocation_percentage else None,
+            "source_transaction_id": self.source_transaction_id,
+            "source_transaction_type": self.source_transaction_type,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class Policy(Base):
@@ -3915,6 +4302,101 @@ class AlpacaCustomerAccount(Base):
             "currency": self.currency,
             "action_required_reason": self.action_required_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class BrokerageAchRelationship(Base):
+    """ACH relationship for brokerage funding (Plaid processor token → Alpaca). One per linked bank per Alpaca account."""
+
+    __tablename__ = "brokerage_ach_relationships"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    alpaca_account_id = Column(String(64), nullable=False, index=True)
+    alpaca_relationship_id = Column(String(64), nullable=False, index=True)  # Alpaca relationship id
+    plaid_account_id = Column(String(64), nullable=True)
+    nickname = Column(String(255), nullable=True)
+    status = Column(String(32), nullable=True)  # e.g. QUEUED, APPROVED from Alpaca
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="brokerage_ach_relationships", foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "alpaca_account_id", "alpaca_relationship_id",
+            name="uq_brokerage_ach_user_account_relationship",
+        ),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "alpaca_account_id": self.alpaca_account_id,
+            "alpaca_relationship_id": self.alpaca_relationship_id,
+            "plaid_account_id": self.plaid_account_id,
+            "nickname": self.nickname,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class BankProductListing(Base):
+    """Marketplace listing for a bank-held investment product (Week 14)."""
+
+    __tablename__ = "bank_product_listings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    plaid_account_id = Column(String(64), nullable=True, index=True)
+    plaid_security_id = Column(String(64), nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    product_type = Column(String(50), nullable=True, index=True)
+    asking_price = Column(Numeric(20, 2), nullable=False)
+    flat_fee = Column(Numeric(10, 2), nullable=False, server_default="0")
+    status = Column(String(32), nullable=False, index=True, default="active")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", backref="bank_product_listings")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "plaid_account_id": self.plaid_account_id,
+            "plaid_security_id": self.plaid_security_id,
+            "name": self.name,
+            "product_type": self.product_type,
+            "asking_price": float(self.asking_price) if self.asking_price is not None else 0,
+            "flat_fee": float(self.flat_fee) if self.flat_fee is not None else 0,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class LenderScore(Base):
+    """Lender score for a user (Week 16). Users never see their own; only lenders can view borrower scores."""
+
+    __tablename__ = "lender_scores"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    score_value = Column(Numeric(10, 4), nullable=True)
+    source = Column(String(100), nullable=True, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship("User", backref=backref("lender_score", uselist=False))
+
+    def to_dict(self):
+        return {
+            "user_id": self.user_id,
+            "score_value": float(self.score_value) if self.score_value is not None else None,
+            "source": self.source,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 

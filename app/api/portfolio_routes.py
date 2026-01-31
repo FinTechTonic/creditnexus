@@ -12,7 +12,7 @@ from app.auth.jwt_auth import get_current_user
 from app.core.permissions import has_permission, PERMISSION_TRADE_VIEW
 from app.db import get_db
 from app.db.models import User, ManualHolding, ManualAsset
-from app.services.plaid_service import get_plaid_connection, get_balances
+from app.services.plaid_service import get_plaid_connection, get_plaid_connections, get_balances
 from app.services.trading_api_service import TradingAPIError
 from app.api.trading_routes import get_trading_api_service
 from app.services.trading_api_service import TradingAPIService
@@ -39,6 +39,8 @@ def _manual_to_position(m: ManualHolding) -> Dict[str, Any]:
         "current_price": None,
         "market_value": q * ac if ac else None,
         "unrealized_pl": None,
+        "source": "manual",
+        "type": "equity",
     }
 
 
@@ -51,6 +53,10 @@ class PortfolioOverviewResponse(BaseModel):
     buying_power: float
     positions: List[Dict[str, Any]]
     account_info: Dict[str, Any]
+    liabilities: Optional[Dict[str, Any]] = None
+    message: Optional[str] = None
+    requires_link_accounts: bool = False
+    requires_positions: bool = False
 
 
 class RiskMetricsModel(BaseModel):
@@ -68,6 +74,9 @@ class RiskAnalysisResponse(BaseModel):
     risk_metrics: RiskMetricsModel
     recommendations: List[str]
     total_equity: float
+    message: Optional[str] = None
+    requires_link_accounts: bool = False
+    requires_positions: bool = False
 
 
 @router.get("/overview", response_model=PortfolioOverviewResponse)
@@ -114,6 +123,8 @@ async def get_portfolio_overview(
                 "current_price": p.get("current_price"),
                 "market_value": p.get("market_value"),
                 "unrealized_pl": p.get("unrealized_pl"),
+                "source": "trading",
+                "type": p.get("asset_class") or "equity",
             })
             if p.get("unrealized_pl") is not None:
                 unrealized_pl += float(p["unrealized_pl"])
@@ -128,6 +139,10 @@ async def get_portfolio_overview(
         if po.get("market_value"):
             trading_equity += po["market_value"]
 
+    # Plaid liabilities (credit, mortgage, etc.) from get_liabilities
+    liabilities_agg = portfolio_aggregation_service.aggregate_liabilities(db, current_user.id)
+    liabilities = liabilities_agg.liabilities or {}
+
     # Recalculate metrics with merged data
     metrics = portfolio_aggregation_service.calculate_portfolio_metrics(
         bank_balances=float(overview.get("bank_balances") or 0.0),
@@ -138,6 +153,19 @@ async def get_portfolio_overview(
     
     buying_power = float(account_info.get("buying_power") or account_info.get("cash") or metrics.get("buying_power") or 0.0)
 
+    # Structured empty state for UI
+    plaid_conns = get_plaid_connections(db, current_user.id)
+    has_plaid = bool(plaid_conns)
+    requires_link_accounts = not has_plaid
+    requires_positions = len(positions) == 0
+    message = None
+    if requires_link_accounts and requires_positions:
+        message = "Link accounts to see bank balances, investments, and positions."
+    elif requires_link_accounts:
+        message = "Link accounts to see bank and investment data."
+    elif requires_positions:
+        message = "No positions yet. Add manual holdings or connect a brokerage."
+
     return PortfolioOverviewResponse(
         total_equity=metrics["total_equity"],
         bank_balances=metrics["bank_balances"],
@@ -147,6 +175,10 @@ async def get_portfolio_overview(
         buying_power=buying_power,
         positions=positions,
         account_info=account_info,
+        liabilities=liabilities if liabilities else None,
+        message=message,
+        requires_link_accounts=requires_link_accounts,
+        requires_positions=requires_positions,
     )
 
 
@@ -176,6 +208,18 @@ async def get_portfolio_risk_analysis(
     result = PortfolioRiskService(db).analyze_diversification(
         current_user.id, trading_api_service
     )
+    plaid_conns = get_plaid_connections(db, current_user.id)
+    has_plaid = bool(plaid_conns)
+    total_equity_val = float(result.get("total_equity") or 0.0)
+    requires_link_accounts = not has_plaid
+    requires_positions = total_equity_val == 0
+    message = None
+    if requires_link_accounts and requires_positions:
+        message = "Link accounts and add positions to run risk analysis."
+    elif requires_link_accounts:
+        message = "Link accounts to include bank and investment data in risk analysis."
+    elif requires_positions:
+        message = "Add positions to see allocation and risk metrics."
     return RiskAnalysisResponse(
         asset_class_allocation=result["asset_class_allocation"],
         sector_exposure=result["sector_exposure"],
@@ -184,6 +228,9 @@ async def get_portfolio_risk_analysis(
         risk_metrics=RiskMetricsModel(**result["risk_metrics"]),
         recommendations=result["recommendations"],
         total_equity=result["total_equity"],
+        message=message,
+        requires_link_accounts=requires_link_accounts,
+        requires_positions=requires_positions,
     )
 
 
@@ -302,6 +349,26 @@ async def get_portfolio_transactions(
     return {
         "transactions": result.transactions,
         "total_transactions": result.total_transactions,
+    }
+
+
+@router.get("/spending-breakdown")
+async def get_spending_breakdown(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    days: int = Query(30, ge=1, le=365, description="Number of days for spending breakdown"),
+):
+    """Get spending aggregated by category (and merchant) from Plaid transactions. Requires PERMISSION_TRADE_VIEW."""
+    if not has_permission(current_user, PERMISSION_TRADE_VIEW):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    plaid_conn = get_plaid_connection(db, current_user.id)
+    requires_link_accounts = not (plaid_conn and plaid_conn.connection_data and isinstance(plaid_conn.connection_data, dict) and plaid_conn.connection_data.get("access_token"))
+
+    breakdown = portfolio_aggregation_service.spending_breakdown(db, current_user.id, days=days)
+    return {
+        "breakdown": breakdown,
+        "requires_link_accounts": requires_link_accounts,
     }
 
 

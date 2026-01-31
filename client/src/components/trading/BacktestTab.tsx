@@ -3,7 +3,7 @@
  * Uses POST /api/stock-prediction/backtest and displays metrics, equity curve, and trades table.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,8 +54,29 @@ const defaultEnd = new Date();
 const defaultStart = new Date(defaultEnd);
 defaultStart.setFullYear(defaultStart.getFullYear() - 1);
 
+const STOCK_PREDICTION_SYMBOL_KEY = 'stockPredictionSymbol';
+
 export function BacktestTab() {
-  const [symbol, setSymbol] = useState('AAPL');
+  const getInitialSymbol = () => {
+    try {
+      const saved = sessionStorage.getItem(STOCK_PREDICTION_SYMBOL_KEY);
+      return (saved && saved.trim()) ? saved.trim() : 'AAPL';
+    } catch {
+      return 'AAPL';
+    }
+  };
+  const [symbol, setSymbol] = useState(getInitialSymbol);
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(STOCK_PREDICTION_SYMBOL_KEY);
+      if (saved && saved.trim() && saved.trim() !== symbol) {
+        setSymbol(saved.trim());
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
   const [start, setStart] = useState(toYMD(defaultStart));
   const [end, setEnd] = useState(toYMD(defaultEnd));
   const [strategy, setStrategy] = useState<string>('combined');

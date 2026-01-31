@@ -1,15 +1,20 @@
 import React from 'react';
 import { Dashboard } from '@/components/Dashboard';
+import { AggregatedFinancialOverview } from '@/components/AggregatedFinancialOverview';
 import { MyPendingSignatures } from '@/components/dashboard-tabs/MyPendingSignatures';
 import { SignatureCoordinationPanel } from '@/components/dashboard-tabs/SignatureCoordinationPanel';
 import { SignatureAuditTrail } from '@/components/dashboard-tabs/SignatureAuditTrail';
 import { GDPRDashboard } from '@/components/dashboard-tabs/GDPRDashboard';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   PenTool,
   Shield,
   DollarSign,
   ExternalLink,
+  LayoutDashboard,
+  PieChart,
 } from 'lucide-react';
+import { BillingDashboard as BillingDashboardTab } from '@/components/dashboard-tabs/BillingDashboard';
 
 export function SignatureDashboard() {
   const [activeTab, setActiveTab] = React.useState('pending');
@@ -93,24 +98,36 @@ export function ComplianceDashboard() {
 }
 
 export function BillingDashboard() {
-  return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">Billing Dashboard</h2>
-      <p className="text-muted-foreground">Billing and subscription management will be implemented here.</p>
-    </div>
-  );
+  return <BillingDashboardTab />;
 }
 
 export function UnifiedDashboard() {
-  // Phase 2 requirement: Dashboard should no longer render
-  // its own nested top-level tabs. All major sections
-  // (Trading, Bridge, Documents, Signatures, Applications,
-  // Billing, Privacy) are now accessed via the sidebar.
-  //
-  // The unified dashboard is now a single overview view.
+  // AGGREGATED_DASHBOARD_AND_PORTFOLIO_PLAN: tabs default "Financial overview"
+  // (AggregatedFinancialOverview) and "Credit portfolio" (Dashboard).
+  const [dashboardTab, setDashboardTab] = React.useState('financial-overview');
+
   return (
-    <div className="flex flex-col h-full space-y-4">
-      <Dashboard />
+    <div className="flex flex-col h-full min-h-0">
+      <Tabs value={dashboardTab} onValueChange={setDashboardTab} className="flex flex-col flex-1 min-h-0">
+        <TabsList className="bg-slate-900 border-slate-800 self-start shrink-0 mx-6 mt-4">
+          <TabsTrigger value="financial-overview" className="data-[state=active]:bg-slate-800 gap-2">
+            <PieChart className="h-4 w-4" />
+            Financial overview
+          </TabsTrigger>
+          <TabsTrigger value="credit-portfolio" className="data-[state=active]:bg-slate-800 gap-2">
+            <LayoutDashboard className="h-4 w-4" />
+            Credit portfolio
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="financial-overview" className="flex-1 overflow-auto mt-0 min-h-0">
+          <AggregatedFinancialOverview />
+        </TabsContent>
+        <TabsContent value="credit-portfolio" className="flex-1 overflow-auto mt-0 min-h-0">
+          <div className="p-4">
+            <Dashboard />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

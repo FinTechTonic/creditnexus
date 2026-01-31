@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.db import get_db
 from app.db.models import User, AlpacaCustomerAccount
 from app.db.models import AuditAction
+from app.services.entitlement_service import has_org_unlocked
 from app.services.alpaca_account_service import (
     open_alpaca_account,
     AlpacaAccountServiceError,
@@ -20,8 +21,15 @@ from app.services.alpaca_account_service import (
 from app.services.alpaca_broker_service import get_broker_client, AlpacaBrokerAPIError
 from app.services.plaid_service import (
     create_link_token_for_brokerage,
+    create_link_token_for_funding,
     get_identity,
     get_plaid_connection,
+)
+from app.services.brokerage_funding_service import (
+    link_bank_for_funding,
+    list_linked_banks,
+    fund_account,
+    withdraw_from_account,
 )
 from app.utils.audit import log_audit_action
 
@@ -49,6 +57,25 @@ class AgreementItem(BaseModel):
     ip_address: Optional[str] = Field("0.0.0.0", description="Client IP at acceptance (optional)")
 
 
+class FundRequest(BaseModel):
+    """Request to fund brokerage account (ACH INCOMING)."""
+    amount: str = Field(..., description="Amount in USD (e.g. 100.00)")
+    relationship_id: Optional[str] = Field(None, description="Linked bank relationship_id; omit to use first.")
+
+
+class WithdrawRequest(BaseModel):
+    """Request to withdraw from brokerage to linked bank (ACH OUTGOING)."""
+    amount: str = Field(..., description="Amount in USD")
+    relationship_id: str = Field(..., description="Linked bank relationship_id (required).")
+
+
+class LinkBankForFundingRequest(BaseModel):
+    """Request to link a bank for brokerage funding (Plaid Link → processor token → Alpaca ACH)."""
+    public_token: str = Field(..., description="Plaid Link onSuccess public_token")
+    plaid_account_id: str = Field(..., description="Plaid account_id from Link metadata")
+    nickname: Optional[str] = Field(None, description="Optional nickname for the linked bank")
+
+
 class ApplyRequest(BaseModel):
     """Brokerage apply request: optional agreements (from UI), Plaid KYC flag, and asset classes."""
     agreements: Optional[List[AgreementItem]] = Field(
@@ -69,11 +96,22 @@ class ApplyRequest(BaseModel):
     )
 
 
+_ORG_UNLOCK_402_MESSAGE = (
+    "Complete initial $2 payment or subscription to link accounts and open accounts."
+)
+
+
 @router.get("/link-token", response_model=Dict[str, Any])
 async def brokerage_link_token(
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
     """Get Plaid Link token for brokerage onboarding (link-for-brokerage). Optional fee info when fee enabled."""
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
     result = create_link_token_for_brokerage(current_user.id)
     if "error" in result:
         raise HTTPException(status_code=503, detail=result["error"])
@@ -196,6 +234,11 @@ async def brokerage_account_apply(
     """Submit Alpaca Broker account application.
     Use Plaid KYC flow: link via Plaid (brokerage link-token), pass agreements (signed_at from UI), use_plaid_kyc=True.
     """
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
     agreements_override = None
     prefill_override = None
     use_plaid_kyc = False
@@ -343,23 +386,92 @@ async def brokerage_account_documents(
     return {"status": "uploaded", "message": "Document submitted for review."}
 
 
-@router.post("/fund", response_model=Dict[str, Any])
-async def brokerage_fund_placeholder(
+@router.get("/funding-link-token", response_model=Dict[str, Any])
+async def brokerage_funding_link_token(
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Placeholder: fund account from bank (Plaid/ACH). Not implemented."""
-    raise HTTPException(
-        status_code=501,
-        detail="Fund account not yet implemented. See docs for future Plaid/ACH integration.",
+    """Get Plaid Link token for linking a bank for brokerage funding (Auth product only)."""
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
+    result = create_link_token_for_funding(current_user.id)
+    if "error" in result:
+        raise HTTPException(status_code=503, detail=result["error"])
+    return {"link_token": result["link_token"]}
+
+
+@router.get("/ach-relationships", response_model=List[Dict[str, Any]])
+async def brokerage_ach_relationships(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """List linked banks (ACH relationships) for brokerage funding/withdraw."""
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
+    return list_linked_banks(db, current_user.id)
+
+
+@router.post("/link-bank-for-funding", response_model=Dict[str, Any])
+async def brokerage_link_bank_for_funding(
+    body: LinkBankForFundingRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Link a bank for brokerage funding (Plaid Link → processor token → Alpaca ACH)."""
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
+    result = link_bank_for_funding(
+        db,
+        current_user.id,
+        body.public_token,
+        body.plaid_account_id,
+        body.nickname,
     )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/fund", response_model=Dict[str, Any])
+async def brokerage_fund(
+    body: FundRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Fund brokerage account from linked bank (ACH INCOMING)."""
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
+    result = fund_account(db, current_user.id, body.amount, body.relationship_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 
 @router.post("/withdraw", response_model=Dict[str, Any])
-async def brokerage_withdraw_placeholder(
+async def brokerage_withdraw(
+    body: WithdrawRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Placeholder: withdraw from brokerage account. Not implemented."""
-    raise HTTPException(
-        status_code=501,
-        detail="Withdraw not yet implemented. See docs for future integration.",
-    )
+    """Withdraw from brokerage account to linked bank (ACH OUTGOING)."""
+    if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
+        raise HTTPException(
+            status_code=402,
+            detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
+        )
+    result = withdraw_from_account(db, current_user.id, body.amount, body.relationship_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result

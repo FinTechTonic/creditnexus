@@ -165,6 +165,102 @@ def exchange_public_token(public_token: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+def _get_plaid_base_url() -> tuple[str, str, str]:
+    """Return (base_url, client_id, secret) for direct API calls; or raise. Used for processor token."""
+    if not getattr(settings, "PLAID_ENABLED", False):
+        return "", "", ""
+    cid = getattr(settings, "PLAID_CLIENT_ID", None)
+    secret = getattr(settings, "PLAID_SECRET", None)
+    if not cid or not secret:
+        return "", "", ""
+    cid = cid.get_secret_value() if hasattr(cid, "get_secret_value") else str(cid)
+    secret = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+    env = (getattr(settings, "PLAID_ENV", None) or "sandbox").lower()
+    hosts = {
+        "production": "https://production.plaid.com",
+        "development": "https://development.plaid.com",
+        "sandbox": "https://sandbox.plaid.com",
+    }
+    base = hosts.get(env, "https://sandbox.plaid.com")
+    return base, cid, secret
+
+
+def create_processor_token(
+    access_token: str,
+    account_id: str,
+    processor: str = "alpaca",
+) -> Dict[str, Any]:
+    """
+    Create a Plaid processor token for a partner (e.g. Alpaca).
+    Call POST /processor/token/create; returns {"processor_token": str} or {"error": str}.
+    Never log the processor_token value.
+    """
+    base, cid, secret = _get_plaid_base_url()
+    if not base or not cid or not secret:
+        return {"error": "Plaid is disabled or PLAID_CLIENT_ID/PLAID_SECRET missing"}
+    try:
+        import requests
+        url = f"{base}/processor/token/create"
+        payload = {
+            "client_id": cid,
+            "secret": secret,
+            "access_token": access_token,
+            "account_id": account_id,
+            "processor": processor,
+        }
+        r = requests.post(url, json=payload, timeout=30)
+        data = r.json() if r.content else {}
+        if r.status_code != 200:
+            err = data.get("error_message") or data.get("error") or r.text or f"HTTP {r.status_code}"
+            logger.warning("Plaid processor_token create failed: %s", err)
+            return {"error": err}
+        pt = data.get("processor_token")
+        if not pt:
+            return {"error": "processor_token missing in response"}
+        return {"processor_token": pt}
+    except ImportError:
+        return {"error": "requests not available"}
+    except Exception as e:
+        logger.warning("Plaid processor_token create failed: %s", e)
+        return {"error": str(e)}
+
+
+def create_link_token_for_funding(user_id: int) -> Dict[str, Any]:
+    """
+    Create a Plaid Link token for brokerage funding (link bank for ACH).
+    Auth product only, US; used to get public_token → exchange → processor_token → Alpaca ACH.
+    Returns {"link_token": str} or {"error": str}.
+    """
+    api, err = _get_plaid_client()
+    if err:
+        return {"error": err}
+
+    try:
+        from plaid.model.link_token_create_request import LinkTokenCreateRequest
+        from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+        from plaid.model.country_code import CountryCode
+        from plaid.model.products import Products
+    except ImportError as e:
+        return {"error": f"Plaid models: {e}"}
+
+    user = LinkTokenCreateRequestUser(client_user_id=str(user_id))
+    products = [Products("auth")]
+    country_codes = [CountryCode("US")]
+    req = LinkTokenCreateRequest(
+        user=user,
+        client_name="CreditNexus Brokerage Funding",
+        products=products,
+        country_codes=country_codes,
+        language="en",
+    )
+    try:
+        resp = api.link_token_create(req)
+        return {"link_token": resp.link_token}
+    except Exception as e:
+        logger.warning("Plaid link_token_create (funding) failed: %s", e)
+        return {"error": str(e)}
+
+
 def get_accounts(access_token: str) -> Dict[str, Any]:
     """Fetch accounts for an access_token. Returns {"accounts": [...]} or {"error": str}."""
     api, err = _get_plaid_client()
@@ -693,18 +789,29 @@ def create_layer_session(*, template_id: str, client_user_id: str) -> Dict[str, 
 
 
 def get_plaid_connection(db: Session, user_id: int) -> Optional[UserImplementationConnection]:
-    """Return the user's Plaid UserImplementationConnection if any."""
+    """Return the user's first Plaid UserImplementationConnection if any (backward compat)."""
+    conns = get_plaid_connections(db, user_id)
+    return conns[0] if conns else None
+
+
+def get_plaid_connections(db: Session, user_id: int) -> List[UserImplementationConnection]:
+    """Return all active Plaid UserImplementationConnection rows for the user (multi-item)."""
     impl = db.query(VerifiedImplementation).filter(
         VerifiedImplementation.name == "plaid",
         VerifiedImplementation.is_active == True,
     ).first()
     if not impl:
-        return None
-    return db.query(UserImplementationConnection).filter(
-        UserImplementationConnection.user_id == user_id,
-        UserImplementationConnection.implementation_id == impl.id,
-        UserImplementationConnection.is_active == True,
-    ).first()
+        return []
+    return (
+        db.query(UserImplementationConnection)
+        .filter(
+            UserImplementationConnection.user_id == user_id,
+            UserImplementationConnection.implementation_id == impl.id,
+            UserImplementationConnection.is_active == True,
+        )
+        .order_by(UserImplementationConnection.id)
+        .all()
+    )
 
 
 def ensure_plaid_implementation(db: Session) -> Optional[VerifiedImplementation]:

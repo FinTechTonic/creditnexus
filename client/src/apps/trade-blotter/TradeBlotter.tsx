@@ -9,8 +9,6 @@ import { FileText, Calendar, DollarSign, Building2, CheckCircle2, Clock, AlertTr
 import { useWallet } from '@/context/WalletContext';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_EXECUTE } from '@/utils/permissions'; // PERMISSION_TRADE_VIEW removed - unused
-import { DashboardChatbotPanel } from '@/components/DashboardChatbotPanel';
-
 function addBusinessDays(date: Date, days: number): Date {
   const result = new Date(date);
   let added = 0;
@@ -900,10 +898,6 @@ export function TradeBlotter({ state, setState }: TradeBlotterProps) {
         </div>
       )}
 
-      {/* Chatbot Panel */}
-      <div className="mt-6">
-        <DashboardChatbotPanel dealId={loanData?.deal_id ? parseInt(loanData.deal_id) : null} />
-      </div>
     </div>
   );
 }
