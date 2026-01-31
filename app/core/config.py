@@ -320,6 +320,16 @@ class Settings(BaseSettings):
         description="Plaid origination account ID for debits (required when PLAID_TRANSFER_ENABLED=true)",
     )
 
+    # Plaid Transfer API (instant interbank: RTP when eligible, else ACH)
+    PLAID_TRANSFER_ENABLED: bool = Field(
+        default=False,
+        description="Enable Plaid Transfer API for instant/same-day transfers; requires Transfer product and origination account in Plaid dashboard",
+    )
+    PLAID_TRANSFER_ORIGINATION_ACCOUNT_ID: Optional[str] = Field(
+        default=None,
+        description="Plaid origination account ID for debits (required when PLAID_TRANSFER_ENABLED=true)",
+    )
+
     # Alpaca (Trading + Stock Prediction Market Data)
     ALPACA_API_KEY: Optional[SecretStr] = Field(default=None, description="Alpaca API key (trading and historical bars)")
     ALPACA_API_SECRET: Optional[SecretStr] = Field(default=None, description="Alpaca API secret")
