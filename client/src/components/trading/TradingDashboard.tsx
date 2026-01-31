@@ -23,7 +23,8 @@ import { StructuredProductsTab } from './StructuredProductsTab';
 import { Watchlists } from './Watchlists';
 import { PriceAlerts } from './PriceAlerts';
 import { PerformanceAnalytics } from './PerformanceAnalytics';
-import { TrendingUp, Wallet, BarChart3, History, LineChart, BarChart2, Layers, Eye, Bell } from 'lucide-react';
+import { Newsfeed } from '@/components/dashboard-tabs/Newsfeed';
+import { TrendingUp, Wallet, BarChart3, History, LineChart, BarChart2, Layers, Eye, Bell, Share2 } from 'lucide-react';
 import { PermissionGate } from '@/components/PermissionGate';
 import { PERMISSION_TRADE_EXECUTE, PERMISSION_TRADE_VIEW } from '@/utils/permissions';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -33,7 +34,7 @@ export function TradingDashboard() {
   const getInitialTab = () => {
     try {
       const saved = sessionStorage.getItem('tradingDashboardActiveTab');
-      return saved && ['orders', 'portfolio', 'market', 'watchlists', 'alerts', 'predictions', 'backtest', 'history', 'structured'].includes(saved)
+      return saved && ['orders', 'portfolio', 'market', 'newsfeed', 'watchlists', 'alerts', 'predictions', 'backtest', 'history', 'structured'].includes(saved)
         ? saved
         : 'orders';
     } catch {
@@ -115,7 +116,7 @@ export function TradingDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-9">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-10">
             <TabsTrigger value="orders" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               <span className="hidden sm:inline">Orders</span>
@@ -127,6 +128,10 @@ export function TradingDashboard() {
             <TabsTrigger value="market" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               <span className="hidden sm:inline">Market</span>
+            </TabsTrigger>
+            <TabsTrigger value="newsfeed" className="flex items-center gap-2">
+              <Share2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Newsfeed</span>
             </TabsTrigger>
             <TabsTrigger value="watchlists" className="flex items-center gap-2">
               <Eye className="h-4 w-4" />
@@ -166,7 +171,14 @@ export function TradingDashboard() {
           </TabsContent>
 
           <TabsContent value="market" className="space-y-4 mt-6">
-            <MarketData />
+            <MarketData
+              onRunPrediction={() => handleTabChange('predictions')}
+              onRunBacktest={() => handleTabChange('backtest')}
+            />
+          </TabsContent>
+
+          <TabsContent value="newsfeed" className="space-y-4 mt-6">
+            <Newsfeed />
           </TabsContent>
 
           <TabsContent value="watchlists" className="space-y-4 mt-6">

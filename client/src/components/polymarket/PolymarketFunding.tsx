@@ -58,7 +58,7 @@ export function PolymarketFunding() {
   const loadMarkets = useCallback(async () => {
     setMarketsLoading(true);
     try {
-      const r = await fetchWithAuth('/api/polymarket/markets?limit=50');
+      const r = await fetchWithAuth('/api/polymarket/funding-markets?limit=50');
       if (r.ok) {
         const data = await r.json();
         const list = Array.isArray(data) ? data : [];

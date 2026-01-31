@@ -142,7 +142,19 @@ This file is created by `npx hardhat compile`. If it is missing, `mint_credit_to
 
 ---
 
-## 8. References
+## 8. Plaid and credits (deduct per call)
+
+Each Plaid API call (accounts, balances, transactions, etc.) **deducts 1 trading credit** per request. The equivalent cost is configurable and typically **$0.02–$0.10 per call** (see `PLAID_COST_USD` in `app/core/config.py`, default `0.05`). This cost is used when returning **402 Payment Required** so the client can show the correct pay-as-you-go amount.
+
+- **Deduct:** 1 trading credit per Plaid call (e.g. `/api/banking/accounts`, `/api/banking/balances`, `/api/banking/transactions`).
+- **Tracking:** `PlaidUsageTracking` records each call (endpoint, item_id, optional cost_usd) for billing and analytics.
+- **Config:** `PLAID_COST_USD` (default `0.05`) is used as the USD amount in 402 responses when credits are insufficient.
+
+Subscription tiers (e.g. TIER_10, TIER_15) include a number of Plaid refreshes via universal/trading credits; beyond that, users consume credits or pay per call.
+
+---
+
+## 9. References
 
 - **Contracts**: `contracts/README.md`, `contracts/scripts/deploy.js`
 - **Config**: `app/core/config.py` (`CREDIT_TOKEN_CONTRACT`), `dev/environment.md`

@@ -18,6 +18,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
   const [organizationIdentifier, setOrganizationIdentifier] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [waitlistMessage, setWaitlistMessage] = useState<string | null>(null);
   
   const navigate = useNavigate();
   const { login, register, authError, clearError, user, organization, implementations } = useAuth();
@@ -58,6 +59,11 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
       }
       
       if (success) {
+        if (typeof success === 'object' && success.waitlist) {
+          setWaitlistMessage(success.message || 'You have been added to the waitlist. An administrator will review your signup.');
+          return;
+        }
+        setWaitlistMessage(null);
         // Navigation will happen via useEffect when user state updates
         setEmail('');
         setPassword('');
@@ -73,6 +79,7 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
     setMode(mode === 'login' ? 'register' : 'login');
     clearError();
     setPassword('');
+    setWaitlistMessage(null);
   };
 
   if (!isOpen) return null;
@@ -111,6 +118,12 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
             <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-red-300">{authError}</p>
+            </div>
+          )}
+          {waitlistMessage && (
+            <div className="mb-6 p-4 bg-emerald-900/20 border border-emerald-700 rounded-lg flex items-start gap-3">
+              <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-200">{waitlistMessage}</p>
             </div>
           )}
 

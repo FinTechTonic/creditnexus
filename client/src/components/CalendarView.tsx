@@ -10,6 +10,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
 import { downloadICSFile } from '@/utils/icsDownload';
 import { MeetingModal } from './MeetingModal';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,44 +52,38 @@ export function CalendarView() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   useEffect(() => {
-    fetchMeetings();
+    fetchCalendarEvents();
   }, []);
 
-  const fetchMeetings = async () => {
+  const fetchCalendarEvents = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetchWithAuth('/api/meetings');
-      
+      const response = await fetchWithAuth(resolveApiUrl('/api/calendar/events'));
       if (!response.ok) {
-        throw new Error('Failed to fetch meetings');
+        throw new Error('Failed to fetch calendar events');
       }
-
       const data = await response.json();
-      
-      // Handle both array and object response formats
-      const meetings: Meeting[] = Array.isArray(data) ? data : (data.meetings || []);
-      
-      // Convert meetings to calendar events
-      const calendarEvents: CalendarEvent[] = meetings.map(meeting => {
-        const start = new Date(meeting.scheduled_at);
-        const end = new Date(start.getTime() + meeting.duration_minutes * 60000);
-        
+      const items = data?.events ?? [];
+
+      const calendarEvents: CalendarEvent[] = items.map((item: { id: string; title: string; start: string; end: string; source: string; meeting_id?: number; meeting?: Meeting }) => {
+        const start = new Date(item.start);
+        const end = new Date(item.end);
         return {
-          id: meeting.id,
-          title: meeting.title,
+          id: item.id,
+          title: item.title,
           start,
           end,
-          meetingId: meeting.id,
-          meeting,
+          meetingId: item.meeting_id ?? undefined,
+          meeting: item.meeting ?? undefined,
         };
       });
 
       setEvents(calendarEvents);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load meetings');
-      console.error('Error fetching meetings:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load calendar events');
+      console.error('Error fetching calendar events:', err);
     } finally {
       setLoading(false);
     }
@@ -116,7 +111,7 @@ export function CalendarView() {
     setShowModal(false);
     setSelectedEvent(null);
     setSelectedDate(null);
-    fetchMeetings(); // Refresh meetings after modal closes
+    fetchCalendarEvents(); // Refresh calendar events after modal closes
   };
 
   const eventStyleGetter = (event: CalendarEvent) => {

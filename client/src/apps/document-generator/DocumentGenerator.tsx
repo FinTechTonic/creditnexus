@@ -13,9 +13,7 @@ import { fetchWithAuth, useAuth } from '../../context/AuthContext';
 import { useFDC3 } from '../../context/FDC3Context';
 import type { GeneratedDocumentContext, CreditAgreementData as FDC3CreditAgreementData } from '../../context/FDC3Context';
 import { Loader2, FileText, Sparkles, AlertCircle, CheckCircle2, Info } from 'lucide-react';
-import { ChatbotPanel } from './ChatbotPanel';
-// DocumentCdmSelector removed - unused
-import { FloatingChatbotButton } from './FloatingChatbotButton';
+// ChatbotPanel and FloatingChatbotButton removed - use global assistant (circular chat icon bottom-right)
 import { CdmDataPreview } from './CdmDataPreview';
 import { FieldEditorModal } from './FieldEditorModal';
 // CdmFieldEditor removed - unused
@@ -80,7 +78,6 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
   const [inputMode, _setInputMode] = useState<'library' | 'manual'>('library'); // Prefix setter with _ - getter is used
   const [sourceDocumentId, setSourceDocumentId] = useState<number | null>(null);
   const [selectedDocumentTitle, setSelectedDocumentTitle] = useState<string | null>(null);
-  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
   const [previewCdmData, _setPreviewCdmData] = useState<CreditAgreementData | null>(null); // Prefix setter with _ - getter is used
   const [previewDocumentTitle, _setPreviewDocumentTitle] = useState<string | null>(null); // Prefix setter with _ - getter is used
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -604,7 +601,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
                   <li>Preview and export the generated document</li>
                 </ol>
                 <p className="text-xs text-gray-500 mt-3">
-                  💡 Tip: Use the floating chatbot button for AI assistance with template selection and field filling.
+                  💡 Tip: Use the global assistant (chat icon bottom-right) for AI assistance with template selection and field filling.
                 </p>
               </div>
             </div>
@@ -892,27 +889,7 @@ export function DocumentGenerator({ initialCdmData, onDocumentGenerated }: Docum
         </div>
       </div>
 
-      {/* Floating Chatbot Button */}
-      <FloatingChatbotButton
-        isOpen={isChatbotOpen}
-        onClick={() => setIsChatbotOpen(!isChatbotOpen)}
-      />
-
-      {/* Chatbot Modal */}
-      <Dialog open={isChatbotOpen} onOpenChange={setIsChatbotOpen}>
-        <DialogContent className="max-w-4xl max-h-[85vh] p-0 overflow-hidden bg-slate-800 border-slate-700">
-          <div className="h-[85vh]">
-            <ChatbotPanel
-              cdmData={cdmData as Record<string, unknown>}
-              onCdmDataUpdate={handleCdmDataUpdate}
-              onTemplateSelect={handleChatbotTemplateSelect}
-              onClose={() => setIsChatbotOpen(false)}
-              className="h-full"
-              dealId={cdmData?.deal_id ? Number(cdmData.deal_id) : null}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Global assistant: use the circular chat button bottom-right (DesktopAppLayout) */}
 
       {/* CDM Data Preview Modal */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>

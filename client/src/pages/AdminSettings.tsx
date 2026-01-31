@@ -1,15 +1,145 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
-import { Shield, Database, Users, Settings, Building2, Globe, ExternalLink, UserCircle } from 'lucide-react';
+import { fetchWithAuth } from '@/context/AuthContext';
+import { resolveApiUrl } from '@/utils/apiBase';
+import { Shield, Database, Users, Settings, Building2, Globe, ExternalLink, UserCircle, Share2, Plus, Trash2 } from 'lucide-react';
 import { DemoDataDashboard } from '@/components/DemoDataDashboard';
 import { AdminSignupDashboard } from '@/components/AdminSignupDashboard';
 import { VerificationFileConfigEditor } from '@/apps/verification-config/VerificationFileConfigEditor';
 import { WhitelistingDashboard } from '@/apps/whitelisting-dashboard/WhitelistingDashboard';
 import { PolicyEditor } from '@/apps/policy-editor/PolicyEditor';
+
+interface WhitelistEntry {
+  id: number;
+  organization_id: number;
+  whitelisted_organization_id: number;
+  created_at: string | null;
+}
+
+interface OrgOption {
+  id: number;
+  name: string;
+}
+
+function SocialFeedWhitelistCard({ orgId }: { orgId: number }) {
+  const [list, setList] = useState<WhitelistEntry[]>([]);
+  const [orgs, setOrgs] = useState<OrgOption[]>([]);
+  const [selectedOrgId, setSelectedOrgId] = useState<number | ''>('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [listRes, orgsRes] = await Promise.all([
+        fetchWithAuth(resolveApiUrl(`/api/organizations/${orgId}/social-feed-whitelist`)),
+        fetchWithAuth(resolveApiUrl('/api/organizations?limit=500')),
+      ]);
+      if (listRes.ok) {
+        const data = await listRes.json();
+        setList(Array.isArray(data) ? data : []);
+      }
+      if (orgsRes.ok) {
+        const data = await orgsRes.json();
+        const arr = Array.isArray(data) ? data : (data?.organizations ?? data?.items ?? []);
+        setOrgs(arr.filter((o: OrgOption) => o.id !== orgId));
+      }
+    } catch (e) {
+      console.error('Failed to load social feed whitelist', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const add = async () => {
+    if (selectedOrgId === '') return;
+    setSaving(true);
+    try {
+      const res = await fetchWithAuth(resolveApiUrl(`/api/organizations/${orgId}/social-feed-whitelist`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whitelisted_organization_id: selectedOrgId }),
+      });
+      if (res.ok) {
+        setSelectedOrgId('');
+        await load();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (whitelistedOrgId: number) => {
+    setSaving(true);
+    try {
+      await fetchWithAuth(
+        resolveApiUrl(`/api/organizations/${orgId}/social-feed-whitelist/${whitelistedOrgId}`),
+        { method: 'DELETE' }
+      );
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Share2 className="h-4 w-4" />
+          Social feed whitelist
+        </CardTitle>
+        <CardDescription>Whitelist other organisations so their posts appear in your social feed</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-slate-400">Loading…</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={selectedOrgId}
+                onChange={(e) => setSelectedOrgId(e.target.value === '' ? '' : Number(e.target.value))}
+                className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200"
+              >
+                <option value="">Select organization</option>
+                {orgs.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name} (ID: {o.id})</option>
+                ))}
+              </select>
+              <Button size="sm" onClick={add} disabled={saving || selectedOrgId === ''}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
+            <ul className="space-y-2">
+              {list.length === 0 ? (
+                <li className="text-slate-400 text-sm">No organisations whitelisted yet.</li>
+              ) : (
+                list.map((entry) => (
+                  <li key={entry.id} className="flex items-center justify-between py-2 border-b border-slate-700">
+                    <span className="text-slate-300">Org ID: {entry.whitelisted_organization_id}</span>
+                    <Button variant="ghost" size="sm" onClick={() => remove(entry.whitelisted_organization_id)} disabled={saving}>
+                      <Trash2 className="h-4 w-4 text-red-400" />
+                    </Button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function AdminSettings() {
   const { user } = useAuth();
@@ -214,6 +344,11 @@ export function AdminSettings() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Social feed whitelist: org admin can whitelist other orgs for social feeds */}
+              {user?.organization_id && (
+                <SocialFeedWhitelistCard orgId={user.organization_id} />
+              )}
               
               {/* Instance admin can see all organization admin settings */}
               {isInstanceAdmin && (

@@ -188,6 +188,12 @@ class TokenResponse(BaseModel):
     organization: Optional[Dict[str, Any]] = None
     implementations: Optional[List[Dict[str, Any]]] = None
 
+
+class WaitlistSignupResponse(BaseModel):
+    """Returned when REQUIRE_SIGNUP_APPROVAL is True: user is on waitlist until instance admin approves."""
+    message: str = "You have been added to the waitlist. An administrator will review your signup."
+    signup_status: str = "pending"
+
 class RefreshTokenRequest(BaseModel):
     """Refresh token request schema."""
 
@@ -507,7 +513,7 @@ def _hydrate_user_context(user: User, db: Session) -> Dict[str, Any]:
     return {"organization": org, "implementations": impls}
 
 
-@jwt_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@jwt_router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(
     request: Request,
     user_data: UserRegister,
@@ -515,6 +521,9 @@ async def register(
     background_tasks: BackgroundTasks = None,
 ):
     """Register a new user account.
+
+    When REQUIRE_SIGNUP_APPROVAL is True (default), user is added to the waitlist and no tokens
+    are returned; instance admin must approve before login. When False, tokens are returned immediately.
 
     Password requirements:
     - Minimum 12 characters
@@ -593,13 +602,20 @@ async def register(
     db.add(audit_log)
     db.commit()
 
-    # Enqueue post-signup tasks: populate dashboard from Plaid + person search (parallel)
-    if background_tasks:
+    # Enqueue post-signup tasks only after approval when waitlist is enabled (optional)
+    if background_tasks and not getattr(settings, "REQUIRE_SIGNUP_APPROVAL", True):
         try:
             from app.services.signup_service import run_post_signup_tasks
             background_tasks.add_task(run_post_signup_tasks, user.id)
         except Exception as e:
             logger.debug("Signup background tasks not added: %s", e)
+
+    # When waitlist/approval required: do not issue tokens; user must wait for instance admin approval
+    if getattr(settings, "REQUIRE_SIGNUP_APPROVAL", True):
+        return WaitlistSignupResponse(
+            message="You have been added to the waitlist. An administrator will review your signup.",
+            signup_status="pending",
+        )
 
     access_token = create_access_token({"sub": str(user.id), "email": user.email})
     refresh_token = create_refresh_token({"sub": str(user.id)}, db)

@@ -318,11 +318,18 @@ async def get_portfolio_summary(
         
         # Calculate concentration metrics
         concentration = credit_risk_service.calculate_portfolio_concentration(portfolio)
+        total_deals = len(portfolio)
+        # Structured empty state for UI
+        message = None
+        requires_link_accounts = False
+        requires_positions = total_deals == 0
+        if requires_positions:
+            message = "No deals with CDM data yet. Create deals and add documents to see portfolio summary."
         
         return {
             "status": "success",
             "portfolio": {
-                "total_deals": len(portfolio),
+                "total_deals": total_deals,
                 "total_exposure": concentration.get("total_exposure", 0.0),
                 "total_rwa": float(total_rwa),
                 "total_capital_requirement": float(total_capital_requirement),
@@ -333,7 +340,10 @@ async def get_portfolio_summary(
                     "borrower_count": concentration.get("borrower_count", 0)
                 }
             },
-            "deals": portfolio[:100]  # Limit to first 100 deals
+            "deals": portfolio[:100],
+            "message": message,
+            "requires_link_accounts": requires_link_accounts,
+            "requires_positions": requires_positions,
         }
     
     except Exception as e:

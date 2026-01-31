@@ -146,3 +146,7 @@ After deployment, add the contract addresses to the project-root `.env` and set 
 npx hardhat verify --network base <CONTRACT_ADDRESS> [CONSTRUCTOR_ARGS]
 # Example: npx hardhat verify --network base 0x... 0x[TOKEN_ADDRESS]  # for PaymentRouter
 ```
+
+## Organisations and local blockchain
+
+For **organisation-specific** routing (e.g. each org pointing to a local or shared Hardhat chain), see the docs guide **Hardhat Local Blockchain for Organisations**: it covers starting the node, deploying, setting project-root `.env`, and optionally adding rows to `organization_blockchain_deployments` so the server routes users by organisation. In-repo: `docs/guides/hardhat-local-blockchain.mdx`.

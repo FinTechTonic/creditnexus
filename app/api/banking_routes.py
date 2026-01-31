@@ -24,6 +24,7 @@ from app.services.plaid_service import (
     get_balances,
     get_transactions,
     get_plaid_connection,
+    get_plaid_connections,
     ensure_plaid_implementation,
 )
 
@@ -80,17 +81,27 @@ class BankingStatusResponse(BaseModel):
     connected: bool = Field(..., description="Whether the user has an active Plaid connection")
 
 
+class BankingConnectionItem(BaseModel):
+    """One Plaid connection (multi-item); no secrets."""
+    id: int = Field(..., description="Connection row id")
+    item_id_masked: Optional[str] = Field(None, description="Last 4 of item_id for display")
+    created_at: Optional[str] = Field(None, description="Created at ISO string")
+
+
 @router.get("/status", response_model=BankingStatusResponse)
 async def banking_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Get banking status: plaid_enabled (from server config) and connected (user's Plaid link)."""
+    """Get banking status: plaid_enabled (from server config) and connected (any Plaid link)."""
     plaid_enabled = bool(getattr(settings, "PLAID_ENABLED", False))
     connected = False
     if plaid_enabled:
-        conn = get_plaid_connection(db, current_user.id)
-        connected = conn is not None and bool(conn.connection_data)
+        conns = get_plaid_connections(db, current_user.id)
+        connected = any(
+            c.connection_data and isinstance(c.connection_data, dict) and c.connection_data.get("access_token")
+            for c in (conns or [])
+        )
     return BankingStatusResponse(plaid_enabled=plaid_enabled, connected=connected)
 
 
@@ -136,24 +147,17 @@ async def banking_connect(
         raise HTTPException(status_code=400, detail=out["error"])
 
     impl = ensure_plaid_implementation(db)
-    conn = db.query(UserImplementationConnection).filter(
-        UserImplementationConnection.user_id == current_user.id,
-        UserImplementationConnection.implementation_id == impl.id,
-    ).first()
-
+    # Multi-item: always create a new connection so each Plaid item is a separate row.
     connection_data = {"access_token": out["access_token"], "item_id": out["item_id"]}
-    if conn:
-        conn.connection_data = connection_data
-        conn.is_active = True
-    else:
-        conn = UserImplementationConnection(
-            user_id=current_user.id,
-            implementation_id=impl.id,
-            connection_data=connection_data,
-            is_active=True,
-        )
-        db.add(conn)
+    conn = UserImplementationConnection(
+        user_id=current_user.id,
+        implementation_id=impl.id,
+        connection_data=connection_data,
+        is_active=True,
+    )
+    db.add(conn)
     db.commit()
+    db.refresh(conn)
     _track_plaid_usage(
         db=db,
         user_id=current_user.id,
@@ -173,13 +177,14 @@ async def banking_accounts(
     """List accounts from the linked Plaid Item."""
     _plaid_ok()
 
-    # Credits gate (minimal): 1 credit per call (trading/universal)
+    # Credits gate: 1 credit per call; cost_usd for 402 (Plaid ~2–10 cents per call)
+    plaid_cost = Decimal(str(getattr(settings, "PLAID_COST_USD", 0.05)))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="trading",
         amount=1.0,
         feature="plaid_accounts_get",
-        cost_usd=Decimal("0.00"),
+        cost_usd=plaid_cost,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         from fastapi.responses import JSONResponse
@@ -202,6 +207,7 @@ async def banking_accounts(
         organization_id=getattr(current_user, "organization_id", None),
         api_endpoint="accounts/get",
         item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
+        cost_usd=float(plaid_cost),
         usage_metadata={"source": "banking_accounts"},
     )
     return out
@@ -215,12 +221,13 @@ async def banking_balances(
     """Get balances for the linked Plaid Item."""
     _plaid_ok()
 
+    plaid_cost = Decimal(str(getattr(settings, "PLAID_COST_USD", 0.05)))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="trading",
         amount=1.0,
         feature="plaid_balances_get",
-        cost_usd=Decimal("0.00"),
+        cost_usd=plaid_cost,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         from fastapi.responses import JSONResponse
@@ -243,6 +250,7 @@ async def banking_balances(
         organization_id=getattr(current_user, "organization_id", None),
         api_endpoint="accounts/balance/get",
         item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
+        cost_usd=float(plaid_cost),
         usage_metadata={"source": "banking_balances"},
     )
     return out
@@ -261,12 +269,13 @@ async def banking_transactions(
     """Get transactions for the linked Plaid Item."""
     _plaid_ok()
 
+    plaid_cost = Decimal(str(getattr(settings, "PLAID_COST_USD", 0.05)))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="trading",
         amount=1.0,
         feature="plaid_transactions_get",
-        cost_usd=Decimal("0.00"),
+        cost_usd=plaid_cost,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         from fastapi.responses import JSONResponse
@@ -290,8 +299,33 @@ async def banking_transactions(
         api_endpoint="transactions/get",
         item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
         account_id=account_id,
+        cost_usd=float(plaid_cost),
         usage_metadata={"source": "banking_transactions", "count": count, "offset": offset},
     )
+    return out
+
+
+@router.get("/connections", response_model=List[BankingConnectionItem])
+async def banking_list_connections(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """List user's Plaid connections (multi-item). Returns id, masked item_id, created_at; no secrets."""
+    _plaid_ok()
+    conns = get_plaid_connections(db, current_user.id)
+    out: List[BankingConnectionItem] = []
+    for c in conns or []:
+        item_id = None
+        if c.connection_data and isinstance(c.connection_data, dict):
+            raw = c.connection_data.get("item_id") or ""
+            item_id = f"…{str(raw)[-4:]}" if len(str(raw)) >= 4 else "…"
+        out.append(
+            BankingConnectionItem(
+                id=c.id,
+                item_id_masked=item_id,
+                created_at=c.created_at.isoformat() if c.created_at else None,
+            )
+        )
     return out
 
 
@@ -300,16 +334,31 @@ async def banking_disconnect(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Disconnect Plaid connection."""
+    """Disconnect all Plaid connections for the current user."""
     _plaid_ok()
-    impl = ensure_plaid_implementation(db)
-    conn = db.query(UserImplementationConnection).filter(
-        UserImplementationConnection.user_id == current_user.id,
-        UserImplementationConnection.implementation_id == impl.id,
-    ).first()
-    if conn:
+    conns = get_plaid_connections(db, current_user.id)
+    for conn in conns or []:
         conn.is_active = False
+    if conns:
         db.commit()
+
+
+@router.delete("/connections/{connection_id}", status_code=204)
+async def banking_disconnect_one(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Disconnect one Plaid connection by id (multi-item)."""
+    _plaid_ok()
+    conn = db.query(UserImplementationConnection).filter(
+        UserImplementationConnection.id == connection_id,
+        UserImplementationConnection.user_id == current_user.id,
+    ).first()
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    conn.is_active = False
+    db.commit()
 
 
 # Payment initiation endpoint (for Plaid bank payments)

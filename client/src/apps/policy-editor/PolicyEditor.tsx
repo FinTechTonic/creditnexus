@@ -37,7 +37,6 @@ import { Textarea } from '../../components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Alert, AlertDescription } from '../../components/ui/alert';
-import { DashboardChatbotPanel } from '../../components/DashboardChatbotPanel';
 
 // Types
 interface Policy {
@@ -780,10 +779,6 @@ export function PolicyEditor() {
         </Card>
       )}
 
-      {/* Chatbot Panel */}
-      <div className="mt-6">
-        <DashboardChatbotPanel />
-      </div>
     </div>
   );
 }

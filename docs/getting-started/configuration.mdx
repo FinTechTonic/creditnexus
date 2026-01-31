@@ -587,7 +587,7 @@ CreditNexus uses Base network (Coinbase Layer 2) for blockchain operations.
   Default: `true` (useful for development and demos)
 </ParamField>
 
-**Setup Guide**: See [MetaMask Setup Guide](/guides/metamask-setup)
+**Setup Guides**: [MetaMask Setup](/guides/metamask-setup) · [Hardhat Local Blockchain (organisations)](/guides/hardhat-local-blockchain)
 
 **Code Reference**: `app/core/config.py` (lines 143-172), `contracts/hardhat.config.js`
 
@@ -970,27 +970,31 @@ Cross-chain support allows bridging and SFP outcome token minting on L2s (e.g., 
 
 ## RevenueCat Configuration
 
-RevenueCat integration enables entitlement checks and subscription upgrades via x402 payments.
+RevenueCat integration enables entitlement checks and subscription upgrades (via x402 on web or in-app purchase on mobile). The server uses the **Secret API key** (sk_...) for REST API: subscriber lookup and promotional entitlement grants.
 
 <ParamField body="REVENUECAT_ENABLED" type="boolean">
   Enable RevenueCat integration. Default: `false`
   
-  Enables entitlement checks (`GET /api/subscriptions/entitlement`) and post-x402 promotional grants.
+  Enables entitlement checks (`GET /api/subscriptions/entitlement`) and post-x402 promotional grants. When true, 402 responses can include `revenuecat_available` and `revenuecat_endpoint` for mobile purchase path.
 </ParamField>
 
 <ParamField body="REVENUECAT_API_KEY" type="string">
-  RevenueCat secret API key (sk_...) for REST API. Required when `REVENUECAT_ENABLED=true`
+  RevenueCat **secret** API key (sk_...) for server-side REST API. Required when `REVENUECAT_ENABLED=true`. Get from RevenueCat Dashboard → Project → API keys. Never expose in client or version control.
 </ParamField>
 
 <ParamField body="REVENUECAT_ENTITLEMENT_PRO" type="string">
-  Entitlement identifier for Pro tier (Polymarket, premium features). Default: `"pro"`
+  Entitlement identifier for Pro tier (Polymarket, premium features). Must match the identifier created in RevenueCat Dashboard → Entitlements. Default: `"pro"`
 </ParamField>
 
 <ParamField body="SUBSCRIPTION_UPGRADE_AMOUNT" type="float">
   Amount in USD for subscription upgrade via x402 (`POST /api/subscriptions/upgrade`). Default: `9.99`
 </ParamField>
 
-**Code Reference**: `app/services/subscription_service.py`, `app/api/subscription_routes.py`
+**Product IDs** used by `POST /api/subscriptions/revenuecat/purchase`: `subscription_upgrade`, `org_admin`, `mobile_app`. Create matching products in RevenueCat and attach them to your entitlement(s). See [RevenueCat Setup](/guides/revenuecat-setup).
+
+**Setup Guide**: [RevenueCat Setup for the Server](/guides/revenuecat-setup)
+
+**Code Reference**: `app/services/revenuecat_service.py`, `app/api/subscription_routes.py`, `app/services/payment_router_service.py`
 
 ---
 

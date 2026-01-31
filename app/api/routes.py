@@ -4,7 +4,7 @@ import logging
 import io
 import json
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query, Request, Form, Body
@@ -5013,6 +5013,32 @@ async def get_portfolio_analytics(
         raise HTTPException(
             status_code=500,
             detail={"status": "error", "message": f"Failed to fetch analytics: {str(e)}"}
+        )
+
+
+@router.get("/analytics/graph-data")
+async def get_graph_data(
+    days: int = Query(30, ge=1, le=365),
+    include_risk: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get Plaid-backed portfolio data aggregated for unified graphs (Week 18). Returns allocation, transaction series, and summary."""
+    from app.services.graph_aggregation_service import (
+        aggregate_graph_data,
+        calculate_metrics,
+        format_graph_data,
+    )
+    try:
+        aggregated = aggregate_graph_data(db, current_user.id, days=days, include_risk=include_risk)
+        metrics = calculate_metrics(aggregated)
+        formatted = format_graph_data(aggregated, metrics)
+        return formatted
+    except Exception as e:
+        logger.warning("Graph data aggregation failed: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": "Failed to fetch graph data"},
         )
 
 
@@ -10095,6 +10121,69 @@ async def list_meetings(
     return [MeetingResponse(**mtg.to_dict()) for mtg in meetings]
 
 
+class CalendarEventItem(BaseModel):
+    """Single calendar event for unified calendar view (meetings + watchlist-derived)."""
+    id: str = Field(..., description="Unique id, e.g. 'meeting-123' or 'watchlist-1-AAPL'")
+    title: str
+    start: str = Field(..., description="ISO 8601 start")
+    end: str = Field(..., description="ISO 8601 end")
+    source: str = Field("meeting", description="'meeting' or 'watchlist'")
+    meeting_id: Optional[int] = None
+    meeting: Optional[Dict[str, Any]] = None
+
+
+class CalendarEventsResponse(BaseModel):
+    """Unified calendar events (meetings + watchlist events)."""
+    events: List[CalendarEventItem] = Field(default_factory=list)
+
+
+@router.get("/calendar/events", response_model=CalendarEventsResponse)
+async def list_calendar_events(
+    start_date: Optional[str] = Query(None, description="Start date filter (ISO 8601)"),
+    end_date: Optional[str] = Query(None, description="End date filter (ISO 8601)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """List unified calendar events (meetings + watchlist-derived). CalendarView can fetch and merge."""
+    query = db.query(Meeting)
+    if current_user.role != "admin":
+        query = query.filter(Meeting.organizer_id == current_user.id)
+    if start_date:
+        try:
+            start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            query = query.filter(Meeting.scheduled_at >= start)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            query = query.filter(Meeting.scheduled_at <= end)
+        except ValueError:
+            pass
+    meetings = query.order_by(Meeting.scheduled_at.asc()).all()
+    out: List[CalendarEventItem] = []
+    for mtg in meetings:
+        d = mtg.to_dict()
+        start_dt = mtg.scheduled_at if hasattr(mtg.scheduled_at, "isoformat") else datetime.fromisoformat(d["scheduled_at"].replace("Z", "+00:00"))
+        if hasattr(start_dt, "isoformat"):
+            start_str = start_dt.isoformat()
+        else:
+            start_str = d["scheduled_at"]
+        end_dt = start_dt + timedelta(minutes=mtg.duration_minutes)
+        end_str = end_dt.isoformat()
+        out.append(CalendarEventItem(
+            id=f"meeting-{mtg.id}",
+            title=mtg.title,
+            start=start_str,
+            end=end_str,
+            source="meeting",
+            meeting_id=mtg.id,
+            meeting=d,
+        ))
+    # Watchlist-derived events (e.g. earnings/dividend dates): stub empty; integrate later
+    return CalendarEventsResponse(events=out)
+
+
 @router.get("/meetings/{meeting_id}", response_model=MeetingResponse)
 async def get_meeting(
     meeting_id: int,
@@ -11417,14 +11506,14 @@ async def list_pending_signups(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """List pending signups (admin only).
+    """List pending signups (instance admin only).
     
     Returns a paginated list of user signups with their profile data.
     """
-    if current_user.role != "admin":
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11483,11 +11572,11 @@ async def get_signup_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Get signup details for a specific user (admin only)."""
-    if current_user.role != "admin":
+    """Get signup details for a specific user (instance admin only)."""
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11536,14 +11625,14 @@ async def approve_signup(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Approve a user signup (admin only).
+    """Approve a user signup (instance admin only).
     
     Activates the user account and sets signup_status to 'approved'.
     """
-    if current_user.role != "admin":
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11630,14 +11719,14 @@ async def reject_signup(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Reject a user signup (admin only).
+    """Reject a user signup (instance admin only).
     
     Sets signup_status to 'rejected' and stores the rejection reason.
     """
-    if current_user.role != "admin":
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
-            detail={"status": "error", "message": "Admin access required"}
+            detail={"status": "error", "message": "Instance admin access required"}
         )
     
     try:
@@ -11700,8 +11789,8 @@ async def verify_signup_certification(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Mark a user's optional FINRA/certification as reviewed by admin (admin only)."""
-    if current_user.role != "admin":
+    """Mark a user's optional FINRA/certification as reviewed by admin (instance admin only)."""
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
         raise HTTPException(
             status_code=403,
             detail={"status": "error", "message": "Admin access required"}

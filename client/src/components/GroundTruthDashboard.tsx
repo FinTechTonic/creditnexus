@@ -28,8 +28,6 @@ import { MapView } from './MapView';
 // LayerControls removed - unused
 import { useFDC3 } from '@/context/FDC3Context';
 import { useLayerStore } from '@/stores/layerStore';
-import { DashboardChatbotPanel } from './DashboardChatbotPanel';
-
 interface LoanAsset {
     id: number;
     loan_id: string;
@@ -469,10 +467,6 @@ export function GroundTruthDashboard() {
                 </div>
             </div>
 
-            {/* Chatbot Panel */}
-            <div className="mt-6">
-                <DashboardChatbotPanel />
-            </div>
         </div>
     );
 }

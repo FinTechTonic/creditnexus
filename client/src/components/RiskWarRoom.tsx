@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Search, RadioTower, AlertTriangle, ShieldCheck, TrendingUp, Zap } from 'lucide-react';
-import { DashboardChatbotPanel } from '@/components/DashboardChatbotPanel';
 
 interface SearchResult {
     score: number;
@@ -245,10 +244,6 @@ export default function RiskWarRoom() {
                 )}
             </div>
 
-            {/* Chatbot Panel */}
-            <div className="mt-6">
-                <DashboardChatbotPanel />
-            </div>
         </div>
     );
 }

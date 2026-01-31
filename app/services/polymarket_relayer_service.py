@@ -137,3 +137,64 @@ def get_transaction(transaction_id: str) -> Dict[str, Any]:
         "proxy_address": data.get("proxyAddress") or data.get("proxy_address"),
         "response": data,
     }
+
+
+def _addr_to_hex(addr: str) -> str:
+    """Normalize address to 0x-prefixed 40-char hex (no 0x prefix stripped for calldata)."""
+    a = (addr or "").strip()
+    if a.startswith("0x"):
+        a = a[2:]
+    return "0x" + a.lower().zfill(40)[-40:]
+
+
+def _erc20_approve_calldata(spender: str, amount_hex: str = "0xff" * 32) -> str:
+    """Build ERC20 approve(spender, amount) calldata. amount_hex default = max uint256."""
+    # approve(address,uint256) selector
+    selector = "0x095ea7b3"
+    spender_padded = _addr_to_hex(spender)
+    # uint256: 32 bytes = 64 hex chars
+    if not amount_hex.startswith("0x"):
+        amount_hex = "0x" + amount_hex
+    amount_padded = amount_hex[2:].zfill(64)[-64:]
+    return f"{selector}{spender_padded[2:]}{amount_padded}"
+
+
+def approve_usdce_for_ctf(proxy_address: str) -> Dict[str, Any]:
+    """
+    Build ERC20 approve(CTF, maxUint256) for USDCe so proxy can use USDCe with CTF.
+    Returns transaction dict { to, data, value } for relayer execute.
+    """
+    # USDCe.approve(CTF_POLYGON, type(uint256).max)
+    return {
+        "to": USDCe_POLYGON,
+        "data": _erc20_approve_calldata(CTF_POLYGON),
+        "value": "0",
+    }
+
+
+def approve_ctf_for_exchange(proxy_address: str) -> Dict[str, Any]:
+    """
+    Build CTF (outcome token) approve(CTF_EXCHANGE, maxUint256) so proxy can trade.
+    Returns transaction dict { to, data, value } for relayer execute.
+    """
+    return {
+        "to": CTF_POLYGON,
+        "data": _erc20_approve_calldata(CTF_EXCHANGE_POLYGON),
+        "value": "0",
+    }
+
+
+def ensure_user_approvals(
+    user_id: int,
+    db: Any,
+    proxy_address: str,
+) -> List[Dict[str, Any]]:
+    """
+    Return list of approval transactions for first-time setup: approve USDCe for CTF,
+    approve CTF for exchange. Frontend or backend can submit these via relayer execute.
+    Does not check on-chain state; returns both so client can run them.
+    """
+    return [
+        approve_usdce_for_ctf(proxy_address),
+        approve_ctf_for_exchange(proxy_address),
+    ]

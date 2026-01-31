@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Loader2, RefreshCw } from 'lucide-react';
+import { TrendingUp, TrendingDown, Loader2, RefreshCw, LineChart, BarChart2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchWithAuth } from '@/context/AuthContext';
 import { resolveApiUrl } from '@/utils/apiBase';
@@ -44,7 +44,25 @@ interface MarketDataState {
   recentTrades: Trade[];
 }
 
-export function MarketData() {
+const MARKET_DATA_SYMBOL_KEY = 'marketDataSelectedSymbol';
+const STOCK_PREDICTION_SYMBOL_KEY = 'stockPredictionSymbol';
+
+interface MarketDataProps {
+  /** When provided, "Run prediction" switches to Predictions tab with current symbol */
+  onRunPrediction?: (symbol: string) => void;
+  /** When provided, "Run backtest" switches to Backtest tab with current symbol */
+  onRunBacktest?: (symbol: string) => void;
+}
+
+export function MarketData({ onRunPrediction, onRunBacktest }: MarketDataProps = {}) {
+  const getInitialSymbol = () => {
+    try {
+      const saved = sessionStorage.getItem(MARKET_DATA_SYMBOL_KEY);
+      return saved && saved.trim() ? saved.trim() : '';
+    } catch {
+      return '';
+    }
+  };
   const [marketData, setMarketData] = useState<MarketDataState>({
     prices: [],
     orderBook: [],
@@ -53,7 +71,7 @@ export function MarketData() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(getInitialSymbol);
 
   const loadMarketData = async () => {
     try {
@@ -79,14 +97,16 @@ export function MarketData() {
         ...data,
         prices: validPrices
       });
-      if (validPrices.length > 0 && !selectedSymbol) {
-        setSelectedSymbol(validPrices[0].symbol);
-      } else if (validPrices.length === 0 && selectedSymbol) {
-        // If current selected symbol is no longer valid, clear selection
-        const stillValid = validPrices.find(p => p.symbol === selectedSymbol);
-        if (!stillValid) {
-          setSelectedSymbol('');
+      if (validPrices.length > 0) {
+        if (!selectedSymbol) {
+          setSelectedSymbol(validPrices[0].symbol);
+        } else {
+          const stillValid = validPrices.find((p) => p.symbol === selectedSymbol);
+          if (!stillValid) setSelectedSymbol(validPrices[0].symbol);
         }
+      }
+      if (validPrices.length === 0 && selectedSymbol) {
+        setSelectedSymbol('');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load market data');
@@ -98,6 +118,17 @@ export function MarketData() {
       });
     }
   };
+
+  // Persist selected symbol to sessionStorage when it changes
+  useEffect(() => {
+    if (selectedSymbol) {
+      try {
+        sessionStorage.setItem(MARKET_DATA_SYMBOL_KEY, selectedSymbol);
+      } catch {
+        // ignore
+      }
+    }
+  }, [selectedSymbol]);
 
   useEffect(() => {
     const initializeMarketData = async () => {
@@ -235,7 +266,45 @@ export function MarketData() {
                       </div>
                     </CardContent>
                   </Card>
-                  <CandleChart symbol={selectedSymbol} timeframe="1D" days={30} height={400} />
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {onRunPrediction && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            try {
+                              sessionStorage.setItem(STOCK_PREDICTION_SYMBOL_KEY, selectedSymbol);
+                            } catch {
+                              // ignore
+                            }
+                            onRunPrediction(selectedSymbol);
+                          }}
+                        >
+                          <LineChart className="h-4 w-4 mr-2" />
+                          Run prediction
+                        </Button>
+                      )}
+                      {onRunBacktest && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            try {
+                              sessionStorage.setItem(STOCK_PREDICTION_SYMBOL_KEY, selectedSymbol);
+                            } catch {
+                              // ignore
+                            }
+                            onRunBacktest(selectedSymbol);
+                          }}
+                        >
+                          <BarChart2 className="h-4 w-4 mr-2" />
+                          Run backtest
+                        </Button>
+                      )}
+                    </div>
+                    <CandleChart symbol={selectedSymbol} timeframe="1D" days={30} height={400} />
+                  </div>
                 </>
               )}
             </div>
