@@ -20,5 +20,28 @@ export {
 } from "./card"
 export { Input, Textarea, inputVariants, type InputProps, type TextareaProps } from "./input"
 
+// New Components
+export { Badge, badgeVariants, type BadgeProps } from "./badge"
+export { Select, selectVariants, type SelectProps, type SelectOption } from "./select"
+export {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogContent,
+  DialogFooter,
+  DialogCloseButton,
+  dialogVariants,
+  type DialogProps,
+} from "./dialog"
+
+// Theme Provider
+export {
+  ThemeProvider,
+  useTheme,
+  ThemeToggle,
+  ThemeSelector,
+} from "./theme-provider"
+
 // Utility
 export { cn } from "./button"
