@@ -1,0 +1,48 @@
+{
+  "name": "creditnexus-autonomous-agent",
+  "version": "1.0.0",
+  "description": "CreditNexus demo: autonomous agent that uses an x402-enabled MCP server to predict tickers, backtest trading strategies, and open bank accounts. Handles 402 Payment Required (pay via Aptos/Ethereum facilitator and retry). LangChain.js ReAct agent with Hugging Face inference (OpenAI-compatible endpoint). Runs with PM2 from repo root.",
+  "type": "module",
+  "scripts": {
+    "setup": "node src/setup.js",
+    "setup:aptos": "node src/setup-aptos.js",
+    "balance": "node src/balance.js",
+    "transfer": "node src/transfer.js",
+    "contract": "node src/contract.js",
+    "swap": "node src/swap.js",
+    "check-update": "node src/check-update.js",
+    "agent": "node src/run-agent.js",
+    "start": "node src/run-agent.js"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/openai": "^0.3.0",
+    "dotenv": "^16.0.0",
+    "langchain": "^0.3.0",
+    "viem": "^2.21.54",
+    "zod": "^3.23.0"
+  },
+  "optionalDependencies": {
+    "@aptos-labs/ts-sdk": "^1.0.0"
+  },
+  "keywords": [
+    "creditnexus",
+    "demo",
+    "autonomous-agent",
+    "x402",
+    "mcp",
+    "langchain",
+    "huggingface",
+    "predict-tickers",
+    "backtest",
+    "open-bank-account",
+    "aptos",
+    "ethereum",
+    "wallet",
+    "evm",
+    "crypto"
+  ],
+  "author": "CreditNexus",
+  "license": "MIT"
+}

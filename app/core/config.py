@@ -423,7 +423,7 @@ class Settings(BaseSettings):
     )
     REVENUECAT_ENTITLEMENT_PRO: str = Field(
         default="pro",
-        description="Entitlement identifier for Pro tier (Polymarket, premium features)"
+        description="Entitlement identifier for Pro tier (RevenueCat REST API; use dashboard ID e.g. entlfa0ee126b6)"
     )
     SURVEILLANCE_REQUIRES_PRO: bool = Field(
         default=True,
@@ -441,6 +441,43 @@ class Settings(BaseSettings):
     ORG_ADMIN_SIGNUP_AMOUNT: Decimal = Field(
         default=Decimal("2.00"),
         description="Amount in USD for organization admin signup subscription via x402"
+    )
+    # Credits = pennies: 1 USD top-up adds this many credits (pennies). Default 100 so 1 credit = 1 cent.
+    CREDITS_PENNIES_PER_USD: int = Field(
+        default=100,
+        ge=1,
+        description="Credits added per 1 USD on credit top-up (1 credit = 1 penny when 100)",
+    )
+    # Credits granted per entitlement / purchase (≈ dollar value in pennies when 100 pennies/USD).
+    ORG_ADMIN_SIGNUP_CREDITS: float = Field(
+        default=200.0,
+        description="Credits granted on org-admin signup ($2 ≈ 200 pennies). Used by RevenueCat purchase and x402 flow.",
+    )
+    SUBSCRIPTION_UPGRADE_CREDITS: float = Field(
+        default=200.0,
+        description="Credits granted on subscription upgrade (web $2 ≈ 200 pennies). Set to SUBSCRIPTION_UPGRADE_AMOUNT * 100 for dollar-equivalent.",
+    )
+    MOBILE_APP_PURCHASE_CREDITS: float = Field(
+        default=360.0,
+        description="Credits granted on mobile app one-time purchase ($3.60 ≈ 360 pennies).",
+    )
+    # Billable feature 402 cost (predictions, people search, green finance, etc.).
+    BILLABLE_FEATURE_COST_USD: Decimal = Field(
+        default=Decimal("0.10"),
+        description="USD amount shown in 402 when credits insufficient for billable features (predictions, agents, etc.).",
+    )
+    # Plaid: cost per API call (dashboard refresh, accounts/balances/transactions). Effective markup = PLAID_COST_USD - your cost.
+    # Already defined above as PLAID_COST_USD (default 0.05). Optional markup: set PLAID_MARKUP_PERCENT to add % on top.
+    PLAID_MARKUP_PERCENT: float = Field(
+        default=0.0,
+        ge=0,
+        description="Optional markup percentage on Plaid cost (e.g. 20 = 20%%). Final charge = PLAID_COST_USD * (1 + PLAID_MARKUP_PERCENT/100).",
+    )
+    # Brokerage fund/withdraw: optional credits fee per transfer.
+    BROKERAGE_TRANSFER_FEE_CREDITS: float = Field(
+        default=0.0,
+        ge=0,
+        description="Credits deducted per brokerage fund or withdrawal (0 = no fee). Enables subscribe-or-pay-as-you-go for transfers.",
     )
 
     # Audio Transcription (STT) Configuration

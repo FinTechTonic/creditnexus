@@ -177,14 +177,16 @@ async def banking_accounts(
     """List accounts from the linked Plaid Item."""
     _plaid_ok()
 
-    # Credits gate: 1 credit per call; cost_usd for 402 (Plaid ~2–10 cents per call)
+    # Credits gate: 1 credit per call; cost_usd for 402 (Plaid cost + optional markup)
     plaid_cost = Decimal(str(getattr(settings, "PLAID_COST_USD", 0.05)))
+    markup = float(getattr(settings, "PLAID_MARKUP_PERCENT", 0)) / 100.0
+    cost_usd = plaid_cost * (1 + Decimal(str(markup)))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="trading",
         amount=1.0,
         feature="plaid_accounts_get",
-        cost_usd=plaid_cost,
+        cost_usd=cost_usd,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         from fastapi.responses import JSONResponse
@@ -207,7 +209,7 @@ async def banking_accounts(
         organization_id=getattr(current_user, "organization_id", None),
         api_endpoint="accounts/get",
         item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
-        cost_usd=float(plaid_cost),
+        cost_usd=float(cost_usd),
         usage_metadata={"source": "banking_accounts"},
     )
     return out
@@ -222,12 +224,14 @@ async def banking_balances(
     _plaid_ok()
 
     plaid_cost = Decimal(str(getattr(settings, "PLAID_COST_USD", 0.05)))
+    markup = float(getattr(settings, "PLAID_MARKUP_PERCENT", 0)) / 100.0
+    cost_usd = plaid_cost * (1 + Decimal(str(markup)))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="trading",
         amount=1.0,
         feature="plaid_balances_get",
-        cost_usd=plaid_cost,
+        cost_usd=cost_usd,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         from fastapi.responses import JSONResponse
@@ -250,7 +254,7 @@ async def banking_balances(
         organization_id=getattr(current_user, "organization_id", None),
         api_endpoint="accounts/balance/get",
         item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
-        cost_usd=float(plaid_cost),
+        cost_usd=float(cost_usd),
         usage_metadata={"source": "banking_balances"},
     )
     return out
@@ -270,12 +274,14 @@ async def banking_transactions(
     _plaid_ok()
 
     plaid_cost = Decimal(str(getattr(settings, "PLAID_COST_USD", 0.05)))
+    markup = float(getattr(settings, "PLAID_MARKUP_PERCENT", 0)) / 100.0
+    cost_usd = plaid_cost * (1 + Decimal(str(markup)))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="trading",
         amount=1.0,
         feature="plaid_transactions_get",
-        cost_usd=plaid_cost,
+        cost_usd=cost_usd,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         from fastapi.responses import JSONResponse
@@ -299,7 +305,7 @@ async def banking_transactions(
         api_endpoint="transactions/get",
         item_id=(conn.connection_data or {}).get("item_id") if isinstance(conn.connection_data, dict) else None,
         account_id=account_id,
-        cost_usd=float(plaid_cost),
+        cost_usd=float(cost_usd),
         usage_metadata={"source": "banking_transactions", "count": count, "offset": offset},
     )
     return out

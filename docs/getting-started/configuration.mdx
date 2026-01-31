@@ -983,7 +983,7 @@ RevenueCat integration enables entitlement checks and subscription upgrades (via
 </ParamField>
 
 <ParamField body="REVENUECAT_ENTITLEMENT_PRO" type="string">
-  Entitlement identifier for Pro tier (Polymarket, premium features). Must match the identifier created in RevenueCat Dashboard → Entitlements. Default: `"pro"`
+  Entitlement identifier for Pro tier. Use the exact identifier from RevenueCat (e.g. `entlfa0ee126b6` for REST API). Must match Dashboard → Entitlements. Default: `"pro"`
 </ParamField>
 
 <ParamField body="SUBSCRIPTION_UPGRADE_AMOUNT" type="float">
@@ -1000,7 +1000,11 @@ RevenueCat integration enables entitlement checks and subscription upgrades (via
 
 ## Rolling Credits & CreditToken Configuration
 
-Rolling credits are subscription-based credits that can optionally be registered on-chain via the CreditToken ERC-721 contract.
+Rolling credits are subscription-based credits that can optionally be registered on-chain via the CreditToken ERC-721 contract. Credits are treated as **pennies** (1 USD top-up adds `CREDITS_PENNIES_PER_USD` credits, default 100).
+
+<ParamField body="CREDITS_PENNIES_PER_USD" type="integer">
+  Credits added per 1 USD on credit top-up (1 credit = 1 penny when 100). Default: `100`
+</ParamField>
 
 <ParamField body="CREDIT_TOKEN_CONTRACT" type="string">
   CreditToken (ERC-721) contract address. Default: `""`

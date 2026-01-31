@@ -32,6 +32,7 @@ from app.models.cdm import ExtractionResult, CreditAgreement
 from app.db import get_db
 from app.db.models import StagedExtraction, ExtractionStatus, Document, DocumentVersion, Workflow, WorkflowState, User, AuditLog, AuditAction, PolicyDecision as PolicyDecisionModel, ClauseCache, LMATemplate, Deal, DealNote, GreenFinanceAssessment
 from app.auth.jwt_auth import get_current_user, require_auth
+from app.core.config import settings
 from app.services.policy_service import PolicyService
 from app.services.x402_payment_service import X402PaymentService
 from app.services.clause_cache_service import ClauseCacheService
@@ -960,13 +961,15 @@ async def research_person(
     - Updates deal timeline
     - Generates audit report
     """
+    billable_cost = getattr(settings, "BILLABLE_FEATURE_COST_USD", Decimal("0.10"))
+    billable_cost = billable_cost if isinstance(billable_cost, Decimal) else Decimal(str(billable_cost))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="universal",
         amount=1.0,
         feature="people_search",
         payment_type=PaymentType.BILLABLE_FEATURE,
-        cost_usd=Decimal("0.10"),
+        cost_usd=billable_cost,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         return billable_402_response(gate)
@@ -4164,7 +4167,7 @@ async def digitizer_chatbot_launch_workflow(
         amount=1.0,
         feature="agent_workflow",
         payment_type=PaymentType.BILLABLE_FEATURE,
-        cost_usd=Decimal("0.10"),
+        cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         return billable_402_response(gate)
@@ -4460,7 +4463,7 @@ async def extract_profile(
             amount=1.0,
             feature="profile_extract",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if not gate.get("ok") and gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -11397,7 +11400,7 @@ async def extract_profile_from_documents(
             amount=1.0,
             feature="profile_extract",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if not gate.get("ok") and gate.get("status_code") == 402:
             return billable_402_response(gate)

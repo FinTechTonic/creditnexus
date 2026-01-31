@@ -84,5 +84,21 @@ module.exports = {
       watch: false,
       autorestart: false,
     },
+    // Autonomous agent (x402 MCP + LangChain.js). Run from repo root: pm2 start ecosystem.config.cjs --only agent-autonomous
+    {
+      name: 'agent-autonomous',
+      script: 'node',
+      args: ['src/run-agent.js'],
+      cwd: path.join(projectRoot, 'demo_mcp', 'autonomous'),
+      interpreter: 'none',
+      env: { NODE_ENV: 'development' },
+      out_file: path.join(logsDir, 'agent-autonomous-out.log'),
+      error_file: path.join(logsDir, 'agent-autonomous-error.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS',
+      merge_logs: false,
+      watch: false,
+      autorestart: false,
+      max_restarts: 0,
+    },
   ],
 };

@@ -104,16 +104,20 @@ def after_funding_settled(
         return {"ok": False, "reason": f"invalid_payment_type: {payment_type}"}
 
     if pt == PaymentType.CREDIT_TOP_UP:
-        amt = float(amount) if amount is not None else float(payment_result.get("amount", 0))
-        if amt <= 0:
+        amt_usd = float(amount) if amount is not None else float(payment_result.get("amount", 0))
+        if amt_usd <= 0:
             return {"ok": False, "reason": "invalid_amount"}
+        # Credits = pennies: 1 USD adds CREDITS_PENNIES_PER_USD credits (default 100)
+        from app.core.config import settings
+        pennies_per_usd = int(getattr(settings, "CREDITS_PENNIES_PER_USD", 100))
+        credits_to_add = amt_usd * pennies_per_usd
         credits_service = RollingCreditsService(db)
         out = credits_service.add_credits(
             user_id=user_id,
             credit_type="universal",
-            amount=amt,
+            amount=credits_to_add,
             feature="credit_top_up",
-            description="Credit top-up",
+            description="Credit top-up (pennies)",
         )
         log_audit_action(
             db=db,
@@ -121,7 +125,7 @@ def after_funding_settled(
             target_type="credit_top_up",
             target_id=None,
             user_id=user_id,
-            metadata={"amount": amt, "payment_type": payment_type},
+            metadata={"amount_usd": amt_usd, "credits_pennies": credits_to_add, "payment_type": payment_type},
         )
         return {"ok": out.get("ok", True), "balance_after": out.get("balance_after")}
 

@@ -59,7 +59,7 @@ async def predict_daily(
             amount=1.0,
             feature="stock_prediction",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -90,7 +90,7 @@ async def predict_hourly(
             amount=1.0,
             feature="stock_prediction",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -121,7 +121,7 @@ async def predict_15min(
             amount=1.0,
             feature="stock_prediction",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if gate.get("status_code") == 402:
             return billable_402_response(gate)

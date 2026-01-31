@@ -257,11 +257,36 @@ async def post_revenuecat_purchase(
         raise HTTPException(status_code=503, detail="RevenueCat is not enabled")
     
     app_user_id = str(current_user.id)
-    
-    # Determine entitlement based on product_id
+
+    # Buy credits only (no entitlement): product_id = credit_top_up_<pennies> e.g. credit_top_up_500
+    if body.product_id.startswith("credit_top_up_"):
+        try:
+            pennies = int(body.product_id.replace("credit_top_up_", "").strip())
+        except ValueError:
+            pennies = 0
+        if pennies <= 0:
+            raise HTTPException(status_code=400, detail="Invalid credit_top_up product_id; use credit_top_up_<pennies> e.g. credit_top_up_500")
+        from app.services.rolling_credits_service import RollingCreditsService
+        credits_service = RollingCreditsService(db)
+        credits_service.add_credits(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=float(pennies),
+            feature="revenuecat_credit_top_up",
+            description="Credit top-up (RevenueCat)",
+        )
+        db.commit()
+        return {
+            "status": "completed",
+            "entitlement_granted": None,
+            "credits_added": pennies,
+            "revenuecat_result": {"success": True},
+        }
+
+    # Determine entitlement based on product_id (subscribe products)
     entitlement_id = None
     duration = "P1M"
-    
+
     if body.product_id == "org_admin":
         entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_ORG_ADMIN", None) or getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
         duration = "P1Y"  # Org admin gets 1 year
@@ -274,66 +299,57 @@ async def post_revenuecat_purchase(
     else:
         entitlement_id = getattr(settings, "REVENUECAT_ENTITLEMENT_PRO", "pro")
         duration = "P1M"
-    
-    # Verify purchase by checking subscriber (RevenueCat SDK handles payment verification)
-    # If transaction_id or purchase_token provided, we could verify more strictly
-    # For now, we trust the SDK and grant entitlement
-    
-    # Grant promotional entitlement
+
+    # Grant promotional entitlement (subscribe products)
     grant_result = revenuecat.grant_promotional_entitlement(
         app_user_id=app_user_id,
         entitlement_id=entitlement_id,
         duration=duration,
     )
-    
+
     if not grant_result.get("success"):
         raise HTTPException(
             status_code=400,
             detail=f"Failed to grant entitlement: {grant_result.get('reason', 'unknown')}",
         )
-    
-    # Optionally allocate credits after successful purchase
+
+    # Allocate credits after successful subscribe purchase
     from app.services.subscription_service import SubscriptionService
-    
+
     try:
         subscription_service = SubscriptionService(db)
-        
-        # For org-admin, mark as paid and ensure user has an organisation
+
         if body.product_id == "org_admin":
             subscription_service.mark_org_admin_paid(
                 user_id=current_user.id,
-                payment_id=None,  # RevenueCat doesn't use our payment_event system
+                payment_id=None,
             )
             subscription_service.ensure_org_for_paying_user(current_user.id)
 
-        # Allocate credits based on product
         from app.services.rolling_credits_service import RollingCreditsService
         credits_service = RollingCreditsService(db)
-        
+
         if body.product_id == "org_admin":
-            # Org admin gets initial credits
             credits_service.add_credits(
                 user_id=current_user.id,
                 credit_type="universal",
-                amount=100.0,  # Initial credits for org admin
+                amount=float(getattr(settings, "ORG_ADMIN_SIGNUP_CREDITS", 200)),
                 feature="org_admin_signup",
                 description="Org admin signup credits",
             )
         elif body.product_id == "subscription_upgrade":
-            # Subscription upgrade gets credits
             credits_service.add_credits(
                 user_id=current_user.id,
                 credit_type="universal",
-                amount=50.0,  # Monthly subscription credits
+                amount=float(getattr(settings, "SUBSCRIPTION_UPGRADE_CREDITS", 200)),
                 feature="subscription_upgrade",
                 description="Subscription upgrade credits",
             )
         elif body.product_id == "mobile_app":
-            # Mobile app purchase: one-time credits (tier equivalent)
             credits_service.add_credits(
                 user_id=current_user.id,
                 credit_type="universal",
-                amount=float(getattr(settings, "MOBILE_APP_PURCHASE_CREDITS", 50)),
+                amount=float(getattr(settings, "MOBILE_APP_PURCHASE_CREDITS", 360)),
                 feature="mobile_app_purchase",
                 description="Mobile app purchase credits",
             )
@@ -342,8 +358,7 @@ async def post_revenuecat_purchase(
     except Exception as e:
         logger.error(f"Failed to allocate credits after RevenueCat purchase: {e}", exc_info=True)
         db.rollback()
-        # Don't fail the request if credit allocation fails
-    
+
     return {
         "status": "completed",
         "entitlement_granted": entitlement_id,

@@ -877,8 +877,8 @@ export function UserSettings() {
                   <Coins className="h-5 w-5 text-slate-400" />
                   Add credits
                 </CardTitle>
-                <CardDescription>
-                  Top up rolling credits to use billable features. Pay with MetaMask, facilitator, or RevenueCat.
+                  <CardDescription>
+                  Top up rolling credits (pennies): 1 USD = 100 pennies. Pay with MetaMask, facilitator, or RevenueCat.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -886,7 +886,7 @@ export function UserSettings() {
                   <Input
                     type="text"
                     inputMode="decimal"
-                    placeholder="Amount (USD)"
+                    placeholder="Amount (USD) — 1 USD = 100 pennies"
                     value={creditsAmount}
                     onChange={(e) => setCreditsAmount(e.target.value)}
                     className="max-w-[140px]"
