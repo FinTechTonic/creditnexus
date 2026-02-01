@@ -12,21 +12,21 @@ import { z } from 'zod';
  */
 export function createMcpTools(mcpClient) {
   const run_prediction = tool(
-    async ({ symbol, horizon, strategy }) => {
+    async ({ symbol, horizon }) => {
+      console.log(`Calling run_prediction: symbol=${symbol}, horizon=${horizon}`);
       const out = await mcpClient.callTool('run_prediction', {
         symbol: symbol || 'AAPL',
         horizon: horizon ?? 30,
-        strategy: strategy || 'chronos',
       });
+      console.log('MCP response:', JSON.stringify(out, null, 2));
       return typeof out?.result === 'object' ? JSON.stringify(out.result) : JSON.stringify(out);
     },
     {
       name: 'run_prediction',
-      description: 'Run stock prediction for a ticker. Returns prediction result. Costs ~6¢ (Aptos). Use for daily/hourly/15m predictions.',
+      description: 'Run stock prediction for a ticker. Returns prediction result. Costs ~6¢ (Aptos).',
       schema: z.object({
         symbol: z.string().describe('Stock symbol (e.g. AAPL)'),
         horizon: z.number().optional().describe('Prediction horizon in days'),
-        strategy: z.string().optional().describe('Strategy e.g. chronos, technical'),
       }),
     }
   );
