@@ -1,5 +1,6 @@
 """Remote profile service for managing remote app profiles."""
 
+import hashlib
 import logging
 import secrets
 from typing import Optional, List
@@ -13,6 +14,11 @@ from app.db.models import RemoteAppProfile
 logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Bcrypt has a 72-byte limit. Always pre-hash API keys with SHA-256 so bcrypt never sees >72 bytes.
+def _key_digest(api_key: str) -> str:
+    """SHA-256 hex digest of API key; always ≤64 bytes, safe for bcrypt."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
 
 class RemoteProfileService:
@@ -60,8 +66,9 @@ class RemoteProfileService:
         if not api_key:
             api_key = secrets.token_urlsafe(32)
 
-        # Hash the API key
-        api_key_hash = pwd_context.hash(api_key)
+        # Hash the API key (pre-hash with SHA-256 so bcrypt never gets >72 bytes)
+        to_hash = _key_digest(api_key)
+        api_key_hash = pwd_context.hash(to_hash)
 
         profile = RemoteAppProfile(
             profile_name=profile_name,
@@ -90,8 +97,13 @@ class RemoteProfileService:
             RemoteAppProfile if valid, None otherwise
         """
         profiles = self.db.query(RemoteAppProfile).filter(RemoteAppProfile.is_active == True).all()
+        digest = _key_digest(api_key)
 
         for profile in profiles:
+            if pwd_context.verify(digest, profile.api_key_hash):
+                logger.debug(f"API key validated for profile: {profile.profile_name}")
+                return profile
+            # Backward compatibility: existing profiles may have been hashed with raw key
             if pwd_context.verify(api_key, profile.api_key_hash):
                 logger.debug(f"API key validated for profile: {profile.profile_name}")
                 return profile
@@ -273,9 +285,10 @@ class RemoteProfileService:
         if not profile:
             raise ValueError(f"Profile {profile_id} not found")
 
-        # Generate new API key
+        # Generate new API key (pre-hash so bcrypt never gets >72 bytes)
         new_api_key = secrets.token_urlsafe(32)
-        profile.api_key_hash = pwd_context.hash(new_api_key)
+        to_hash = _key_digest(new_api_key)
+        profile.api_key_hash = pwd_context.hash(to_hash)
         profile.updated_at = datetime.utcnow()
 
         self.db.commit()

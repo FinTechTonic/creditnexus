@@ -1,15 +1,19 @@
 """Brokerage API: Alpaca account opening (apply, status, documents)."""
 
 import logging
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_auth import require_auth
 from app.core.config import settings
 from app.db import get_db
+from app.models.cdm_payment import PaymentType
+from app.services.payment_gateway_service import PaymentGatewayService, billable_402_response
 from app.db.models import User, AlpacaCustomerAccount
 from app.db.models import AuditAction
 from app.services.entitlement_service import has_org_unlocked
@@ -441,18 +445,36 @@ async def brokerage_link_bank_for_funding(
     return result
 
 
+def _brokerage_transfer_fee_credits() -> float:
+    """Credits required per fund/withdraw when BROKERAGE_TRANSFER_FEE_CREDITS > 0."""
+    return float(getattr(settings, "BROKERAGE_TRANSFER_FEE_CREDITS", 0))
+
+
 @router.post("/fund", response_model=Dict[str, Any])
 async def brokerage_fund(
     body: FundRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Fund brokerage account from linked bank (ACH INCOMING)."""
+    """Fund brokerage account from linked bank (ACH INCOMING). Optional credits fee per transfer (BROKERAGE_TRANSFER_FEE_CREDITS)."""
     if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
         raise HTTPException(
             status_code=402,
             detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
         )
+    fee = _brokerage_transfer_fee_credits()
+    if fee > 0:
+        cost_usd = Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1)))
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=fee,
+            feature="brokerage_fund",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=cost_usd,
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return JSONResponse(status_code=402, content=gate)
     result = fund_account(db, current_user.id, body.amount, body.relationship_id)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -465,12 +487,25 @@ async def brokerage_withdraw(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Withdraw from brokerage account to linked bank (ACH OUTGOING)."""
+    """Withdraw from brokerage account to linked bank (ACH OUTGOING). Optional credits fee per transfer (BROKERAGE_TRANSFER_FEE_CREDITS)."""
     if not has_org_unlocked(current_user, getattr(current_user, "organization_id", None), db):
         raise HTTPException(
             status_code=402,
             detail={"status": "error", "message": _ORG_UNLOCK_402_MESSAGE},
         )
+    fee = _brokerage_transfer_fee_credits()
+    if fee > 0:
+        cost_usd = Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1)))
+        gate = await PaymentGatewayService(db).require_credits_or_402(
+            user_id=current_user.id,
+            credit_type="universal",
+            amount=fee,
+            feature="brokerage_withdraw",
+            payment_type=PaymentType.BILLABLE_FEATURE,
+            cost_usd=cost_usd,
+        )
+        if not gate.get("ok") and gate.get("status_code") == 402:
+            return JSONResponse(status_code=402, content=gate)
     result = withdraw_from_account(db, current_user.id, body.amount, body.relationship_id)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])

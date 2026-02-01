@@ -107,3 +107,5 @@ zap-report.json
 zap-report.html
 security-summary.md
 security-reports/
+.claude/
+.tmp/

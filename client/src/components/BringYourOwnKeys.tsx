@@ -162,7 +162,7 @@ export function BringYourOwnKeys() {
         return;
       }
       setSuccess('Polymarket credentials saved.');
-      setPolymarket({ api_key: '', secret: '', passphrase: '' });
+      setPolymarket({ api_key: '', secret: '', passphrase: '', funder_address: '' });
       await fetchByokState();
     } catch {
       setError('Failed to save Polymarket credentials.');

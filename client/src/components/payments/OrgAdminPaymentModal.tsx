@@ -104,7 +104,7 @@ export function OrgAdminPaymentModal({ open, onClose, onPaid, canBypass = false,
           wallet_address: account,
           user_id: user?.id,
         },
-        facilitator_url: facilitatorUrl,
+        facilitator_url: facilitatorUrl ?? undefined,
       };
 
       const result = await processPayment('/api/subscriptions/org-admin/upgrade', paymentReq, {

@@ -1,0 +1,51 @@
+"""
+Configuration module for CreditNexus MCP Server
+"""
+
+from demo_mcp.server.config.settings import (
+    CREDITNEXUS_URL,
+    SERVICE_KEY,
+    X402_FACILITATOR_URL,
+    X402_EVM_FACILITATOR_URL,
+    AGENT_ALLOWLIST,
+    PAY_TO_ALLOWLIST,
+    get_agent_allowlist,
+    get_pay_to_allowlist,
+    APTOS_NETWORK,
+    APTOS_USDC_ASSET,
+    APTOS_PAYTO_ADDRESS,
+    BASE_SEPOLIA_NETWORK,
+    BASE_SEPOLIA_USDC,
+    BASE_SEPOLIA_PAYTO,
+    MAX_TIMEOUT_SECONDS,
+    PRICE_PREDICTION_USD,
+    PRICE_BACKTEST_USD,
+    PRICE_BANKING_USD,
+    PRICE_SCORE_USD,
+    PORT,
+    ONRAMP_URL,
+)
+
+__all__ = [
+    'CREDITNEXUS_URL',
+    'SERVICE_KEY',
+    'X402_FACILITATOR_URL',
+    'X402_EVM_FACILITATOR_URL',
+    'AGENT_ALLOWLIST',
+    'PAY_TO_ALLOWLIST',
+    'get_agent_allowlist',
+    'get_pay_to_allowlist',
+    'APTOS_NETWORK',
+    'APTOS_USDC_ASSET',
+    'APTOS_PAYTO_ADDRESS',
+    'BASE_SEPOLIA_NETWORK',
+    'BASE_SEPOLIA_USDC',
+    'BASE_SEPOLIA_PAYTO',
+    'MAX_TIMEOUT_SECONDS',
+    'PRICE_PREDICTION_USD',
+    'PRICE_BACKTEST_USD',
+    'PRICE_BANKING_USD',
+    'PRICE_SCORE_USD',
+    'PORT',
+    'ONRAMP_URL',
+]

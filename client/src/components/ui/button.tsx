@@ -47,11 +47,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const ariaLabel = isIconOnly && !props['aria-label'] ? 'Icon button' : props['aria-label']
 
     if (asChild && React.Children.count(children) === 1 && React.isValidElement(children)) {
-      return React.cloneElement(children as React.ReactElement<{ className?: string; ref?: React.Ref<unknown> }>, {
-        className: cn((children as React.ReactElement).props?.className, computedClassName),
-        ref,
+      const child = children as React.ReactElement<{ className?: string }>;
+      return React.cloneElement(child, {
+        className: cn(child.props?.className, computedClassName),
         ...(ariaLabel != null && { 'aria-label': ariaLabel }),
-      })
+      } as React.Attributes)
     }
 
     return (

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_auth import get_current_user, require_auth
+from app.auth.service_auth import get_user_for_api
 from app.core.config import settings
 from app.db import get_db
 from app.db.models import User
@@ -47,11 +48,11 @@ async def predict_daily(
     strategy: str = Query("chronos", pattern="^(chronos|technical)$"),
     model_id: Optional[str] = Query(None, description="Chronos model (e.g. amazon/chronos-t5-small, amazon/chronos-t5-base)"),
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user),
+    user: User = Depends(get_user_for_api),
 ) -> dict:
     _stock_prediction_enabled()
     svc = _get_prediction_service(db, user)
-    result = svc.predict_daily(symbol, user_id=user.id if user else None, lookback=lookback, horizon=horizon, strategy=strategy, model_id=model_id)
+    result = svc.predict_daily(symbol, user_id=user.id, lookback=lookback, horizon=horizon, strategy=strategy, model_id=model_id)
     if result.get("error") == "insufficient_credits" and user:
         gate = await PaymentGatewayService(db).require_credits_or_402(
             user_id=user.id,
@@ -59,7 +60,7 @@ async def predict_daily(
             amount=1.0,
             feature="stock_prediction",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -78,11 +79,11 @@ async def predict_hourly(
     strategy: str = Query("chronos", pattern="^(chronos|technical)$"),
     model_id: Optional[str] = Query(None, description="Chronos model (e.g. amazon/chronos-t5-small, amazon/chronos-t5-base)"),
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user),
+    user: User = Depends(get_user_for_api),
 ) -> dict:
     _stock_prediction_enabled()
     svc = _get_prediction_service(db, user)
-    result = svc.predict_hourly(symbol, user_id=user.id if user else None, lookback=lookback, horizon=horizon, strategy=strategy, model_id=model_id)
+    result = svc.predict_hourly(symbol, user_id=user.id, lookback=lookback, horizon=horizon, strategy=strategy, model_id=model_id)
     if result.get("error") == "insufficient_credits" and user:
         gate = await PaymentGatewayService(db).require_credits_or_402(
             user_id=user.id,
@@ -90,7 +91,7 @@ async def predict_hourly(
             amount=1.0,
             feature="stock_prediction",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -121,7 +122,7 @@ async def predict_15min(
             amount=1.0,
             feature="stock_prediction",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -142,7 +143,11 @@ class BacktestRequest(BaseModel):
 
 
 @router.post("/backtest")
-def backtest(body: BacktestRequest, db: Session = Depends(get_db)) -> dict:
+def backtest(
+    body: BacktestRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_user_for_api),
+) -> dict:
     _stock_prediction_enabled()
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=365)

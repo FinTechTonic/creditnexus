@@ -165,7 +165,7 @@ export function SurveillanceAlertsPanel() {
       <Card className="border-destructive">
         <CardContent className="pt-6">
           <p className="text-destructive">{error}</p>
-          <Button variant="outline" size="sm" className="mt-2" onClick={load}>Retry</Button>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => load()}>Retry</Button>
         </CardContent>
       </Card>
     );
@@ -201,8 +201,8 @@ export function SurveillanceAlertsPanel() {
               <SelectItem value="no">Not reviewed</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>Refresh</Button>
-          <Button size="sm" onClick={runCycle} disabled={runCycleLoading}>
+          <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>Refresh</Button>
+          <Button size="sm" onClick={() => runCycle()} disabled={runCycleLoading}>
             {runCycleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             <span className="ml-1">Run cycle</span>
           </Button>

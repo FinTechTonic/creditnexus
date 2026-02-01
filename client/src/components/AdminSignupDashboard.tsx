@@ -858,9 +858,9 @@ export function AdminSignupDashboard() {
                         </Button>
                       )}
                     </div>
-                    {certReviewedAt && (
+                    {certReviewedAt != null && (
                       <p className="text-xs text-emerald-400 mb-2">
-                        Reviewed {new Date(String(certReviewedAt)).toLocaleString()}
+                        Reviewed {String(new Date(String(certReviewedAt)).toLocaleString())}
                       </p>
                     )}
                     {certs.length > 0 && (
@@ -935,7 +935,7 @@ export function AdminSignupDashboard() {
                   </div>
                   {signupDetails?.kyc_verification && (
                     <div className="text-xs text-slate-400 mb-2">
-                      KYC status: {(signupDetails.kyc_verification as Record<string, unknown>).kyc_status ?? '—'}
+                      KYC status: {String((signupDetails.kyc_verification as Record<string, unknown>)?.kyc_status ?? '—')}
                     </div>
                   )}
                   {signupDetails?.kyc_documents && signupDetails.kyc_documents.length > 0 && (

@@ -41,17 +41,57 @@ Add the **products** you plan to sell (e.g. monthly subscription, org-admin one-
 
 An **entitlement** represents a level of access (e.g. “Pro”) that you grant when a customer purchases a product.
 
-1. In the RevenueCat dashboard, go to **Entitlements**.
-2. **Create** an entitlement, e.g. identifier: **`pro`** (this must match `REVENUECAT_ENTITLEMENT_PRO` on the server).
-3. Attach your **products** (from each store) to this entitlement.
+1. In the RevenueCat dashboard, go to **Product catalog** → **Entitlements**.
+2. **Create** an entitlement. The **identifier** is what the server uses in the REST API (e.g. **`entlfa0ee126b6`** — use the exact value shown in the dashboard).
+3. Set **`REVENUECAT_ENTITLEMENT_PRO`** in `.env` to this exact identifier (e.g. `entlfa0ee126b6`).
+4. **Attach** your products (from the linked store) to this entitlement.
 
-The server checks and grants this entitlement by identifier (e.g. `pro`).
+The server calls `GET /v1/subscribers/{app_user_id}` and `POST .../entitlements/{entitlement_identifier}/promotional` using this identifier.
 
-### 2.4 Create an offering (optional)
+### 2.4 Products to add: subscribe + buy credits
 
-An **offering** is a set of products you show on a paywall. Create one and attach your products so the SDK can present a paywall. The server does not require a specific offering; it only needs the entitlement identifier.
+The server expects these **product_id** values when the client calls `POST /api/subscriptions/revenuecat/purchase`. Create products in your linked store (sandbox and/or production) and map them as below.
 
-### 2.5 Configure a paywall (optional)
+**Subscribe (entitlement + credits)**
+
+| product_id (client sends) | Use case | Server behavior |
+|---------------------------|----------|------------------|
+| `subscription_upgrade`    | Monthly Pro subscription | Grant Pro entitlement P1M + `SUBSCRIPTION_UPGRADE_CREDITS` (default 200 pennies) |
+| `org_admin`               | Organization admin signup ($2) | Grant Pro (or org-admin) P1Y + mark org paid + `ORG_ADMIN_SIGNUP_CREDITS` (default 200) |
+| `mobile_app`              | Mobile one-time purchase (~$3.60) | Grant Pro P1Y + `MOBILE_APP_PURCHASE_CREDITS` (default 360) |
+
+- In RevenueCat **Products**: create or import from your store (e.g. Stripe, Paddle, App Store) products that map to these. The **store** product identifier can be anything; the **client** must send the `product_id` above when calling the CreditNexus server after purchase.
+- **Attach** these three products to your **Pro entitlement** (e.g. `entlfa0ee126b6`).
+
+**Buy credits (credits only, no entitlement)**
+
+| product_id (client sends) | Use case | Server behavior |
+|---------------------------|----------|------------------|
+| `credit_top_up_100`       | $1 worth of credits (100 pennies) | Add 100 credits (universal); no entitlement grant |
+| `credit_top_up_500`       | $5 worth (500 pennies) | Add 500 credits |
+| `credit_top_up_1000`      | $10 worth (1000 pennies) | Add 1000 credits |
+| `credit_top_up_<N>`       | Any N pennies | Add N credits |
+
+- Create **consumable or one-time** products in your store (e.g. “100 credits”, “500 credits”, “1000 credits”) and map them to `credit_top_up_100`, `credit_top_up_500`, `credit_top_up_1000`. The client sends that `product_id` after purchase; the server adds that many credits (pennies).
+- **Do not** attach credit-pack products to the Pro entitlement; the server only adds credits and does not grant entitlement for these.
+
+**Summary: RevenueCat store setup**
+
+1. **Entitlements**: One entitlement, e.g. identifier `entlfa0ee126b6` (Pro).
+2. **Products (store)**: Create in your linked store:
+   - **Subscribe**: e.g. “Pro Monthly”, “Org Admin ($2)”, “Mobile Unlock” → map to `subscription_upgrade`, `org_admin`, `mobile_app`. Attach all three to the Pro entitlement.
+   - **Buy credits**: e.g. “100 credits”, “500 credits”, “1000 credits” → map to `credit_top_up_100`, `credit_top_up_500`, `credit_top_up_1000`. Do not attach to entitlement.
+3. **Offerings**: Create at least one offering (e.g. **default**) and add **packages**:
+   - Packages for subscribe: subscription_upgrade, org_admin, mobile_app.
+   - Packages for buy credits: credit_top_up_100, credit_top_up_500, credit_top_up_1000 (or more packs as you like).
+   - You can use one offering with all packages, or two offerings (e.g. “default” = subscription, “credits” = credit packs). Set one as **current** for the paywall.
+4. **Paywall**: Use RevenueCat Paywalls (or your own UI) to show “Subscribe” and “Buy credits” options. After any purchase, the client calls `POST /api/subscriptions/revenuecat/purchase` with the corresponding `product_id`.
+
+### 2.5 Create an offering
+
+An **offering** is a set of products you show on a paywall. Create at least one offering (e.g. **default**) and add **packages** that reference your products. The server does not require a specific offering ID; the SDK uses offerings to display the paywall. Set the offering as **current** if you use a single default.
+
+### 2.6 Configure a paywall (optional)
 
 Use RevenueCat **Paywalls** to build the purchase UI remotely. The CreditNexus web app can still use x402 for web payments; the paywall is most useful for native (iOS/Android) or when you use RevenueCat’s paywall UI.
 
@@ -79,14 +119,14 @@ In the **project root** `.env`:
 # RevenueCat
 REVENUECAT_ENABLED=true
 REVENUECAT_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-REVENUECAT_ENTITLEMENT_PRO=pro
+REVENUECAT_ENTITLEMENT_PRO=entlfa0ee126b6
 ```
 
 | Variable | Description |
 |----------|-------------|
 | `REVENUECAT_ENABLED` | Set to `true` to enable entitlement checks and promotional grants. |
 | `REVENUECAT_API_KEY` | **Secret** API key (sk_...). Required when `REVENUECAT_ENABLED=true`. |
-| `REVENUECAT_ENTITLEMENT_PRO` | Entitlement identifier (e.g. `pro`). Must match the identifier created in the RevenueCat dashboard. |
+| `REVENUECAT_ENTITLEMENT_PRO` | Entitlement identifier (e.g. `entlfa0ee126b6`). Must match the identifier in RevenueCat Dashboard → Entitlements. |
 
 Optional:
 
@@ -126,15 +166,17 @@ When a user completes an x402 payment (e.g. subscription upgrade or org-admin si
 When the user pays **in-app** (RevenueCat SDK), the client should call the CreditNexus server so the server can grant access and allocate credits:
 
 - **Endpoint**: `POST /api/subscriptions/revenuecat/purchase`
-- **Body**: `{ "product_id": "subscription_upgrade" | "org_admin" | "mobile_app", "transaction_id": "...", "purchase_token": "..." }` (transaction_id and purchase_token optional but useful for verification).
+- **Body**: `{ "product_id": "subscription_upgrade" | "org_admin" | "mobile_app" | "credit_top_up_500", "transaction_id": "...", "purchase_token": "..." }` (transaction_id and purchase_token optional).
 
-The server uses the **product_id** to choose entitlement and duration, then calls `RevenueCatService.grant_promotional_entitlement()` and allocates credits (e.g. org_admin, subscription_upgrade, mobile_app). The server does **not** re-verify the receipt with RevenueCat in the current implementation; it trusts the client to have completed the purchase via the SDK. For stricter security you could add server-side receipt validation.
+The server uses **product_id** to either grant entitlement + credits (subscribe) or only add credits (buy credits). The server does **not** re-verify the receipt with RevenueCat in the current implementation; it trusts the client to have completed the purchase via the SDK. For stricter security you could add server-side receipt validation.
 
 ---
 
 ## 6. Product IDs the server expects
 
-When calling `POST /api/subscriptions/revenuecat/purchase`, the server maps **product_id** as follows:
+When calling `POST /api/subscriptions/revenuecat/purchase`, the server handles **product_id** as follows:
+
+**Subscribe (entitlement + credits)**
 
 | product_id | Entitlement | Duration | Use case |
 |------------|-------------|----------|----------|
@@ -142,7 +184,13 @@ When calling `POST /api/subscriptions/revenuecat/purchase`, the server maps **pr
 | `org_admin` | `REVENUECAT_ENTITLEMENT_ORG_ADMIN` or `REVENUECAT_ENTITLEMENT_PRO` | P1Y (1 year) | Org-admin signup payment. |
 | `mobile_app` | `REVENUECAT_ENTITLEMENT_PRO` | P1Y | Mobile app one-time purchase; server allocates `MOBILE_APP_PURCHASE_CREDITS`. |
 
-Create **products** in RevenueCat (and in each store) with these **identifiers** (or align your client to send these product_id values when calling the server).
+**Buy credits (credits only, no entitlement)**
+
+| product_id | Server behavior |
+|------------|------------------|
+| `credit_top_up_<N>` (e.g. `credit_top_up_100`, `credit_top_up_500`, `credit_top_up_1000`) | Add N credits (pennies) to the user; no entitlement grant. |
+
+Create **products** in RevenueCat (and in each store) that map to these **product_id** values (or align your client to send these when calling the server).
 
 ---
 
@@ -151,24 +199,53 @@ Create **products** in RevenueCat (and in each store) with these **identifiers**
 | Flow | Client | Server |
 |------|--------|--------|
 | **Web (x402)** | User pays via x402; server receives payment and optionally grants RevenueCat entitlement. | `POST /api/subscriptions/upgrade` or `POST /api/subscriptions/org-admin/upgrade`; after settle, `after_subscription_payment()` grants entitlement. |
-| **Mobile (RevenueCat SDK)** | User purchases in-app; client calls CreditNexus server with product_id. | `POST /api/subscriptions/revenuecat/purchase` with product_id; server grants entitlement and allocates credits. |
+| **Mobile / Web (RevenueCat SDK)** | User subscribes or buys credits in-app; client calls CreditNexus server with product_id. | `POST /api/subscriptions/revenuecat/purchase` with product_id; server grants entitlement + credits (subscribe) or only adds credits (credit_top_up_*). |
 
 When RevenueCat is enabled, 402 responses from the server can include `revenuecat_available: true` and `revenuecat_endpoint: "/api/subscriptions/revenuecat/purchase"` so the client knows it can offer an in-app purchase path.
 
 ---
 
-## 8. Troubleshooting
+## 8. Alignment: RevenueCat, Plaid, and MetaMask
+
+All paywalled flows use the same pattern: **credits first**, then **402 payment required** if insufficient. Payment can be completed via **MetaMask** (x402), **facilitator**, or **RevenueCat** (in-app / card).
+
+| Flow | Credits / entitlement | If insufficient | Payment options |
+|------|------------------------|-----------------|-----------------|
+| **Billable feature** (predictions, agents, green finance, etc.) | `require_credits_or_402` spends rolling credits (pennies). | 402 with `payment_request`; `revenuecat_available` when RevenueCat enabled. | MetaMask (x402), facilitator, or RevenueCat (client calls `POST /api/subscriptions/revenuecat/purchase` with product_id for subscription/org_admin; credit top-up uses `POST /api/credits/top-up` with x402). |
+| **Credit top-up** | User must have org unlocked (subscription or credits). | 402 with payment_request. | MetaMask (x402), facilitator. Amount in USD; server adds **credits = pennies** (1 USD = 100 by default, `CREDITS_PENNIES_PER_USD`). |
+| **Subscription upgrade / org-admin** | N/A (user is paying to get access). | 402 with payment_request; `revenuecat_available` and `revenuecat_endpoint`. | MetaMask (x402), facilitator, or RevenueCat (client sends product_id `subscription_upgrade` or `org_admin` after in-app purchase). |
+| **Plaid (banking)** | Banking routes use `require_credits_or_402` with `BILLABLE_FEATURE`; 1 credit per call (or cost in USD in 402). | 402; user pays via MetaMask/RevenueCat or tops up credits. | Same as billable feature. Plaid does not "pay" directly — user consumes credits or completes 402. |
+
+**Business model: subscribe or pay-as-you-go**
+
+- **Subscribe**: User pays once (e.g. $2 web, ~$3.60 mobile); server grants entitlement and credits (`ORG_ADMIN_SIGNUP_CREDITS`, `SUBSCRIPTION_UPGRADE_CREDITS`, `MOBILE_APP_PURCHASE_CREDITS`). Credits ≈ dollar value (e.g. 200 pennies = $2, 360 = $3.60).
+- **Pay-as-you-go**: User tops up credits via `POST /api/credits/top-up` (MetaMask/facilitator or RevenueCat). Services (dashboard refresh = Plaid accounts/balances/transactions, predictions, agents, green finance, brokerage fund/withdraw) cost credits; if insufficient, 402 with payment options (MetaMask, RevenueCat).
+- **Plaid markup**: `PLAID_COST_USD` is the base cost per API call; `PLAID_MARKUP_PERCENT` adds a percentage (e.g. 20 = 20% markup). Final charge in 402 = `PLAID_COST_USD * (1 + PLAID_MARKUP_PERCENT/100)`.
+- **Brokerage transfers**: Optional `BROKERAGE_TRANSFER_FEE_CREDITS` (0 = no fee). When > 0, each fund/withdraw deducts that many credits (subscribe or pay-as-you-go).
+
+**What to configure:**
+
+1. **RevenueCat**: One entitlement (e.g. `entlfa0ee126b6`), three products attached (`subscription_upgrade`, `org_admin`, `mobile_app`), one offering with packages. Set `REVENUECAT_ENTITLEMENT_PRO=entlfa0ee126b6` in `.env`.
+2. **Credits = pennies**: Set `CREDITS_PENNIES_PER_USD=100` (default) so 1 USD top-up adds 100 credits (pennies). Set `ORG_ADMIN_SIGNUP_CREDITS`, `SUBSCRIPTION_UPGRADE_CREDITS`, `MOBILE_APP_PURCHASE_CREDITS` for credits granted per purchase (defaults 200, 200, 360).
+3. **Billable cost**: `BILLABLE_FEATURE_COST_USD` (default 0.10) is the USD amount shown in 402 for predictions, agents, green finance when credits are insufficient.
+4. **x402 / MetaMask**: Configure `X402_ENABLED`, `X402_FACILITATOR_URL`, `X402_NETWORK`, `X402_TOKEN` for web/MetaMask payments.
+5. **Plaid**: Configure `PLAID_*` for linking; `PLAID_COST_USD` is the base cost per call; `PLAID_MARKUP_PERCENT` adds markup. Banking (dashboard refresh) uses the same credit/402 flow.
+6. **Brokerage**: `BROKERAGE_TRANSFER_FEE_CREDITS` (default 0) = credits per fund/withdraw; 0 = no fee.
+
+---
+
+## 9. Troubleshooting
 
 | Symptom | Check |
 |---------|--------|
-| Entitlement always false | `REVENUECAT_ENABLED=true`, `REVENUECAT_API_KEY=sk_...` set in project root `.env`. Entitlement identifier in dashboard matches `REVENUECAT_ENTITLEMENT_PRO`. User identified in RevenueCat with same `app_user_id` (CreditNexus user ID). |
+| Entitlement always false | `REVENUECAT_ENABLED=true`, `REVENUECAT_API_KEY=sk_...` set in project root `.env`. Entitlement identifier in dashboard (e.g. `entlfa0ee126b6`) matches `REVENUECAT_ENTITLEMENT_PRO`. User identified in RevenueCat with same `app_user_id` (CreditNexus user ID). |
 | 503 RevenueCat not enabled | Set `REVENUECAT_ENABLED=true` and restart the server. |
 | Grant entitlement fails | Verify Secret API key has permission to grant entitlements. Check dashboard **API keys** and that the key is **Secret** (sk_). Check server logs for RevenueCat API error message. |
 | Mobile purchase not reflected | Ensure client calls `POST /api/subscriptions/revenuecat/purchase` with the correct `product_id` after purchase, and that the user is logged in (so `current_user.id` matches the RevenueCat app_user_id). |
 
 ---
 
-## 9. References
+## 10. References
 
 - **RevenueCat**: [Getting Started](https://www.revenuecat.com/docs/getting-started/installation/expo), [Projects & Authentication](https://www.revenuecat.com/docs/projects/authentication), [Products Setup](https://www.revenuecat.com/docs/offerings/products/setup-index)
 - **CreditNexus configuration**: [Configuration — RevenueCat](/getting-started/configuration#revenuecat-configuration)

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Clock, AlertCircle, ShieldCheck, Loader2, Upload, ExternalLink } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ShieldCheck, Loader2, ExternalLink } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
 
 interface KYCVerificationStepProps {

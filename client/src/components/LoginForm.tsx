@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { X, Eye, EyeOff, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -46,20 +46,20 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
     clearError();
 
     try {
-      let success = false;
+      let success: boolean | { waitlist: true; message: string } = false;
       if (mode === 'login') {
         success = await login({ email, password });
       } else {
-        success = await register({ 
-          email, 
-          password, 
+        success = await register({
+          email,
+          password,
           display_name: displayName,
           organization_identifier: organizationIdentifier || undefined
         });
       }
-      
+
       if (success) {
-        if (typeof success === 'object' && success.waitlist) {
+        if (typeof success === 'object' && 'waitlist' in success && success.waitlist) {
           setWaitlistMessage(success.message || 'You have been added to the waitlist. An administrator will review your signup.');
           return;
         }
@@ -290,7 +290,20 @@ export function LoginForm({ isOpen, onClose }: LoginFormProps) {
             </div>
           )}
 
-          <div className="mt-6 pt-6 border-t border-slate-700">
+          <div className="mt-6 pt-6 border-t border-slate-700 space-y-2">
+            <p className="text-xs text-center text-slate-500">
+              <a
+                href={import.meta.env.VITE_ONBOARDING_SITE_URL || 'http://localhost:4024'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-400 hover:text-emerald-300 font-medium"
+                onClick={onClose}
+              >
+                x402 Demo: Get onboarded
+              </a>
+              <br />
+              <span className="text-slate-600">(Standalone site: wallet, banking info, KYC, whitelist)</span>
+            </p>
             <p className="text-xs text-center text-slate-500">
               Bank-grade security with JWT authentication, bcrypt password hashing, and account lockout protection.
             </p>

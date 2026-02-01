@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { FileText, Shield, Save, Loader2 } from 'lucide-react';
+import { Shield, Save, Loader2 } from 'lucide-react';
 import { fetchWithAuth } from '@/context/AuthContext';
 
 interface DocumentClassificationFormProps {
@@ -49,7 +49,7 @@ export function DocumentClassificationForm({
           Document Classification
         </CardTitle>
         <CardDescription>Set security and lifecycle status</CardDescription>
-      </Header>
+      </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label>Classification</Label>

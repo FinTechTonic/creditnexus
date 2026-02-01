@@ -755,7 +755,7 @@ export function StructuredProductsTab() {
                         </div>
                         <div className="text-right">
                           <p className="font-bold text-emerald-500">${i.current_value?.toLocaleString()}</p>
-                          <Button size="xs" variant="link" className="h-auto p-0">Subscribe</Button>
+                          <Button size="sm" variant="link" className="h-auto p-0">Subscribe</Button>
                         </div>
                       </div>
                     ))

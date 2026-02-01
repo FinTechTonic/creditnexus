@@ -10,6 +10,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Patch bcrypt for passlib before any app code loads (bcrypt 4.1+ removed __about__)
+try:
+    import bcrypt
+    if not hasattr(bcrypt, "__about__"):
+        import types
+        bcrypt.__about__ = types.SimpleNamespace(
+            __version__=getattr(bcrypt, "__version__", "4.1.0"),
+        )
+except Exception:
+    pass
+
 # Suppress Pydantic Annotated/Field metadata warnings from deps (e.g. repr=, frozen= in Field())
 warnings.filterwarnings("ignore", message=".*'repr' attribute.*", module="pydantic.*")
 warnings.filterwarnings("ignore", message=".*'frozen' attribute.*", module="pydantic.*")
@@ -48,6 +59,7 @@ from app.api.implementation_routes import router as implementation_router
 from app.api.trading_routes import router as trading_router
 from app.api.stock_prediction_routes import router as stock_prediction_router
 from app.api.banking_routes import router as banking_router
+from app.api.agent_score_routes import router as agent_score_router
 from app.api.transfer_routes import router as transfer_router
 from app.api.funding_routes import router as funding_router, credits_router
 from app.api.asset_routes import router as asset_router
@@ -726,6 +738,7 @@ app.include_router(twilio_router)
 app.include_router(trading_router)
 app.include_router(stock_prediction_router)
 app.include_router(banking_router)
+app.include_router(agent_score_router)
 app.include_router(transfer_router)
 app.include_router(funding_router)
 app.include_router(credits_router)

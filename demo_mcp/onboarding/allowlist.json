@@ -1,0 +1,25 @@
+{
+  "agents": [
+    "0x4cbab5b2bc1407f81f73b16bcee3ad99305c3f9d",
+    "0x6169945e5827e2742c8e2e3f88ffd6d84fff4fe2",
+    "0x7fa543e4e050b05b80f4d1d7d58c8681debb18cb593f58078973f785bb10305d",
+    "0xacb34e4a446c335dbd535c279cd1e2e54618f1c8",
+    "0xc9bb574c0a90110bc4fbb2b7a794b113a42ee554f503b75d027670aa665abaaa",
+    "0xdd531c814860f6691c83ad9982956a61ac6b14ab"
+  ],
+  "pay_to": [],
+  "agent_wallets": {
+    "evm": [
+      {
+        "address": "0x6169945e5827e2742c8e2e3f88ffd6d84fff4fe2",
+        "network": null
+      }
+    ],
+    "aptos": [
+      {
+        "address": "0x7fa543e4e050b05b80f4d1d7d58c8681debb18cb593f58078973f785bb10305d",
+        "network": null
+      }
+    ]
+  }
+}

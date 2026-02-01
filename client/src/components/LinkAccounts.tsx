@@ -56,6 +56,8 @@ export function LinkAccounts() {
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [disconnectLoading, setDisconnectLoading] = useState(false);
+  const [disconnectingId, setDisconnectingId] = useState<number | null>(null);
+  const [plaidConnections, setPlaidConnections] = useState<PlaidConnectionItem[]>([]);
   const [brokerageStatus, setBrokerageStatus] = useState<BrokerageStatus | null>(null);
   const [linkedBanks, setLinkedBanks] = useState<LinkedBank[]>([]);
   const [fundingLinkToken, setFundingLinkToken] = useState<string | null>(null);
@@ -393,7 +395,7 @@ export function LinkAccounts() {
                   </div>
                   {plaidConnections.length > 0 && (
                     <ul className="space-y-2">
-                      {plaidConnections.map((c) => (
+                      {plaidConnections.map((c: PlaidConnectionItem) => (
                         <li
                           key={c.id}
                           className="flex items-center justify-between rounded-lg border border-slate-600 bg-slate-900/50 px-3 py-2"

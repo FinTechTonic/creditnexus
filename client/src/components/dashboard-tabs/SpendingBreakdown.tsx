@@ -178,7 +178,7 @@ export function SpendingBreakdown({ days = 30 }: SpendingBreakdownProps) {
                   />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
                   <Tooltip
-                    formatter={(value: number) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Spend']}
+                    formatter={(value: number | undefined) => [value != null ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '', 'Spend']}
                     labelFormatter={(_, payload) => payload[0]?.payload?.fullName ?? ''}
                   />
                   <Bar dataKey="amount" name="Spend" radius={[4, 4, 0, 0]}>

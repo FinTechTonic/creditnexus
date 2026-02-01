@@ -76,7 +76,7 @@ export interface DemoDeal {
 export interface UseDemoDataReturn {
   // Seeding methods
   seedData: (request: DemoSeedRequest) => Promise<DemoSeedResponse>;
-  generateDeals: (count: number) => Promise<DemoSeedResponse>;
+  generateDeals: (count: number, force?: boolean) => Promise<DemoSeedResponse>;
   getSeedingStatus: (stage?: string) => Promise<SeedingStatusResponse>;
   resetDemoData: (options?: {
     includeUsers?: boolean;

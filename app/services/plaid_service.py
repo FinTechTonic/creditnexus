@@ -814,6 +814,40 @@ def get_plaid_connections(db: Session, user_id: int) -> List[UserImplementationC
     )
 
 
+def get_plaid_connection_by_agent_wallet(
+    db: Session, agent_wallet: str
+) -> Optional[UserImplementationConnection]:
+    """
+    Return the first active Plaid connection whose connection_data.agent_wallet
+    matches the given agent address (for MCP x402 borrower score lookup).
+    """
+    if not agent_wallet or not agent_wallet.strip():
+        return None
+    wallet_normalized = agent_wallet.strip().lower()
+    impl = db.query(VerifiedImplementation).filter(
+        VerifiedImplementation.name == "plaid",
+        VerifiedImplementation.is_active == True,
+    ).first()
+    if not impl:
+        return None
+    conns = (
+        db.query(UserImplementationConnection)
+        .filter(
+            UserImplementationConnection.implementation_id == impl.id,
+            UserImplementationConnection.is_active == True,
+        )
+        .all()
+    )
+    for c in conns:
+        if not c.connection_data or not isinstance(c.connection_data, dict):
+            continue
+        if not c.connection_data.get("access_token"):
+            continue
+        if (c.connection_data.get("agent_wallet") or "").strip().lower() == wallet_normalized:
+            return c
+    return None
+
+
 def ensure_plaid_implementation(db: Session) -> Optional[VerifiedImplementation]:
     """Create VerifiedImplementation for 'plaid' if missing. Return it."""
     impl = db.query(VerifiedImplementation).filter(VerifiedImplementation.name == "plaid").first()

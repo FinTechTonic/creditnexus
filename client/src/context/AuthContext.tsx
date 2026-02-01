@@ -10,6 +10,11 @@ interface User {
   is_active: boolean;
   last_login: string | null;
   created_at: string | null;
+  organization?: Organization | null;
+  organization_id?: number | null;
+  organization_role?: string | null;
+  subscription_tier?: 'free' | 'pro' | 'premium' | 'lifetime' | null;
+  is_instance_admin?: boolean;
 }
 
 interface Organization {

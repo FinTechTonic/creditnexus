@@ -32,6 +32,7 @@ from app.models.cdm import ExtractionResult, CreditAgreement
 from app.db import get_db
 from app.db.models import StagedExtraction, ExtractionStatus, Document, DocumentVersion, Workflow, WorkflowState, User, AuditLog, AuditAction, PolicyDecision as PolicyDecisionModel, ClauseCache, LMATemplate, Deal, DealNote, GreenFinanceAssessment
 from app.auth.jwt_auth import get_current_user, require_auth
+from app.core.config import settings
 from app.services.policy_service import PolicyService
 from app.services.x402_payment_service import X402PaymentService
 from app.services.clause_cache_service import ClauseCacheService
@@ -39,6 +40,7 @@ from app.services.file_storage_service import FileStorageService
 from app.services.deal_service import DealService
 from app.services.profile_extraction_service import ProfileExtractionService
 from app.services.payment_gateway_service import PaymentGatewayService, billable_402_response
+from app.services.remote_profile_service import RemoteProfileService
 from app.models.cdm_payment import PaymentType
 from app.chains.document_retrieval_chain import DocumentRetrievalService, add_user_profile, search_user_profiles
 from app.utils.audit import log_audit_action
@@ -960,13 +962,15 @@ async def research_person(
     - Updates deal timeline
     - Generates audit report
     """
+    billable_cost = getattr(settings, "BILLABLE_FEATURE_COST_USD", Decimal("0.10"))
+    billable_cost = billable_cost if isinstance(billable_cost, Decimal) else Decimal(str(billable_cost))
     gate = await PaymentGatewayService(db).require_credits_or_402(
         user_id=current_user.id,
         credit_type="universal",
         amount=1.0,
         feature="people_search",
         payment_type=PaymentType.BILLABLE_FEATURE,
-        cost_usd=Decimal("0.10"),
+        cost_usd=billable_cost,
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         return billable_402_response(gate)
@@ -4164,7 +4168,7 @@ async def digitizer_chatbot_launch_workflow(
         amount=1.0,
         feature="agent_workflow",
         payment_type=PaymentType.BILLABLE_FEATURE,
-        cost_usd=Decimal("0.10"),
+        cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
     )
     if not gate.get("ok") and gate.get("status_code") == 402:
         return billable_402_response(gate)
@@ -4460,7 +4464,7 @@ async def extract_profile(
             amount=1.0,
             feature="profile_extract",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if not gate.get("ok") and gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -11397,7 +11401,7 @@ async def extract_profile_from_documents(
             amount=1.0,
             feature="profile_extract",
             payment_type=PaymentType.BILLABLE_FEATURE,
-            cost_usd=Decimal("0.10"),
+            cost_usd=Decimal(str(getattr(settings, "BILLABLE_FEATURE_COST_USD", 0.1))),
         )
         if not gate.get("ok") and gate.get("status_code") == 402:
             return billable_402_response(gate)
@@ -11821,6 +11825,52 @@ async def verify_signup_certification(
         "message": "Certification marked as reviewed",
         "data": user.to_dict()
     }
+
+
+# ============================================================================
+# Admin: Generate API key (for MCP server / service-to-service)
+# ============================================================================
+
+class GenerateApiKeyRequest(BaseModel):
+    """Request for admin-only API key generation (e.g. for MCP server)."""
+    profile_name: str = Field(default="mcp-service", description="Profile name (default: mcp-service)")
+
+
+@router.post("/admin/generate-api-key")
+async def admin_generate_api_key(
+    body: Optional[GenerateApiKeyRequest] = Body(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Generate an API key for CreditNexus API access (admin only).
+    
+    Creates a RemoteAppProfile with permissions mcp and api_access. Use this key
+    as X-API-Key when calling CreditNexus from the MCP server. Set MCP_DEMO_USER_ID
+    in CreditNexus config to the user ID that should be used for API-key-authenticated requests.
+    The API key is returned only once; store it securely (e.g. CREDITNEXUS_SERVICE_KEY in MCP server .env).
+    """
+    if current_user.role != "admin" or not getattr(current_user, "is_instance_admin", False):
+        raise HTTPException(
+            status_code=403,
+            detail={"status": "error", "message": "Instance admin access required"}
+        )
+    name = (body and body.profile_name) or "mcp-service"
+    svc = RemoteProfileService(db)
+    try:
+        profile, api_key = svc.create_profile(
+            name,
+            allowed_ips=None,
+            permissions={"mcp": True, "api_access": True, "read": True},
+        )
+        return {
+            "status": "success",
+            "profile_name": profile.profile_name,
+            "profile_id": profile.id,
+            "api_key": api_key,
+            "message": "Store the API key securely; it will not be shown again. Use as X-API-Key header. Set MCP_DEMO_USER_ID in CreditNexus config.",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"status": "error", "message": str(e)})
 
 
 # ============================================================================

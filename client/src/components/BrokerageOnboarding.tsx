@@ -33,6 +33,7 @@ interface BrokerageStatus {
 interface Prefill {
   given_name?: string;
   family_name?: string;
+  date_of_birth?: string;
   street_address?: string;
   city?: string;
   state?: string;
