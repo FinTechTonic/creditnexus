@@ -24,6 +24,60 @@ function normalizeFacilitatorUrl(url) {
 }
 
 /**
+ * Verify payment with facilitator.
+ * @param {string} facilitatorUrl - Facilitator base URL
+ * @param {Object} paymentPayload - Payment payload from wallet
+ * @param {import('./types.js').PaymentRequirements} paymentRequirements - Payment requirements
+ * @returns {Promise<Object>} Verification result
+ */
+export async function verifyPayment(facilitatorUrl, paymentPayload, paymentRequirements) {
+  const { verifyUrl } = normalizeFacilitatorUrl(facilitatorUrl);
+  const res = await fetch(verifyUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      x402Version: 2,
+      paymentPayload: {
+        x402Version: 2,
+        ...paymentPayload,
+        network: paymentRequirements.network,
+        scheme: paymentRequirements.scheme
+      },
+      paymentRequirements,
+    }),
+  });
+  return await res.json().catch(() => ({ isValid: false, invalidReason: 'invalid_response' }));
+}
+
+/**
+ * Settle payment with facilitator.
+ * @param {string} facilitatorUrl - Facilitator base URL
+ * @param {Object} paymentPayload - Payment payload from wallet
+ * @param {import('./types.js').PaymentRequirements} paymentRequirements - Payment requirements
+ * @param {Object} [verification] - Verification result (optional)
+ * @returns {Promise<Object>} Settlement result
+ */
+export async function settlePayment(facilitatorUrl, paymentPayload, paymentRequirements, verification = {}) {
+  const { settleUrl } = normalizeFacilitatorUrl(facilitatorUrl);
+  const res = await fetch(settleUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      x402Version: 2,
+      paymentPayload: {
+        x402Version: 2,
+        ...paymentPayload,
+        network: paymentRequirements.network,
+        scheme: paymentRequirements.scheme
+      },
+      paymentRequirements,
+      verification,
+    }),
+  });
+  return await res.json().catch(() => ({ success: false, errorReason: 'invalid_response' }));
+}
+
+/**
  * Fetch with x402 retry: on 402, pay via facilitator then retry with PAYMENT-SIGNATURE.
  * @param {string} url - Request URL
  * @param {RequestInit} [options] - Fetch options (method, headers, body, etc.)

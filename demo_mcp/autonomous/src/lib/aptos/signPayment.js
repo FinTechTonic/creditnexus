@@ -26,28 +26,38 @@ export async function buildAptosPaymentPayload(paymentRequirements, wallet) {
   const payTo = paymentRequirements.payTo || '';
 
   try {
-    const { Account, Aptos, AptosConfig, Network } = await import('@aptos-labs/ts-sdk');
-    const account = Account.fromPrivateKey({ privateKey: w.privateKey });
+    const { Account, Aptos, AptosConfig, Network, Ed25519PrivateKey } = await import('@aptos-labs/ts-sdk');
+
+    // Create Ed25519PrivateKey from hex string
+    const privateKey = new Ed25519PrivateKey(w.privateKey);
+    const account = Account.fromPrivateKey({ privateKey, legacy: false });
+
     const net = network === 'aptos:1' ? Network.MAINNET : Network.TESTNET;
     const aptosConfig = new AptosConfig({ fullnode: getAptosConfig(network === 'aptos:1' ? 'mainnet' : 'testnet').nodeUrl, network: net });
     const aptos = new Aptos(aptosConfig);
 
+    // For APT (AptosCoin), use aptos_account::transfer instead of primary_fungible_store
+    const isAptCoin = asset === '0x1::aptos_coin::AptosCoin';
+
     const builder = await aptos.transaction.build.simple({
       sender: account.accountAddress,
       withFeePayer: false,
-      data: {
+      data: isAptCoin ? {
+        function: '0x1::aptos_account::transfer',
+        functionArguments: [payTo, amount],
+      } : {
         function: '0x1::primary_fungible_store::transfer',
         typeArguments: [asset],
         functionArguments: [payTo, amount],
       },
     });
 
-    const signed = await aptos.transaction.sign({ signer: account, transaction: builder });
-    const rawTxn = signed.rawTransaction;
-    const authenticator = signed.signature;
+    // Sign the transaction and get the authenticator
+    const accountAuthenticator = await aptos.transaction.sign({ signer: account, transaction: builder });
 
-    const transactionBytes = rawTxn.bcsToBytes();
-    const senderAuthenticatorBytes = authenticator.bcsToBytes();
+    // Get BCS bytes
+    const transactionBytes = builder.bcsToBytes();
+    const senderAuthenticatorBytes = accountAuthenticator.bcsToBytes();
 
     return {
       scheme: paymentRequirements.scheme || 'exact',
