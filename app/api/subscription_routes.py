@@ -319,6 +319,8 @@ async def post_revenuecat_purchase(
     try:
         subscription_service = SubscriptionService(db)
 
+        
+        # For org-admin, mark as paid and ensure user has an organisation
         if body.product_id == "org_admin":
             subscription_service.mark_org_admin_paid(
                 user_id=current_user.id,
