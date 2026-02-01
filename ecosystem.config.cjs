@@ -100,5 +100,22 @@ module.exports = {
       autorestart: false,
       max_restarts: 0,
     },
+    // Standalone Aptos x402 facilitator (verify/settle). Run: pm2 start ecosystem.config.cjs --only x402-facilitator
+    {
+      name: 'x402-facilitator',
+      script: 'node',
+      args: ['dist/index.js'],
+      cwd: path.join(projectRoot, 'x402-facilitator'),
+      interpreter: 'none',
+      env: { NODE_ENV: 'development' },
+      out_file: path.join(logsDir, 'x402-facilitator-out.log'),
+      error_file: path.join(logsDir, 'x402-facilitator-error.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss.SSS',
+      merge_logs: false,
+      watch: false,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '2s',
+    },
   ],
 };
