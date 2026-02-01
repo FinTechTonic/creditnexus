@@ -1,4 +1,4 @@
-export { fetchWithX402Retry } from './client.js';
+export { fetchWithX402Retry, verifyPayment, settlePayment } from './client.js';
 export {
   NETWORKS,
   isAptosNetwork,
