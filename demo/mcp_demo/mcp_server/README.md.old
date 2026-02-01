@@ -1,0 +1,62 @@
+# CreditNexus MCP Server
+
+Payment-protected MCP tools that call CreditNexus as a demo backend.
+
+## Tools
+
+| Tool | Price | Network | Description |
+|------|-------|---------|-------------|
+| run_prediction | 6¢ | Aptos | Stock price prediction |
+| run_backtest | 6¢ | Aptos | Strategy backtesting |
+| people_service | 45¢ | Aptos | People service (support, docs) |
+| open_bank_account | $3.65 | Base | Open bank account via Plaid |
+
+## Quick Start
+
+```bash
+# Install (using uv)
+uv sync
+
+# Configure
+cp .env.example .env
+# Edit .env
+
+# Run
+uv run python server.py
+```
+
+## Usage in Cursor/Claude
+
+Add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "creditnexus": {
+      "command": "python",
+      "args": ["/path/to/demo/mcp_demo/mcp_server/server.py"],
+      "env": {
+        "CREDITNEXUS_API_URL": "http://localhost:8000",
+        "VERIFIER_URL": "http://localhost:4022"
+      }
+    }
+  }
+}
+```
+
+## Payment Flow
+
+1. **First call** (no payment): Returns 402 with payment requirements
+2. **User signs transaction** with wallet
+3. **Retry with payment**: Include `payment_payload` in `meta` field
+4. **MCP verifies + settles**: Calls verifier
+5. **Returns result**: Includes verifiable request/response payloads
+
+## Implementation Status
+
+- [x] Tool scaffolding
+- [x] 402 response generation
+- [ ] Payment verification integration
+- [ ] Payment settlement integration
+- [ ] CreditNexus backend calls
+- [ ] All four tools fully implemented
