@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Onboarding flow – CornerStone Agentic Score</title>
+  <link rel="stylesheet" href="/static/css/site.css" />
+</head>
+<body class="layout">
+  <header class="header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <span class="logo-icon">◇</span>
+        CornerStone<span class="logo-sub">Agentic Score</span>
+      </a>
+      <nav class="nav">
+        <a href="/#how">How it works</a>
+        <a href="/#reputation">Reputation</a>
+        <a href="/#lending">Lending</a>
+        <a href="/#resources">Resources</a>
+        <a href="/#team">Community</a>
+        <a href="/" class="cta-link">Back to home</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main flow-page">
+    <div class="flow-inner">
+      <a href="/" class="flow-back">← Back to home</a>
+      <h1 class="flow-title">Agent onboarding</h1>
+      <p class="flow-desc">Connect your wallet, provide compliance and identity information, and register your agent (one or more EVM and Aptos addresses; optionally tag testnet or mainnet). Your agent receives a CornerStone Reputation Score and, when you link a verified bank account, a Borrower Signal — so the ecosystem can query our x402-enabled endpoints for trust and lending decisions. Access is gated by payment and allowlist. Pay-to address is not required for the demo.</p>
+
+      <div class="stepper" id="stepper">
+        <div class="stepper-step active" data-step="1">
+          <span class="stepper-dot">1</span>
+          <span class="stepper-label">Wallet</span>
+        </div>
+        <div class="stepper-step" data-step="2">
+          <span class="stepper-dot">2</span>
+          <span class="stepper-label">Compliance & identity</span>
+        </div>
+        <div class="stepper-step" data-step="3">
+          <span class="stepper-dot">3</span>
+          <span class="stepper-label">Allowlist</span>
+        </div>
+        <div class="stepper-step" data-step="4">
+          <span class="stepper-dot">4</span>
+          <span class="stepper-label">Borrower Signal</span>
+        </div>
+        <div class="stepper-step" data-step="5">
+          <span class="stepper-dot">5</span>
+          <span class="stepper-label">Done</span>
+        </div>
+      </div>
+
+      <!-- Step 1: Connect Wallet + editable agent address -->
+      <div class="flow-card" id="step-wallet">
+        <h3><span class="icon">◇</span> Connect wallet</h3>
+        <p class="card-desc">Connect MetaMask so we can prefill your agent (payer) address. You can edit the address below to use any wallet you want for allowlisting.</p>
+        <div class="meta-connect-wrap">
+          <button type="button" class="btn btn-meta" id="btn-connect">Connect MetaMask</button>
+        </div>
+        <div class="wallet-connected" id="wallet-connected" style="display: none;">
+          Connected: <span id="wallet-addr"></span>
+        </div>
+        <div class="form-group">
+          <label for="agent-address">Agent address (payer) – prefilled from wallet, editable</label>
+          <input type="text" id="agent-address" placeholder="0x..." />
+        </div>
+        <div style="margin-top: 1rem;">
+          <button type="button" class="btn btn-primary" id="btn-next-wallet">Next: Compliance & identity</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Compliance & identity (no Plaid mention) -->
+      <div class="flow-card" id="step-banking" style="display: none;">
+        <h3><span class="icon">◇</span> Compliance & identity</h3>
+        <p class="card-desc">Provide the information required for identity verification and banking eligibility. Compliance workflows and KYC can be completed via the MCP server or your host application when your agent calls the <strong>open_bank_account</strong> MCP tool.</p>
+        <div class="form-group">
+          <label for="full-name">Full name</label>
+          <input type="text" id="full-name" placeholder="Your full name" />
+        </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+          <label for="address">Address (optional)</label>
+          <input type="text" id="address" placeholder="Street, city, country" />
+        </div>
+        <div class="plaid-section" id="plaid-section" style="display: none; margin-top: 1rem;">
+          <p class="card-desc">Link a verified bank account (optional). Served from the MCP server.</p>
+          <button type="button" class="btn btn-outline" id="btn-plaid-connect">Link verified account</button>
+          <span class="plaid-status" id="plaid-status"></span>
+        </div>
+        <p class="card-desc" style="margin-top: 1rem;">You can also complete identity verification and bank linking when your agent calls the <strong>open_bank_account</strong> MCP tool, or in your host application if configured.</p>
+        <div style="margin-top: 1rem;">
+          <button type="button" class="btn btn-primary" id="btn-next-banking">Next: Allowlist</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Allowlist (register agent(s), show snippets) -->
+      <div class="flow-card" id="step-whitelist" style="display: none;">
+        <h3><span class="icon">◇</span> Register allowlist</h3>
+        <p class="card-desc">Add your agent address(es) to the allowlist. You can add multiple EVM (for open_bank_account and payments) and/or Aptos (for run_prediction, run_backtest, score queries) wallets; optionally tag each as testnet or mainnet.</p>
+        <div class="form-group">
+          <label>EVM agent address(es)</label>
+          <div id="evm-wallets-container">
+            <div class="wallet-row" data-wallet-type="evm">
+              <input type="text" class="wallet-address evm-address" placeholder="0x... (40 hex)" />
+              <select class="wallet-network" aria-label="Network">
+                <option value="">—</option>
+                <option value="testnet">Testnet</option>
+                <option value="mainnet">Mainnet</option>
+              </select>
+              <button type="button" class="btn-icon btn-remove-wallet" title="Remove" style="display: none;">×</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btn-add-evm">+ Add EVM address</button>
+        </div>
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Aptos agent address(es)</label>
+          <div id="aptos-wallets-container">
+            <div class="wallet-row" data-wallet-type="aptos">
+              <input type="text" class="wallet-address aptos-address" placeholder="0x... (64 hex)" />
+              <select class="wallet-network" aria-label="Network">
+                <option value="">—</option>
+                <option value="testnet">Testnet</option>
+                <option value="mainnet">Mainnet</option>
+              </select>
+              <button type="button" class="btn-icon btn-remove-wallet" title="Remove" style="display: none;">×</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btn-add-aptos">+ Add Aptos address</button>
+        </div>
+        <div class="error" id="whitelist-error" style="display: none;"></div>
+        <button type="button" class="btn btn-primary" id="btn-register">Register</button>
+        <div id="snippets-area" style="display: none; margin-top: 1.5rem;">
+          <div class="snippet-block">
+            <label>Env snippet (paste into MCP server .env)</label>
+            <div class="copy-row">
+              <pre id="env-snippet"></pre>
+              <button type="button" class="btn-icon" id="copy-env" title="Copy">⎘</button>
+            </div>
+          </div>
+          <div class="snippet-block">
+            <label>MCP snippet (.cursor/mcp.json)</label>
+            <div class="copy-row">
+              <pre id="mcp-snippet"></pre>
+              <button type="button" class="btn-icon" id="copy-mcp" title="Copy">⎘</button>
+            </div>
+          </div>
+          <p class="card-desc" style="margin-top: 1rem;"><strong>Terminal:</strong> To hydrate your shell with the allowlist, run <code id="env-export-cmd">eval $(curl -s /env-export)</code> (or set <code>ONBOARDING_HYDRO_ENV_FILE</code> to a path; the server writes the env snippet there on register so you can <code>source</code> that file).</p>
+          <button type="button" class="btn btn-primary" id="btn-next-whitelist">Next: Borrower Signal</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Borrower Signal & lending to agents -->
+      <div class="flow-card" id="step-openbank" style="display: none;">
+        <h3><span class="icon">◇</span> Borrower Signal & lending to agents</h3>
+        <p class="card-desc">The <strong>open_bank_account</strong> MCP tool starts the verified bank-account linking flow (payment required on Base). Once linked, your agent receives a <strong>Borrower Signal</strong>: the MCP server exposes x402-protected <strong>get_borrower_score</strong>, returning a deterministic score so lenders can answer: <em>Can this agent be trusted — right now — for this transaction?</em> Reputation and lending services query this endpoint for 200 (score) or 403 depending on allowlist.</p>
+        <p class="card-desc"><strong>Why this changes the economy:</strong> With CornerStone credit scores, it becomes possible to <strong>lend money to agents</strong>. Autonomous systems can lend to autonomous systems — responsibly. Risk-adjusted lending, transparent underwriting, and micro-credit at machine scale become real. CornerStone makes it possible to lend with intention even when the borrower is an autonomous system.</p>
+        <p class="card-desc"><strong>Agent EVM wallet(s):</strong> The agent must use an EVM wallet whose address is allowlisted above. You can allowlist multiple EVM (and Aptos) addresses in the Register step; optionally tag each as testnet or mainnet. Run <code>node src/setup.js</code> or <code>node src/show-agent-addresses.js</code> in the agent folder to see addresses to allowlist, or set <code>EVM_PRIVATE_KEY</code> and allowlist that address.</p>
+        <p class="card-desc">To complete identity verification and bank linking:</p>
+        <ul class="ul-check" style="margin: 1rem 0;">
+          <li><span class="check">✓</span> <strong>Host application</strong> — If your host app is configured, sign in and complete identity verification and bank linking there.</li>
+          <li><span class="check">✓</span> <strong>MCP tool</strong> — When your agent calls open_bank_account, you may be prompted to complete verification in a redirect flow.</li>
+        </ul>
+        <p class="card-desc">Your agent is already allowlisted. Add the env and MCP snippets to your environment, then complete verification when ready. Your agent’s CornerStone Reputation Score and Borrower Signal become queryable via get_agent_reputation_score and get_borrower_score.</p>
+        <div style="margin-top: 1rem;">
+          <a href="#" id="creditnexus-app-link-2" class="btn btn-outline" target="_blank" rel="noopener">Open host app</a>
+          <button type="button" class="btn btn-primary" id="btn-next-openbank">Next: Done</button>
+        </div>
+      </div>
+
+      <!-- Step 5: Done -->
+      <div class="flow-card" id="step-done" style="display: none;">
+        <div class="success-header">
+          <span class="icon-wrap">✓</span>
+          <h3 style="margin: 0;">You’re onboarded</h3>
+        </div>
+        <p class="card-desc">Your agent is allowlisted. Add the env snippet to the MCP server <code>.env</code> and the MCP config to <code>.cursor/mcp.json</code>. Then you can use the CornerStone MCP tools: run_prediction, run_backtest, open_bank_account, get_agent_reputation_score, and get_borrower_score. Reputation and lending services query the score endpoints for 200 (score) or 403 (not allowlisted). Complete identity verification and bank linking when your agent calls open_bank_account; your Borrower Signal will reflect trust and lending readiness.</p>
+        <div class="flow-links">
+          <a href="/" class="btn btn-outline">Back to home</a>
+          <a href="/flow.html" class="btn btn-outline">Start over</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>CornerStone Agentic Score · Arnstein Banking Systems · Onboarding</span>
+      <a href="/">Home</a>
+    </div>
+  </footer>
+
+  <script src="https://cdn.plaid.com/link/v2/stable/plaid-link.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

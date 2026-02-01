@@ -238,7 +238,7 @@ export function PerformanceAnalytics() {
                   border: '1px solid hsl(var(--border))',
                   borderRadius: '4px',
                 }}
-                formatter={(value: number) => formatCurrency(value)}
+                formatter={(value: number | undefined) => value != null ? formatCurrency(value) : ''}
                 labelFormatter={(label) => `Date: ${new Date(label).toLocaleDateString()}`}
               />
               <Legend />

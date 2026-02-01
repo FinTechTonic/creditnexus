@@ -4,7 +4,7 @@ Standalone agent that uses an **x402-enabled MCP server** (predict tickers, back
 
 ## Overview
 
-- **Agent**: LangChain.js ReAct agent with MCP tools (run_prediction, run_backtest, open_bank_account) and local tools (balance_aptos, balance_evm, get_wallet_addresses).
+- **Agent**: LangChain.js ReAct agent with MCP tools (run_prediction, run_backtest, open_bank_account) and local tools (balance_aptos, balance_evm, get_wallet_addresses, create_aptos_wallet, create_evm_wallet, credit_aptos_wallet, fund_evm_wallet). **get_wallet_addresses** returns lists of `{ address, network? }` for Aptos and EVM; the agent can have multiple Aptos and multiple EVM wallets (optionally testnet or mainnet).
 - **x402**: On 402 Payment Required, the agent pays via the x402 facilitator (verify → settle) and retries with PAYMENT-SIGNATURE.
 - **Chains**: Aptos testnet for prediction/backtest (~6¢); Base Sepolia (or Base) for open_bank_account (~$3.65).
 
@@ -37,12 +37,13 @@ Copy `.env.example` to `.env` and set:
 | Variable | Description |
 |----------|-------------|
 | `MCP_SERVER_URL` | x402 MCP server base URL (e.g. http://localhost:4023) |
-| `X402_FACILITATOR_URL` | Facilitator base URL (verify/settle) |
+| `X402_FACILITATOR_URL` | Facilitator base URL for Aptos (verify/settle). For full demo including open_bank_account use public (e.g. https://x402-navy.vercel.app/facilitator). |
+| `X402_EVM_FACILITATOR_URL` | Optional. Facilitator for EVM (open_bank_account). Defaults to X402_FACILITATOR_URL. Set to public when using local Aptos facilitator. |
 | `LLM_BASE_URL` | Hugging Face OpenAI-compatible base URL (default https://router.huggingface.co/v1) |
 | `HUGGINGFACE_API_KEY` or `HF_TOKEN` | Hugging Face API key |
 | `LLM_MODEL` | Model ID (e.g. meta-llama/Llama-3.2-3B-Instruct) |
-| `APTOS_WALLET_PATH` | Path to Aptos wallet JSON (default ~/.aptos-agent-wallet.json) |
-| `EVM_WALLET_PATH` | Path to EVM wallet (default ~/.evm-wallet.json) |
+| `APTOS_WALLET_PATH` | Path to Aptos wallet JSON. Multi-wallet: ~/.aptos-agent-wallets.json (wallets array + defaultIndex). |
+| `EVM_WALLET_PATH` | Path to EVM wallet. Multi-wallet: ~/.evm-wallets.json (wallets array + defaultIndex). Or set EVM_PRIVATE_KEY for single wallet. |
 | `BASE_SEPOLIA_RPC` | Optional; Base Sepolia RPC for open_bank_account |
 
 ## Run
@@ -82,23 +83,28 @@ pm2 start ecosystem.config.cjs --only agent-autonomous
 ## Deployment Order
 
 1. **CreditNexus** (optional demo backend)  
-2. **x402 facilitator** (verify/settle)  
+2. **x402 facilitator**: For full demo (including open_bank_account) use **public** facilitator (X402_FACILITATOR_URL). For Aptos-only local demo use local facilitator and set X402_EVM_FACILITATOR_URL to public.  
 3. **MCP server** (x402-enabled tools)  
 4. **Agent** (this repo): `node src/run-agent.js` or PM2
 
-## Commands (EVM wallet)
+## Commands (wallets)
 
 | Command | Description |
 |---------|-------------|
-| `node src/setup.js` | Generate EVM wallet |
-| `node src/setup-aptos.js` | Generate Aptos wallet |
+| `node src/setup.js` | Generate EVM wallet (single; for multi use agent tool create_evm_wallet with network) |
+| `node src/setup-aptos.js` | Generate Aptos wallet (single; for multi use create_aptos_wallet with network) |
+| `node src/show-agent-addresses.js` | Print all Aptos and EVM addresses (with optional network) for whitelisting at flow.html |
+| `npm run credit:aptos` | Credit Aptos agent (devnet: programmatic; testnet: print mint page instructions) |
 | `node src/balance.js <chain>` | EVM balance |
 | `node src/run-agent.js [message]` | Run agent |
 
+**Crediting Aptos agent**: Testnet has no programmatic faucet—use [Aptos testnet faucet](https://aptos.dev/network/faucet). For automated crediting use devnet: `APTOS_FAUCET_NETWORK=devnet npm run credit:aptos`. See [Canteen – Aptos x402](https://canteenapp-aptos-x402.notion.site/) for reference hydration flows.
+
 ## References
 
+- [Implementation Status & Integration](../../dev/demo_mcp/IMPLEMENTATION_STATUS_AND_INTEGRATION.md) — facilitator usage (open_bank_account → public), integrations, launch.
 - [X402 Hackathon Plan](../../dev/X402_HACKATHON_PLAN_AGENTS_MCP_VERIFIER.md)
-- [Canteen App – Aptos x402](https://canteenapp-aptos-x402.notion.site/?p=2d098ea5579180f9853fed98f0a12e6f&pm=c)
+- [Canteen App – Aptos x402](https://canteenapp-aptos-x402.notion.site/) — reference implementations for hydrating and crediting the agent wallet
 - [LangChain.js MCP](https://js.langchain.com/docs/integrations/toolkits/mcp_toolbox)
 - [Hugging Face Inference – OpenAI-compatible](https://huggingface.co/docs/api-inference/en/index)
 - [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)

@@ -26,7 +26,7 @@ export function createMcpTools(mcpClient) {
       description: 'Run stock prediction for a ticker. Returns prediction result. Costs ~6¢ (Aptos).',
       schema: z.object({
         symbol: z.string().describe('Stock symbol (e.g. AAPL)'),
-        horizon: z.number().optional().describe('Prediction horizon in days'),
+        horizon: z.number().default(30).describe('Prediction horizon in days'),
       }),
     }
   );
@@ -46,9 +46,9 @@ export function createMcpTools(mcpClient) {
       description: 'Run backtest for a trading strategy on a symbol. Costs ~6¢ (Aptos).',
       schema: z.object({
         symbol: z.string().describe('Stock symbol'),
-        startDate: z.string().optional().describe('Start date YYYY-MM-DD'),
-        endDate: z.string().optional().describe('End date YYYY-MM-DD'),
-        strategy: z.string().optional().describe('Strategy name'),
+        startDate: z.string().nullable().default(null).describe('Start date YYYY-MM-DD'),
+        endDate: z.string().nullable().default(null).describe('End date YYYY-MM-DD'),
+        strategy: z.string().default('chronos').describe('Strategy name'),
       }),
     }
   );

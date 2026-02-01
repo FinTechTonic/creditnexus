@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { PaymentRequiredModal } from '@/components/payments/PaymentRequiredModal';
 import type { PaymentRequiredPayload } from '@/components/payments/PaymentRequiredModal';
 import { fetchWithAuth } from './AuthContext';

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_auth import get_current_user
-from app.auth.jwt_auth import require_auth
+from app.auth.service_auth import get_user_for_api
 from app.core.config import settings
 from app.core.permissions import has_permission, PERMISSION_TRADE_VIEW
 from app.db import get_db
@@ -68,6 +68,7 @@ def _track_plaid_usage(
 class ConnectRequest(BaseModel):
     """Request to connect a bank via Plaid (exchange public_token)."""
     public_token: str = Field(..., description="Public token from Plaid Link onSuccess")
+    agent_wallet: Optional[str] = Field(None, description="Agent (payer) wallet address to associate with this Plaid link for borrower score")
 
 
 def _plaid_ok() -> None:
@@ -91,7 +92,7 @@ class BankingConnectionItem(BaseModel):
 @router.get("/status", response_model=BankingStatusResponse)
 async def banking_status(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """Get banking status: plaid_enabled (from server config) and connected (any Plaid link)."""
     plaid_enabled = bool(getattr(settings, "PLAID_ENABLED", False))
@@ -113,7 +114,7 @@ _ORG_UNLOCK_402_MESSAGE = (
 @router.get("/link-token", response_model=Dict[str, Any])
 async def banking_link_token(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """Create a Plaid Link token to initialize Link in the frontend."""
     _plaid_ok()
@@ -132,7 +133,7 @@ async def banking_link_token(
 async def banking_connect(
     body: ConnectRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """Exchange Plaid public_token and store access_token in UserImplementationConnection."""
     _plaid_ok()
@@ -149,6 +150,8 @@ async def banking_connect(
     impl = ensure_plaid_implementation(db)
     # Multi-item: always create a new connection so each Plaid item is a separate row.
     connection_data = {"access_token": out["access_token"], "item_id": out["item_id"]}
+    if body.agent_wallet and body.agent_wallet.strip():
+        connection_data["agent_wallet"] = body.agent_wallet.strip().lower()
     conn = UserImplementationConnection(
         user_id=current_user.id,
         implementation_id=impl.id,
@@ -172,7 +175,7 @@ async def banking_connect(
 @router.get("/accounts", response_model=Dict[str, Any])
 async def banking_accounts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """List accounts from the linked Plaid Item."""
     _plaid_ok()
@@ -218,7 +221,7 @@ async def banking_accounts(
 @router.get("/balances", response_model=Dict[str, Any])
 async def banking_balances(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """Get balances for the linked Plaid Item."""
     _plaid_ok()
@@ -268,7 +271,7 @@ async def banking_transactions(
     count: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """Get transactions for the linked Plaid Item."""
     _plaid_ok()
@@ -314,7 +317,7 @@ async def banking_transactions(
 @router.get("/connections", response_model=List[BankingConnectionItem])
 async def banking_list_connections(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """List user's Plaid connections (multi-item). Returns id, masked item_id, created_at; no secrets."""
     _plaid_ok()
@@ -338,7 +341,7 @@ async def banking_list_connections(
 @router.delete("/disconnect", status_code=204)
 async def banking_disconnect(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """Disconnect all Plaid connections for the current user."""
     _plaid_ok()
@@ -353,7 +356,7 @@ async def banking_disconnect(
 async def banking_disconnect_one(
     connection_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """Disconnect one Plaid connection by id (multi-item)."""
     _plaid_ok()
@@ -381,7 +384,7 @@ class PlaidPaymentInitiationRequest(BaseModel):
 async def plaid_payment_initiate(
     body: PlaidPaymentInitiationRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
+    current_user: User = Depends(get_user_for_api),
 ):
     """
     Initiate a Plaid payment (bank transfer).

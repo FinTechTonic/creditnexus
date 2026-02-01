@@ -31,6 +31,8 @@ Server runs on `localhost:4023`
 | **run_prediction** | Stock prediction for a ticker | $0.06 | Aptos Testnet |
 | **run_backtest** | Trading strategy backtest | $0.06 | Aptos Testnet |
 | **open_bank_account** | Plaid Link for bank account | $3.65 | Base Sepolia |
+| **get_agent_reputation_score** | Query agent reputation (100 for allowlisted/KYC); 200 with score or 403 | $0.01 | Aptos Testnet |
+| **get_borrower_score** | Query borrower score: "100" or "100+{plaid_score}" when bank linked; 200 or 403 | $0.01 | Aptos Testnet |
 
 ---
 

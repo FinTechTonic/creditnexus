@@ -135,7 +135,7 @@ export function AssetVerificationCard({ assetId, onVerify }: AssetVerificationCa
       const store = useLayerStore.getState();
       store.setLayers(id, layers);
       const overlays = store.mapState.overlays;
-      layers.forEach((layer, i) => {
+      layers.forEach((layer: { id: number }, i: number) => {
         if (!overlays.find((o) => o.layerId === String(layer.id))) {
           store.addOverlay({
             layerId: String(layer.id),

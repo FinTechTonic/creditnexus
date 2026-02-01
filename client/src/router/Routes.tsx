@@ -516,11 +516,10 @@ export const router = createAppRouter([
       </ProtectedRoute>
     ),
   },
-{
+  {
     path: '/metamask',
     element: <MetaMaskLogin />,
   },
-  
   // Verification routes (public - no auth required for link viewing)
   {
     path: '/verify/:payload',

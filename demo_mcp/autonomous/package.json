@@ -6,6 +6,8 @@
   "scripts": {
     "setup": "node src/setup.js",
     "setup:aptos": "node src/setup-aptos.js",
+    "credit:aptos": "node src/credit-aptos-agent.js",
+    "addresses": "node src/show-agent-addresses.js",
     "balance": "node src/balance.js",
     "transfer": "node src/transfer.js",
     "contract": "node src/contract.js",

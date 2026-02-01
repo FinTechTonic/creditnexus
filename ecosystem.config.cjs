@@ -128,7 +128,7 @@ module.exports = {
       name: 'x402-facilitator',
       script: 'node',
       args: ['dist/index.js'],
-      cwd: path.join(projectRoot, 'x402-facilitator'),
+      cwd: path.join(projectRoot, 'demo_mcp', 'facilitator'),
       interpreter: 'none',
       env: { NODE_ENV: 'development' },
       out_file: path.join(logsDir, 'x402-facilitator-out.log'),

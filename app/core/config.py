@@ -701,6 +701,11 @@ class Settings(BaseSettings):
         default=True,
         description="When True, new signups are added to waitlist; instance admin must approve before login.",
     )
+    # MCP / service-to-service: when X-API-Key is used with permission 'mcp', requests act as this user (e.g. demo user for MCP server).
+    MCP_DEMO_USER_ID: Optional[int] = Field(
+        default=None,
+        description="User ID to use when MCP server authenticates with X-API-Key (admin-generated API key). Create a user and set this ID.",
+    )
 
     # Prometheus Metrics Configuration
     METRICS_ENABLED: bool = Field(default=True, description="Enable Prometheus metrics")

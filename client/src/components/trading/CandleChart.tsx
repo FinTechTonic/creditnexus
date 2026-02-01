@@ -211,11 +211,13 @@ export function CandleChart({
                 border: '1px solid hsl(var(--border))',
                 borderRadius: '4px',
               }}
-              formatter={(value: number, name: string) => {
-                if (name === 'volume') {
+              formatter={(value: number | undefined, name: string | undefined) => {
+                if (value == null) return ['', name ?? ''];
+                const n = name ?? '';
+                if (n === 'volume') {
                   return [value.toLocaleString(), 'Volume'];
                 }
-                return [`$${value.toFixed(2)}`, name.charAt(0).toUpperCase() + name.slice(1)];
+                return [`$${value.toFixed(2)}`, n.charAt(0).toUpperCase() + n.slice(1)];
               }}
               labelFormatter={(label) => `Date: ${label}`}
             />

@@ -171,8 +171,8 @@ class EncryptionService:
                 logger.error("Invalid encryption token - data may be corrupted or key mismatch")
                 raise ValueError("Failed to decrypt data: invalid token")
             else:
-                # Graceful mode: log warning and try to return as plain text
-                logger.warning(
+                # Graceful mode: log at debug (fallback works; avoid log noise)
+                logger.debug(
                     "Invalid encryption token - data may be corrupted, key mismatch, or plain text. "
                     "Attempting graceful fallback."
                 )

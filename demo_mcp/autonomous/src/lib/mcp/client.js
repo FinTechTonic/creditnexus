@@ -10,7 +10,8 @@ import { verifyPayment, settlePayment } from '../x402/index.js';
 /**
  * @param {Object} config
  * @param {string} config.baseUrl - MCP server base URL (e.g. http://localhost:4023)
- * @param {string} config.facilitatorUrl - x402 facilitator base URL
+ * @param {string} config.facilitatorUrl - x402 facilitator base URL (Aptos)
+ * @param {string} [config.evmFacilitatorUrl] - facilitator for EVM (open_bank_account); defaults to facilitatorUrl (use public for EVM when Aptos is local)
  * @param {(r: import('../x402/types.js').PaymentRequirements) => Promise<Object>} config.getAptosPaymentPayload
  * @param {(r: import('../x402/types.js').PaymentRequirements) => Promise<Object>} config.getEvmPaymentPayload
  * @param {number} [config.maxRetries]
@@ -19,6 +20,7 @@ export function createMcpClient(config) {
   const baseUrl = (config.baseUrl || '').replace(/\/+$/, '');
   const mcpUrl = `${baseUrl}/mcp`;
   const facilitatorUrl = config.facilitatorUrl;
+  const evmFacilitatorUrl = config.evmFacilitatorUrl || facilitatorUrl;
   const getAptosPaymentPayload = config.getAptosPaymentPayload;
   const getEvmPaymentPayload = config.getEvmPaymentPayload;
   const maxRetries = config.maxRetries ?? 2;
@@ -110,19 +112,25 @@ export function createMcpClient(config) {
         if (errorData?.status === 402 && errorData.paymentRequirements) {
             // Handle payment
             const paymentRequirements = errorData.paymentRequirements;
-            console.log(`Payment required for ${name}: ${paymentRequirements.amount} on ${paymentRequirements.network}`);
+            const network = (paymentRequirements && paymentRequirements.network) ? String(paymentRequirements.network) : '';
+            const isEvm = network.startsWith('eip155:');
+            const payFacilitatorUrl = isEvm ? evmFacilitatorUrl : facilitatorUrl;
+            console.log(`Payment required for ${name}: ${paymentRequirements.amount} on ${network || '(network missing)'}`);
 
             // Get payment payload based on network
             let paymentPayload;
             try {
-              if (paymentRequirements.network.startsWith('aptos:')) {
+              if (!network) {
+                return { result: { error: 'Payment requirements missing network. Check MCP server config (e.g. BASE_SEPOLIA_NETWORK, APTOS_NETWORK).' } };
+              }
+              if (network.startsWith('aptos:')) {
                 if (!getAptosPaymentPayload) {
                   return { result: { error: 'No Aptos wallet configured' } };
                 }
                 console.log('Creating Aptos payment payload...');
                 paymentPayload = await getAptosPaymentPayload(paymentRequirements);
                 console.log('Payment payload created');
-              } else if (paymentRequirements.network.startsWith('eip155:')) {
+              } else if (network.startsWith('eip155:')) {
                 if (!getEvmPaymentPayload) {
                   return { result: { error: 'No EVM wallet configured' } };
                 }
@@ -131,9 +139,9 @@ export function createMcpClient(config) {
                 return { result: { error: `Unsupported network: ${paymentRequirements.network}` } };
               }
 
-              // Verify payment with facilitator
-              console.log(`Verifying payment with facilitator: ${facilitatorUrl}`);
-              const verification = await verifyPayment(facilitatorUrl, paymentPayload, paymentRequirements);
+              // Verify payment with facilitator (EVM uses public facilitator for open_bank_account)
+              console.log(`Verifying payment with facilitator: ${payFacilitatorUrl}`);
+              const verification = await verifyPayment(payFacilitatorUrl, paymentPayload, paymentRequirements);
               console.log('Verification result:', verification);
 
               if (!verification.isValid) {
@@ -142,17 +150,35 @@ export function createMcpClient(config) {
 
               // Settle payment
               console.log('Settling payment...');
-              const settlement = await settlePayment(facilitatorUrl, paymentPayload, paymentRequirements);
-              console.log(`Payment settled: ${settlement.transactionHash}`);
+              const settlement = await settlePayment(payFacilitatorUrl, paymentPayload, paymentRequirements, verification);
+              const txHash = settlement.transaction ?? settlement.transactionHash;
+              console.log(`Payment settled: ${txHash}`);
             } catch (error) {
               console.error('Payment error:', error);
               return { result: { error: error.message } };
             }
 
-            // Retry with payment proof
-            // Note: FastMCP doesn't support custom headers in tool calls yet
-            // For now, we just retry - the server should recognize the settled payment
-            continue;
+            // Retry with payment_payload so the server receives it and processes the paid request.
+            // Without this, the server gets the same args again (no payment_payload) and returns 402 again.
+              const retryArgs = { ...args, payment_payload: paymentPayload };
+              console.log('Retrying tool call with payment_payload...');
+              const retryResult = await mcpClient.callTool({
+                name,
+                arguments: retryArgs,
+              });
+              const retryContent = retryResult.content?.[0];
+              if (retryContent?.type === 'text') {
+                try {
+                  const parsed = JSON.parse(retryContent.text);
+                  if (parsed.status === 402 && parsed.paymentRequirements) {
+                    return { result: { error: 'Server still returned 402 after payment; payment may not have been accepted.' } };
+                  }
+                  return { result: parsed.result ?? parsed };
+                } catch {
+                  return { result: retryContent.text };
+                }
+              }
+              return { result: retryResult };
         }
 
         // Success

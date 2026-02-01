@@ -45,12 +45,13 @@ def create_demo_user():
             logger.info(f"  Password: {DEMO_PASSWORD}")
             return existing_user
         
-        # Create demo user
+        # Create demo user (instance admin so they can generate API keys, etc.)
         demo_user = User(
             email=DEMO_EMAIL,
             password_hash=get_password_hash(DEMO_PASSWORD),
             display_name=DEMO_DISPLAY_NAME,
             role=UserRole.ADMIN.value,  # Give admin role for full access
+            is_instance_admin=True,  # Required for generate-api-key and other admin-only endpoints
             is_active=True,
             is_email_verified=True,  # Mark as verified for convenience
         )

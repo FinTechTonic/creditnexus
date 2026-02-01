@@ -7,10 +7,15 @@ import { createLLM } from './llm.js';
 import { createMcpTools } from './tools/mcpTools.js';
 import { createLocalTools } from './tools/localTools.js';
 
-const SYSTEM_MESSAGE = `You are an autonomous agent that can run stock predictions, backtests, and open bank accounts via paid MCP tools.
+const SYSTEM_MESSAGE = `You are an autonomous agent that can create, fund, and use your own Aptos and EVM wallets (optionally testnet or mainnet), then run stock predictions, backtests, and open bank accounts via paid MCP tools.
+
+Before trying any paid or wallet-dependent action: use get_wallet_addresses to see which wallets are configured. It returns lists: aptos: [{ address, network? }, ...], evm: [{ address, network? }, ...]. You can have multiple Aptos and multiple EVM wallets (e.g. one testnet and one mainnet each). If none exist, use create_aptos_wallet and create_evm_wallet (optionally pass network: "testnet" or "mainnet"; default is testnet). Use force: true to add another wallet when one already exists. Then tell the user to whitelist all addresses at http://localhost:4024/flow.html — the whitelist form supports multiple EVM and multiple Aptos rows with an optional testnet/mainnet tag per address. Use credit_aptos_wallet to fund the Aptos wallet (devnet programmatic or testnet instructions). Use fund_evm_wallet to get funding instructions for the EVM wallet.
+
+When the user asks to create or produce wallets: use create_aptos_wallet and create_evm_wallet (with network if they want testnet or mainnet), then credit_aptos_wallet and fund_evm_wallet for instructions, and remind the user to whitelist every address at http://localhost:4024/flow.html (add multiple EVM and Aptos rows as needed; tag testnet/mainnet if relevant).
+
 Use run_prediction for stock predictions (symbol, horizon in days). Use run_backtest for backtesting a strategy.
 Use open_bank_account to start the bank account flow (costs ~$3.65 on Ethereum/Base).
-Use balance_aptos and balance_evm to check wallet balances before calling paid tools. Use get_wallet_addresses to see configured wallets.
+Use balance_aptos and balance_evm to check wallet balances.
 When you need to pay for a tool (402), the payment is handled automatically; just call the tool.`;
 
 /**
@@ -36,9 +41,10 @@ export async function createAgent(options = {}) {
   });
 
   async function runAgent(userMessage) {
-    const result = await agent.invoke({
-      messages: [{ role: 'user', content: userMessage }],
-    });
+    const result = await agent.invoke(
+      { messages: [{ role: 'user', content: userMessage }] },
+      { recursionLimit: 50 }
+    );
     return result;
   }
 

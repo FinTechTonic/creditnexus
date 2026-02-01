@@ -588,10 +588,10 @@ export function SidebarNavigation() {
                       app={app}
                       collapsed={collapsed}
                       isActive={
-                        location.pathname === app.path || 
+                        Boolean(location.pathname === app.path || 
                         (app.path?.includes('?tab=') && 
                          location.pathname === app.path.split('?')[0] && 
-                         new URLSearchParams(location.search).get('tab') === new URLSearchParams(app.path.split('?')[1]).get('tab'))
+                         new URLSearchParams(location.search).get('tab') === new URLSearchParams(app.path.split('?')[1] ?? '').get('tab')))
                       }
                       onClick={() => handleAppClick(app)}
                     />

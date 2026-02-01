@@ -208,7 +208,7 @@ export function AggregatedFinancialOverview() {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-slate-700" />
                   <XAxis type="number" tickFormatter={(v) => `$${v}`} />
                   <YAxis type="category" dataKey="name" width={56} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(v: number) => [formatCurrency(v), '']} />
+                  <Tooltip formatter={(v: number | undefined) => [v != null ? formatCurrency(v) : '', '']} />
                   <Bar dataKey="value" name="Value" radius={[0, 4, 4, 0]}>
                     {chartData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />

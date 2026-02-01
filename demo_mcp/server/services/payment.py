@@ -14,8 +14,9 @@ from typing import Dict, Tuple, Optional
 
 from demo_mcp.server.config import (
     X402_FACILITATOR_URL,
-    AGENT_ALLOWLIST,
-    PAY_TO_ALLOWLIST,
+    X402_EVM_FACILITATOR_URL,
+    get_agent_allowlist,
+    get_pay_to_allowlist,
     APTOS_NETWORK,
     APTOS_USDC_ASSET,
     APTOS_PAYTO_ADDRESS,
@@ -37,6 +38,8 @@ def check_allowlist(address: str, is_agent: bool = True) -> Tuple[bool, Optional
     """
     CreditNexus-specific allowlist checking.
     This is OUR custom business logic, not part of x402.
+    When ONBOARDING_ALLOWLIST_FILE is set, get_*_allowlist() re-reads the file
+    on every call so whitelisting is visible without MCP restart.
 
     Args:
         address: Wallet address to check
@@ -49,8 +52,8 @@ def check_allowlist(address: str, is_agent: bool = True) -> Tuple[bool, Optional
         return False, "missing_address"
 
     address_normalized = normalize_address(address)
-
-    allowlist = AGENT_ALLOWLIST if is_agent else PAY_TO_ALLOWLIST
+    # Always use getters so allowlist is refreshed from file when configured
+    allowlist = get_agent_allowlist() if is_agent else get_pay_to_allowlist()
     allowlist_normalized = {normalize_address(addr) for addr in allowlist if addr}
 
     if address_normalized not in allowlist_normalized:
@@ -136,10 +139,19 @@ async def verify_payment(
         }
     """
 
+    network = payment_requirements.get("network", "")
+    facilitator_url = (X402_EVM_FACILITATOR_URL if network.startswith("eip155:") else X402_FACILITATOR_URL)
+    if not facilitator_url:
+        return {
+            "isValid": False,
+            "payer": "",
+            "invalidReason": "facilitator_not_configured",
+        }
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{X402_FACILITATOR_URL}/verify",
+                f"{facilitator_url.rstrip('/')}/verify",
                 json={
                     "x402Version": 2,
                     "paymentPayload": payment_payload,
@@ -218,15 +230,23 @@ async def settle_payment(
         }
 
     network = payment_requirements.get("network", APTOS_NETWORK)
+    facilitator_url = (X402_EVM_FACILITATOR_URL if (network or "").startswith("eip155:") else X402_FACILITATOR_URL)
+    if not facilitator_url:
+        return {
+            "success": False,
+            "errorReason": "facilitator_not_configured",
+            "network": network
+        }
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{X402_FACILITATOR_URL}/settle",
+                f"{facilitator_url.rstrip('/')}/settle",
                 json={
                     "x402Version": 2,
                     "paymentPayload": payment_payload,
-                    "paymentRequirements": payment_requirements
+                    "paymentRequirements": payment_requirements,
+                    "verification": verification,
                 },
                 timeout=60.0
             )

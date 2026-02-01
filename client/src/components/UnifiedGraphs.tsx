@@ -203,7 +203,7 @@ export function UnifiedGraphs({ userId, days = 30 }: UnifiedGraphsProps) {
                     border: '1px solid #334155',
                     borderRadius: '6px',
                   }}
-                  formatter={(value: number) => [`$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 'Value']}
+                  formatter={(value: number | undefined) => [value != null ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '', 'Value']}
                 />
                 <Legend />
                 <Line
@@ -254,7 +254,7 @@ export function UnifiedGraphs({ userId, days = 30 }: UnifiedGraphsProps) {
                     border: '1px solid #334155',
                     borderRadius: '6px',
                   }}
-                  formatter={(value: number) => [`$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, '']}
+                  formatter={(value: number | undefined) => [value != null ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '', '']}
                 />
                 <Legend />
                 <Bar dataKey="income" fill="#10b981" name="Income" />
@@ -284,7 +284,7 @@ export function UnifiedGraphs({ userId, days = 30 }: UnifiedGraphsProps) {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
@@ -299,7 +299,7 @@ export function UnifiedGraphs({ userId, days = 30 }: UnifiedGraphsProps) {
                     border: '1px solid #334155',
                     borderRadius: '6px',
                   }}
-                  formatter={(value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                  formatter={(value: number | undefined) => value != null ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ''}
                 />
                 <Legend />
               </PieChart>

@@ -19,6 +19,8 @@ async function main() {
 
   const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:4023';
   const facilitatorUrl = process.env.X402_FACILITATOR_URL || 'https://x402-navy.vercel.app/facilitator';
+  // EVM (open_bank_account) uses public facilitator; set when using local Aptos facilitator
+  const evmFacilitatorUrl = process.env.X402_EVM_FACILITATOR_URL || facilitatorUrl;
 
   let getAptosPaymentPayloadFn = null;
   let getEvmPaymentPayloadFn = null;
@@ -36,6 +38,7 @@ async function main() {
   const mcpClient = createMcpClient({
     baseUrl: mcpServerUrl,
     facilitatorUrl,
+    evmFacilitatorUrl,
     getAptosPaymentPayload: getAptosPaymentPayloadFn,
     getEvmPaymentPayload: getEvmPaymentPayloadFn,
   });
