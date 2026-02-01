@@ -88,12 +88,20 @@ def build_payment_requirements(
         x402 v2 PaymentRequirements dict
     """
     if network == "evm":
+        # Use BASE_SEPOLIA_PAYTO if set; else first pay_to allowlist; else first agent (demo fallback for open_bank_account)
+        pay_to = (BASE_SEPOLIA_PAYTO or "").strip()
+        if not pay_to:
+            pay_to_list = sorted(get_pay_to_allowlist())
+            pay_to = (pay_to_list[0] or "").strip() if pay_to_list else ""
+        if not pay_to:
+            agent_list = sorted(get_agent_allowlist())
+            pay_to = (agent_list[0] or "").strip() if agent_list else ""
         return {
             "scheme": "exact",
             "network": BASE_SEPOLIA_NETWORK,
             "amount": usd_to_atomic(amount_usd),
             "asset": BASE_SEPOLIA_USDC,
-            "payTo": BASE_SEPOLIA_PAYTO,
+            "payTo": pay_to,
             "maxTimeoutSeconds": MAX_TIMEOUT_SECONDS,
             "extra": {
                 "resource": resource,

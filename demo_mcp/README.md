@@ -331,7 +331,8 @@ Use these places to run on **development networks** and to **fund your own agent
 | **Networks used by MCP tools** (prediction, backtest, open_bank_account) | `server/.env` | `APTOS_NETWORK=aptos:2` (testnet), `BASE_SEPOLIA_NETWORK=eip155:84532`. Change only if your facilitator and payTo use another network (e.g. devnet). |
 | **Agent wallet files** | `autonomous/.env` | `APTOS_WALLET_PATH`, `EVM_WALLET_PATH` (multi-wallet: `~/.aptos-agent-wallets.json`, `~/.evm-wallets.json`). Or set `EVM_PRIVATE_KEY` to use an existing key; whitelist that address at flow.html. Agent can have multiple Aptos and multiple EVM wallets (testnet/mainnet). |
 | **Aptos: programmatic funding (devnet)** | `autonomous/.env` or shell | `APTOS_FAUCET_NETWORK=devnet`. Then run from `autonomous/`: `npm run credit:aptos` or `node src/credit-aptos-agent.js`. The agent can also use the `credit_aptos_wallet` tool when this is set. |
-| **Aptos: testnet funding (manual)** | — | No env needed. Fund at [Aptos testnet faucet](https://aptos.dev/network/faucet); or run `node src/credit-aptos-agent.js` (or agent tool `credit_aptos_wallet`) for instructions. |
+| **Aptos: testnet funding (manual)** | — | No env needed. Fund at [Aptos testnet faucet](https://aptos.dev/network/faucet); or run `node src/credit-aptos-agent.js` (or agent tool `credit_aptos_wallet`) for instructions. **If tokens are sent but don’t arrive**, see [Troubleshooting: Tokens sent but not arriving](#tokens-sent-but-not-arriving-at-agent-addresses) below. |
+| **Aptos: register agent address (testnet)** | `autonomous/` | On Aptos, an account must exist on-chain before it can receive. If the faucet says “sent” but the agent balance stays zero, run `node src/register-aptos-agent.js [agent_address]` once. Use a sender with APT: set `REGISTER_SENDER_PRIVATE_KEY` in env, or run from the agent wallet if it already has APT. |
 | **EVM: funding (manual)** | — | No programmatic faucet in this repo. Fund Base Sepolia at a faucet (e.g. [Alchemy Base Sepolia](https://www.alchemy.com/faucets/base-sepolia)). Use agent tool `fund_evm_wallet` for address and link. Whitelist the EVM address at http://localhost:4024/flow.html. |
 | **Full wallet setup + crediting script** | From repo root | `node demo_mcp/scripts/credit-agent-wallets.mjs` (creates Aptos wallet if missing, then credits or prints instructions). With devnet: `APTOS_FAUCET_NETWORK=devnet node demo_mcp/scripts/credit-agent-wallets.mjs`. |
 | **Local x402 facilitator** (optional) | `facilitator/env.example` → `facilitator/.env` | Copy `facilitator/env.example` to `facilitator/.env`. Set `APTOS_NETWORK`, `APTOS_FULLNODE_URL`, `EVM_RELAYER_PRIVATE_KEY`, `BASE_SEPOLIA_RPC`. Then point `server/.env` and `autonomous/.env` at your facilitator URL instead of the public one. |
@@ -340,6 +341,26 @@ Use these places to run on **development networks** and to **fund your own agent
 
 - **Development networks**: MCP server uses **Aptos testnet** and **Base Sepolia** by default; configure in `server/.env` (`APTOS_*`, `BASE_SEPOLIA_*`). Agent wallet paths and optional `EVM_PRIVATE_KEY` are in `autonomous/.env`.
 - **Funding your own wallets**: Set `APTOS_FAUCET_NETWORK=devnet` in `autonomous/.env` (or in the shell when running scripts) to use the **programmatic Aptos devnet faucet**. For testnet, use the [Aptos testnet faucet](https://aptos.dev/network/faucet) and the agent’s `credit_aptos_wallet` / `node src/credit-aptos-agent.js` for instructions. For EVM, use a Base Sepolia faucet and the agent’s `fund_evm_wallet` tool for the address and link. Always whitelist agent addresses at http://localhost:4024/flow.html (EVM and Aptos rows; you can add multiple of each and optionally tag testnet/mainnet).
+
+---
+
+## Troubleshooting
+
+### Tokens sent but not arriving at agent addresses
+
+**Aptos testnet**
+
+- On Aptos, an **account must exist on-chain** before it can receive tokens. The first transfer to an address (e.g. from the [testnet faucet](https://aptos.dev/network/faucet)) usually creates the account; sometimes the faucet or network requires the account to exist first.
+- **Fix**: Register the agent address once so it can receive:
+  1. From `demo_mcp/autonomous/`: run `node src/register-aptos-agent.js [agent_address]` (omit address to use the default agent wallet).
+  2. Use a **sender that already has APT** on the same network: set `REGISTER_SENDER_PRIVATE_KEY` in env (hex private key), or run the script when the agent wallet already has a small amount of APT.
+  3. After registration, fund via the faucet or any transfer; tokens should arrive.
+- **Also check**: (1) **Network** – faucet and agent must use the same network (testnet vs mainnet vs devnet). (2) **Address format** – use the full address (0x + 64 hex chars) when pasting into the faucet.
+
+**Facilitator / validator**
+
+- The x402 facilitator **validates** payment payloads: it checks that the transaction recipient matches the server’s **payTo** and (in CreditNexus mode) that **payTo** is in **PAY_TO_ALLOWLIST**. Addresses are normalized to 64-char hex before comparison, so short vs long form should not cause `pay_to_mismatch`.
+- If payments fail with `pay_to_not_allowed`: set **PAY_TO_ALLOWLIST** (or **APTOS_PAYTO_ADDRESS** in the MCP server) and ensure the facilitator’s **FACILITATOR_MODE=creditnexus** and **PAY_TO_ALLOWLIST** include the intended payTo address.
 
 ---
 

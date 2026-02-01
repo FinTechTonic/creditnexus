@@ -253,6 +253,8 @@ document.addEventListener('DOMContentLoaded', function () {
     else if (evmEntries.length) body.agent_addresses = evmEntries;
     if (aptosEntries.length === 1 && !aptosEntries[0].network) body.aptos_agent_address = aptosEntries[0].address;
     else if (aptosEntries.length) body.aptos_agent_addresses = aptosEntries;
+    var payToAddr = (get('pay-to-address') && get('pay-to-address').value ? get('pay-to-address').value : '').trim();
+    if (payToAddr) body.pay_to_address = payToAddr;
     var fullName = (get('full-name').value || '').trim();
     var email = (get('email').value || '').trim();
     var address = (get('address').value || '').trim();

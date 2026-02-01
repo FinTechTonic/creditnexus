@@ -133,6 +133,11 @@
           </div>
           <button type="button" class="btn btn-outline btn-sm" id="btn-add-aptos">+ Add Aptos address</button>
         </div>
+        <div class="form-group" style="margin-top: 1rem;">
+          <label for="pay-to-address">Pay-to address (optional)</label>
+          <input type="text" id="pay-to-address" placeholder="0x... (recipient for open_bank_account and x402 payments)" />
+          <small class="form-hint">Recipient for open_bank_account and x402 payments. If empty, the first agent address is used as payTo for the demo.</small>
+        </div>
         <div class="error" id="whitelist-error" style="display: none;"></div>
         <button type="button" class="btn btn-primary" id="btn-register">Register</button>
         <div id="snippets-area" style="display: none; margin-top: 1.5rem;">

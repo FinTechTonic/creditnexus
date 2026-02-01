@@ -46,8 +46,11 @@ function getAptosClient(): Aptos {
   return new Aptos(config);
 }
 
+/** Normalize Aptos address to 64-char hex for comparison (avoids pay_to_mismatch from short vs long form). */
 function normalizePayTo(addr: string): string {
-  return (addr || "").replace(/^0x/, "").toLowerCase();
+  const hex = (addr || "").replace(/^0x/, "").toLowerCase();
+  if (hex.length >= 64) return hex.slice(-64);
+  return hex.padStart(64, "0");
 }
 
 function parsePayload(paymentPayload: PaymentPayload): {
@@ -177,7 +180,7 @@ export async function verifyAptos(
         ? paymentRequirements.amount
         : String(paymentRequirements.amount)
     );
-    const payToNorm = normalizePayTo(paymentRequirements.payTo);
+    const payToNorm = normalizePayTo(paymentRequirements.payTo ?? "");
     const recipientNorm = normalizePayTo(recipient);
     if (recipientNorm !== payToNorm) {
       return {

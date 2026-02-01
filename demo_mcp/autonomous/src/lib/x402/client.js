@@ -55,7 +55,15 @@ export async function verifyPayment(facilitatorUrl, paymentPayload, paymentRequi
       }),
       signal: controller.signal,
     });
-    return await res.json().catch(() => ({ isValid: false, invalidReason: 'invalid_response' }));
+    const body = await res.json().catch(() => ({ isValid: false, invalidReason: 'invalid_response' }));
+    if (body && body.isValid === false && body.invalidReason) {
+      const extra = [body.message, body.detail, body.error].filter(Boolean).join(' ');
+      if (extra) {
+        body.invalidReason = body.invalidReason + ` (${extra})`;
+        console.warn('Facilitator verify failed:', body.invalidReason, body);
+      }
+    }
+    return body;
   } catch (e) {
     if (e.name === 'AbortError') {
       return { isValid: false, invalidReason: 'facilitator_timeout: Request timed out' };

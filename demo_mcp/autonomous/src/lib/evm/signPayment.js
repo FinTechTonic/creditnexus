@@ -23,7 +23,12 @@ export async function getEvmPaymentPayload(paymentRequirements) {
   const client = getWalletClient(chainName);
   if (!client) throw new Error(`EVM wallet not available for ${chainName}`);
 
-  const to = paymentRequirements.payTo || '';
+  const to = (paymentRequirements.payTo || '').trim();
+  if (!to || !to.startsWith('0x') || to.length < 40) {
+    throw new Error(
+      'Payment requirements missing valid payTo address. Set BASE_SEPOLIA_PAYTO in server .env or register a pay_to address at http://localhost:4024/flow.html'
+    );
+  }
   const value = BigInt(
     typeof paymentRequirements.amount === 'number'
       ? paymentRequirements.amount

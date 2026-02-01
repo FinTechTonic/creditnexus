@@ -23,15 +23,19 @@ const PAY_TO_ALLOWLIST = (process.env.PAY_TO_ALLOWLIST || "")
   .filter(Boolean);
 const USE_FACILITATOR_PREFIX = process.env.USE_FACILITATOR_PREFIX === "true";
 
+/** Normalize Aptos/EVM address to 64-char hex for comparison (short vs long form). */
 function normalizePayTo(addr: string): string {
-  return (addr || "").replace(/^0x/, "").toLowerCase();
+  const hex = (addr || "").replace(/^0x/, "").toLowerCase();
+  if (hex.length >= 64) return hex.slice(-64);
+  return hex.padStart(64, "0");
 }
 
 function checkPayToAllowlist(payTo: string): boolean {
   if (FACILITATOR_MODE !== "creditnexus" || PAY_TO_ALLOWLIST.length === 0) {
     return true;
   }
-  return PAY_TO_ALLOWLIST.includes(normalizePayTo(payTo));
+  const norm = normalizePayTo(payTo);
+  return PAY_TO_ALLOWLIST.some((entry) => normalizePayTo(entry) === norm);
 }
 
 const app = express();

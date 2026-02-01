@@ -18,8 +18,11 @@ async function main() {
   const message = process.argv.slice(2).join(' ').trim() || DEMO_PROMPT;
 
   const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:4023';
-  const facilitatorUrl = process.env.X402_FACILITATOR_URL || 'https://x402-navy.vercel.app/facilitator';
-  // EVM (open_bank_account) uses public facilitator; set when using local Aptos facilitator
+  const defaultFacilitator = 'https://x402-navy.vercel.app/facilitator';
+  let facilitatorUrl = process.env.X402_FACILITATOR_URL || defaultFacilitator;
+  if (facilitatorUrl.includes('facilitator.x402.org')) {
+    facilitatorUrl = defaultFacilitator;
+  }
   const evmFacilitatorUrl = process.env.X402_EVM_FACILITATOR_URL || facilitatorUrl;
 
   let getAptosPaymentPayloadFn = null;

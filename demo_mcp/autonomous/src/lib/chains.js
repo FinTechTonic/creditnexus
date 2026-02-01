@@ -113,16 +113,17 @@ export const chains = {
 };
 
 /**
- * Get chain config by name
- * @param {string} chainName - Chain name (e.g., "base", "ethereum")
+ * Get chain config by name (case-insensitive; e.g. "baseSepolia", "basesepolia" both work)
+ * @param {string} chainName - Chain name (e.g., "base", "ethereum", "baseSepolia")
  * @returns {Object} Chain configuration
  */
 export function getChain(chainName) {
-  const chain = chains[chainName.toLowerCase()];
-  if (!chain) {
+  const lower = (chainName || '').toLowerCase();
+  const key = Object.keys(chains).find((k) => k.toLowerCase() === lower);
+  if (!key) {
     throw new Error(`Unsupported chain: ${chainName}. Supported chains: ${Object.keys(chains).join(', ')}`);
   }
-  return chain;
+  return chains[key];
 }
 
 /**
