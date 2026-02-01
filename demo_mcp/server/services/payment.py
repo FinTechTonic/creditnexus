@@ -102,12 +102,17 @@ def build_payment_requirements(
             }
         }
     else:
+        # Use APTOS_PAYTO_ADDRESS if set; else first pay_to allowlist address (e.g. from onboarding)
+        pay_to = (APTOS_PAYTO_ADDRESS or "").strip()
+        if not pay_to:
+            pay_to_list = sorted(get_pay_to_allowlist())
+            pay_to = (pay_to_list[0] or "").strip() if pay_to_list else ""
         return {
             "scheme": "exact",
             "network": APTOS_NETWORK,
             "amount": usd_to_atomic(amount_usd),
             "asset": APTOS_USDC_ASSET,
-            "payTo": APTOS_PAYTO_ADDRESS,
+            "payTo": pay_to,
             "maxTimeoutSeconds": MAX_TIMEOUT_SECONDS,
             "extra": {
                 "resource": resource,

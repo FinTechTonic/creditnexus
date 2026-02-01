@@ -23,7 +23,21 @@ export async function buildAptosPaymentPayload(paymentRequirements, wallet) {
       : String(paymentRequirements.amount)
   );
   const asset = paymentRequirements.asset || '';
-  const payTo = paymentRequirements.payTo || '';
+  const payTo = (paymentRequirements.payTo || '').trim();
+
+  // Aptos SDK parses payTo as address; empty string causes "Hex string is too short"
+  if (!payTo || payTo.length < 32) {
+    throw new Error(
+      'Payment requirements missing valid payTo address. Set APTOS_PAYTO_ADDRESS in server .env or register a pay_to address at http://localhost:4024/flow.html'
+    );
+  }
+
+  const rawKey = (w.privateKey || '').replace(/^0x/, '');
+  if (!rawKey || rawKey.length < 64) {
+    throw new Error(
+      'Aptos wallet private key is missing or invalid (expected 64 hex chars). Run setup-aptos.js or create_aptos_wallet first.'
+    );
+  }
 
   try {
     const { Account, Aptos, AptosConfig, Network, Ed25519PrivateKey } = await import('@aptos-labs/ts-sdk');
@@ -39,6 +53,9 @@ export async function buildAptosPaymentPayload(paymentRequirements, wallet) {
     // For APT (AptosCoin), use aptos_account::transfer instead of primary_fungible_store
     const isAptCoin = asset === '0x1::aptos_coin::AptosCoin';
 
+    // For fungible assets (e.g. USDC), asset is the metadata object address. The Move signature is:
+    // transfer<T: key>(sender, metadata: Object<T>, recipient, amount). Type arg is Metadata;
+    // function args are [metadata_address, recipient, amount].
     const builder = await aptos.transaction.build.simple({
       sender: account.accountAddress,
       withFeePayer: false,
@@ -47,8 +64,8 @@ export async function buildAptosPaymentPayload(paymentRequirements, wallet) {
         functionArguments: [payTo, amount],
       } : {
         function: '0x1::primary_fungible_store::transfer',
-        typeArguments: [asset],
-        functionArguments: [payTo, amount],
+        typeArguments: ['0x1::fungible_asset::Metadata'],
+        functionArguments: [asset, payTo, amount],
       },
     });
 
@@ -60,6 +77,7 @@ export async function buildAptosPaymentPayload(paymentRequirements, wallet) {
     const senderAuthenticatorBytes = accountAuthenticator.bcsToBytes();
 
     return {
+      x402Version: 2,
       scheme: paymentRequirements.scheme || 'exact',
       network,
       payload: {

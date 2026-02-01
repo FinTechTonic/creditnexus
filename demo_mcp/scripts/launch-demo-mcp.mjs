@@ -91,6 +91,23 @@ function runInherit(cmd, args, opts = {}) {
   });
 }
 
+/** Run agent subprocess without touching stdin so parent readline keeps working for next Message> */
+function runAgentProcess(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      cwd: opts.cwd || projectRoot,
+      stdio: ["ignore", process.stdout, process.stderr],
+      shell: opts.shell ?? false,
+      env: { ...process.env, ...opts.env },
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) reject(new Error(`${cmd} exited ${code}`));
+      else resolve();
+    });
+  });
+}
+
 /** Fetch onboarding /env-export and parse into env object so agent gets latest allowlist. */
 async function fetchEnvExport(baseUrl) {
   try {
@@ -317,7 +334,7 @@ async function main() {
     if (Object.keys(hydratedEnv).length) {
       console.log("  (refreshed allowlist from onboarding for this run)");
     }
-    return runInherit("node", ["src/run-agent.js", msg], { cwd: agentCwd, shell: isWindows, env });
+    return runAgentProcess("node", ["src/run-agent.js", msg], { cwd: agentCwd, shell: isWindows, env });
   };
 
   for (;;) {

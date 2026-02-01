@@ -69,6 +69,7 @@ export async function getEvmPaymentPayload(paymentRequirements) {
   });
 
   return {
+    x402Version: 2,
     scheme: paymentRequirements.scheme || 'exact',
     network,
     payload: {

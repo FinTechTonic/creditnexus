@@ -41,7 +41,7 @@ async def call_prediction(
                 "symbol": symbol,
                 "horizon": horizon
             },
-            timeout=30.0
+            timeout=120.0
         )
         response.raise_for_status()
         return response.json()
@@ -85,7 +85,7 @@ async def call_backtest(
             f"{CREDITNEXUS_URL}/api/stock-prediction/backtest",
             headers=headers,
             json=body,
-            timeout=60.0
+            timeout=120.0
         )
         response.raise_for_status()
         return response.json()

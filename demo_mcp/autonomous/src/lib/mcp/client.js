@@ -1,11 +1,23 @@
 /**
  * MCP client with x402 retry: uses official MCP SDK with StreamableHTTP transport.
- * On 402 from tool call, pays via facilitator and retries.
+ * On 402 from tool call, pays via facilitator and retries in one shot (agent calls
+ * the tool once; 402 + verify + settle + retry happen inside callTool; agent gets
+ * final result or error, never 402).
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { verifyPayment, settlePayment } from '../x402/index.js';
+
+/** Max time for a single callTool (connect + call + payment flow + retry); ms. MCP responses (e.g. prediction) can take > 1 min. */
+const CALL_TOOL_TIMEOUT_MS = 300_000;
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label || 'Operation'} timed out after ${ms / 1000}s`)), ms);
+    promise.then((v) => { clearTimeout(t); resolve(v); }).catch((e) => { clearTimeout(t); reject(e); });
+  });
+}
 
 /**
  * @param {Object} config
@@ -15,6 +27,7 @@ import { verifyPayment, settlePayment } from '../x402/index.js';
  * @param {(r: import('../x402/types.js').PaymentRequirements) => Promise<Object>} config.getAptosPaymentPayload
  * @param {(r: import('../x402/types.js').PaymentRequirements) => Promise<Object>} config.getEvmPaymentPayload
  * @param {number} [config.maxRetries]
+ * @param {number} [config.callToolTimeoutMs] - max ms for a single callTool (default 300000; MCP responses can take > 1 min)
  */
 export function createMcpClient(config) {
   const baseUrl = (config.baseUrl || '').replace(/\/+$/, '');
@@ -24,6 +37,7 @@ export function createMcpClient(config) {
   const getAptosPaymentPayload = config.getAptosPaymentPayload;
   const getEvmPaymentPayload = config.getEvmPaymentPayload;
   const maxRetries = config.maxRetries ?? 2;
+  const callToolTimeoutMs = config.callToolTimeoutMs ?? CALL_TOOL_TIMEOUT_MS;
 
   let mcpClient = null;
   let isConnected = false;
@@ -77,11 +91,12 @@ export function createMcpClient(config) {
    * @returns {Promise<{ result?: unknown; payment_receipt?: Object }>}
    */
   async function callTool(name, args = {}) {
-    console.log(`MCP client calling tool: ${name}`, args);
-    await connect();
-    console.log('MCP client connected');
+    const run = async () => {
+      console.log(`MCP client calling tool: ${name}`, args);
+      await connect();
+      console.log('MCP client connected');
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         console.log(`MCP tool call attempt ${attempt + 1}`);
         const result = await mcpClient.callTool({
@@ -197,9 +212,13 @@ export function createMcpClient(config) {
           return { result: { error: error.message } };
         }
       }
-    }
+      }
 
-    return { result: { error: 'Max retries exceeded' } };
+      return { result: { error: 'Max retries exceeded' } };
+    };
+    return withTimeout(run(), callToolTimeoutMs, 'MCP callTool').catch((err) => ({
+      result: { error: err.message || 'MCP callTool failed' },
+    }));
   }
 
   return { callTool, connect, disconnect };

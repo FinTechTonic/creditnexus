@@ -23,6 +23,11 @@ function normalizeFacilitatorUrl(url) {
   };
 }
 
+/** Timeout for verify (ms); slightly above server/facilitator 30s */
+const VERIFY_TIMEOUT_MS = 35_000;
+/** Timeout for settle (ms); slightly above server/facilitator 60s */
+const SETTLE_TIMEOUT_MS = 65_000;
+
 /**
  * Verify payment with facilitator.
  * @param {string} facilitatorUrl - Facilitator base URL
@@ -32,21 +37,33 @@ function normalizeFacilitatorUrl(url) {
  */
 export async function verifyPayment(facilitatorUrl, paymentPayload, paymentRequirements) {
   const { verifyUrl } = normalizeFacilitatorUrl(facilitatorUrl);
-  const res = await fetch(verifyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      x402Version: 2,
-      paymentPayload: {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
+  try {
+    const res = await fetch(verifyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         x402Version: 2,
-        ...paymentPayload,
-        network: paymentRequirements.network,
-        scheme: paymentRequirements.scheme
-      },
-      paymentRequirements,
-    }),
-  });
-  return await res.json().catch(() => ({ isValid: false, invalidReason: 'invalid_response' }));
+        paymentPayload: {
+          x402Version: 2,
+          ...paymentPayload,
+          network: paymentRequirements.network,
+          scheme: paymentRequirements.scheme
+        },
+        paymentRequirements,
+      }),
+      signal: controller.signal,
+    });
+    return await res.json().catch(() => ({ isValid: false, invalidReason: 'invalid_response' }));
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      return { isValid: false, invalidReason: 'facilitator_timeout: Request timed out' };
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -59,22 +76,34 @@ export async function verifyPayment(facilitatorUrl, paymentPayload, paymentRequi
  */
 export async function settlePayment(facilitatorUrl, paymentPayload, paymentRequirements, verification = {}) {
   const { settleUrl } = normalizeFacilitatorUrl(facilitatorUrl);
-  const res = await fetch(settleUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      x402Version: 2,
-      paymentPayload: {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SETTLE_TIMEOUT_MS);
+  try {
+    const res = await fetch(settleUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         x402Version: 2,
-        ...paymentPayload,
-        network: paymentRequirements.network,
-        scheme: paymentRequirements.scheme
-      },
-      paymentRequirements,
-      verification,
-    }),
-  });
-  return await res.json().catch(() => ({ success: false, errorReason: 'invalid_response' }));
+        paymentPayload: {
+          x402Version: 2,
+          ...paymentPayload,
+          network: paymentRequirements.network,
+          scheme: paymentRequirements.scheme
+        },
+        paymentRequirements,
+        verification,
+      }),
+      signal: controller.signal,
+    });
+    return await res.json().catch(() => ({ success: false, errorReason: 'invalid_response' }));
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      return { success: false, errorReason: 'settlement_timeout: Request timed out' };
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
