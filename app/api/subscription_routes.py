@@ -301,6 +301,12 @@ async def post_revenuecat_purchase(
         duration = "P1M"
 
     # Grant promotional entitlement (subscribe products)
+    
+    # Verify purchase by checking subscriber (RevenueCat SDK handles payment verification)
+    # If transaction_id or purchase_token provided, we could verify more strictly
+    # For now, we trust the SDK and grant entitlement
+    
+    # Grant promotional entitlement
     grant_result = revenuecat.grant_promotional_entitlement(
         app_user_id=app_user_id,
         entitlement_id=entitlement_id,
@@ -319,6 +325,8 @@ async def post_revenuecat_purchase(
     try:
         subscription_service = SubscriptionService(db)
 
+        
+        # For org-admin, mark as paid and ensure user has an organisation
         if body.product_id == "org_admin":
             subscription_service.mark_org_admin_paid(
                 user_id=current_user.id,
@@ -326,6 +334,7 @@ async def post_revenuecat_purchase(
             )
             subscription_service.ensure_org_for_paying_user(current_user.id)
 
+        # Allocate credits based on product
         from app.services.rolling_credits_service import RollingCreditsService
         credits_service = RollingCreditsService(db)
 
@@ -346,10 +355,11 @@ async def post_revenuecat_purchase(
                 description="Subscription upgrade credits",
             )
         elif body.product_id == "mobile_app":
+            # Mobile app purchase: one-time credits (tier equivalent)
             credits_service.add_credits(
                 user_id=current_user.id,
                 credit_type="universal",
-                amount=float(getattr(settings, "MOBILE_APP_PURCHASE_CREDITS", 360)),
+                amount=float(getattr(settings, "MOBILE_APP_PURCHASE_CREDITS", 50)),
                 feature="mobile_app_purchase",
                 description="Mobile app purchase credits",
             )
