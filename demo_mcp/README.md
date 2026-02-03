@@ -174,6 +174,35 @@ PM2 processes are started using `demo_mcp/ecosystem.config.cjs` so all logs are 
 
 ---
 
+## Standalone deployment (Replit)
+
+You can run `demo_mcp/` **without the main CreditNexus repo**: clone or copy `demo_mcp` as the project root (e.g. Replit root = contents of demo_mcp).
+
+**Steps**
+
+1. Set `STANDALONE=1`. Optionally set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` for Plaid; `CREDITNEXUS_SERVICE_KEY` for self-calls. For x402 payments, the **facilitator** is vendored and started by `run_standalone.py`; set **`APTOS_PRIVATE_KEY`** (fee payer, hex with `0x`) in Replit Secrets so the facilitator can settle Aptos payments. Optional: `FACILITATOR_MODE=creditnexus`, `PAY_TO_ALLOWLIST` (or allowlist file path via `ONBOARDING_ALLOWLIST_FILE` so pay_to is synced).
+2. Install deps: `pip install -r server/requirements.txt`, `pip install -r onboarding/requirements.txt`; for the facilitator run `npm install` in `facilitator/` (or let `run_standalone.py` build it on first run).
+3. Run the standalone stack (facilitator → onboarding → MCP):
+   ```bash
+   python run_standalone.py
+   ```
+   This starts **x402 facilitator** on port **4022**, **onboarding** on **8080** (web), and **MCP** on **4023**. MCP and agents use the facilitator for 402 verify/settle. Set `FACILITATOR_PORT`, `ONBOARDING_PORT`, `MCP_PORT` to override.
+4. **Replit**: Web port = onboarding (8080). Expose facilitator (4022) and MCP (4023) so agents can reach them. Set **`X402_FACILITATOR_URL`** to the facilitator’s public URL (e.g. Replit’s URL for port 4022) so external agents can pay. Use the MCP URL (port 4023) in Cursor, Claude Desktop, or adapter configs.
+5. Agent skills (autonomous + adapters) are published separately; add the MCP and facilitator URLs to your client/agent config.
+
+**Launcher (monorepo)**  
+From repo root, `STANDALONE=1 npm run demo-mcp:launch` skips starting the CreditNexus backend and API key creation; it starts only the MCP server and onboarding from `demo_mcp` with vendored APIs.
+
+### Distribution (three layers)
+
+1. **Capability:** MCP server (`server/`) + autonomous agent (`autonomous/src/`). Portable, platform-agnostic; no OpenAI/Claw/Anthropic logic in core code.
+2. **Adapters:** `autonomous/adapters/` — OpenClaw SKILL.md, OpenAI openapi.yaml, Anthropic tools.json. Thin wrappers describing how each platform calls the capability.
+3. **Where to find it:** **GitHub** = canonical source (tag releases, version). **Replit** = onboarding site (main URL → demo_mcp/onboarding/). ClawHub / docs / template repos for discoverability.
+
+The **Replit website** is the **onboarding site** (landing + flow.html). MCP runs on a secondary port; add the MCP URL to client/IDE config. Agent skills (autonomous + adapters) are published in parallel; use adapters for each platform.
+
+---
+
 ## Deployment
 
 ### Option 1: Both Independent

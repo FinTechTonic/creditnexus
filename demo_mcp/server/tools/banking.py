@@ -6,8 +6,12 @@ Implements HTTP 402 Payment Required pattern with EVM payments
 import logging
 from typing import Optional
 
-from demo_mcp.server.config import PRICE_BANKING_USD, ONRAMP_URL
-from demo_mcp.server.services import verify_payment, settle_payment, build_payment_requirements, create_plaid_link_token
+try:
+    from server.config import PRICE_BANKING_USD, ONRAMP_URL
+    from server.services import verify_payment, settle_payment, build_payment_requirements, create_plaid_link_token
+except ImportError:
+    from demo_mcp.server.config import PRICE_BANKING_USD, ONRAMP_URL
+    from demo_mcp.server.services import verify_payment, settle_payment, build_payment_requirements, create_plaid_link_token
 
 logger = logging.getLogger(__name__)
 

@@ -7,14 +7,24 @@ the server returns 200 with score (100 for whitelisted, 100+ Plaid-derived when 
 import logging
 from typing import Optional
 
-from demo_mcp.server.config import PRICE_SCORE_USD, ONRAMP_URL  # noqa: I100
-from demo_mcp.server.services import (
-    verify_payment,
-    settle_payment,
-    build_payment_requirements,
-    check_allowlist,
-)
-from demo_mcp.server.services import get_borrower_score_for_agent
+try:
+    from server.config import PRICE_SCORE_USD, ONRAMP_URL  # noqa: I100
+    from server.services import (
+        verify_payment,
+        settle_payment,
+        build_payment_requirements,
+        check_allowlist,
+    )
+    from server.services import get_borrower_score_for_agent
+except ImportError:
+    from demo_mcp.server.config import PRICE_SCORE_USD, ONRAMP_URL  # noqa: I100
+    from demo_mcp.server.services import (
+        verify_payment,
+        settle_payment,
+        build_payment_requirements,
+        check_allowlist,
+    )
+    from demo_mcp.server.services import get_borrower_score_for_agent
 
 logger = logging.getLogger(__name__)
 

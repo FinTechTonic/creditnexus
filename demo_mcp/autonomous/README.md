@@ -46,6 +46,17 @@ Copy `.env.example` to `.env` and set:
 | `EVM_WALLET_PATH` | Path to EVM wallet. Multi-wallet: ~/.evm-wallets.json (wallets array + defaultIndex). Or set EVM_PRIVATE_KEY for single wallet. |
 | `BASE_SEPOLIA_RPC` | Optional; Base Sepolia RPC for open_bank_account |
 
+## Capability + adapters
+
+- **Capability:** Core (`src/`) is the capability layer — MCP client + x402 flow + local tools. No OpenAI/Claw/Anthropic logic in code.
+- **Adapters:** `adapters/` describe how each platform calls the capability:
+  - **OpenClaw / Moltbot:** [adapters/openclaw/SKILL.md](adapters/openclaw/SKILL.md) — how to install, run, and use MCP_SERVER_URL + x402.
+  - **OpenAI:** [adapters/openai/openapi.yaml](adapters/openai/openapi.yaml) — OpenAPI spec for Custom GPTs / Assistants (run_prediction, run_backtest, open_bank_account, scores).
+  - **Claude:** [adapters/anthropic/tools.json](adapters/anthropic/tools.json) — Claude tool definitions (same tool set).
+  - **Local / OSS:** [adapters/local/README.md](adapters/local/README.md) — instructions for LM Studio, AutoGen, CrewAI, etc.
+
+For platform-specific setup (OpenClaw, OpenAI, Claude), see `adapters/`.
+
 ## Run
 
 ```bash

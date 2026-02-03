@@ -5,10 +5,16 @@ Payment-protected tools for CreditNexus
 
 import logging
 
-from demo_mcp.server.tools.prediction import register_tools as register_prediction_tools
-from demo_mcp.server.tools.backtest import register_tools as register_backtest_tools
-from demo_mcp.server.tools.banking import register_tools as register_banking_tools
-from demo_mcp.server.tools.scores import register_tools as register_score_tools
+try:
+    from server.tools.prediction import register_tools as register_prediction_tools
+    from server.tools.backtest import register_tools as register_backtest_tools
+    from server.tools.banking import register_tools as register_banking_tools
+    from server.tools.scores import register_tools as register_score_tools
+except ImportError:
+    from demo_mcp.server.tools.prediction import register_tools as register_prediction_tools
+    from demo_mcp.server.tools.backtest import register_tools as register_backtest_tools
+    from demo_mcp.server.tools.banking import register_tools as register_banking_tools
+    from demo_mcp.server.tools.scores import register_tools as register_score_tools
 
 logger = logging.getLogger(__name__)
 

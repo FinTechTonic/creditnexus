@@ -90,5 +90,61 @@
       "email": "tonic@tonic-ai.com",
       "address": "2 Old Mamaroneck Rd"
     }
+  },
+  {
+    "agent_address": "0x4cBAb5B2bc1407f81F73B16bcee3AD99305C3f9D",
+    "agent_wallets": {
+      "evm": [
+        {
+          "address": "0x6169945e5827e2742c8e2e3f88ffd6d84fff4fe2",
+          "network": null
+        },
+        {
+          "address": "0x4cbab5b2bc1407f81f73b16bcee3ad99305c3f9d",
+          "network": null
+        }
+      ],
+      "aptos": [
+        {
+          "address": "0x7fa543e4e050b05b80f4d1d7d58c8681debb18cb593f58078973f785bb10305d",
+          "network": null
+        }
+      ]
+    },
+    "banking_application": {
+      "full_name": "Joseph Rich Pollack",
+      "email": "joseph.pollack@emle.eu",
+      "address": "53 rue de Sevres"
+    }
+  },
+  {
+    "agent_address": "0xacb34e4a446c335dbd535c279cd1e2e54618f1c8",
+    "agent_wallets": {
+      "evm": [
+        {
+          "address": "0x6169945e5827e2742c8e2e3f88ffd6d84fff4fe2",
+          "network": null
+        },
+        {
+          "address": "0x4cbab5b2bc1407f81f73b16bcee3ad99305c3f9d",
+          "network": null
+        },
+        {
+          "address": "0xacb34e4a446c335dbd535c279cd1e2e54618f1c8",
+          "network": null
+        }
+      ],
+      "aptos": [
+        {
+          "address": "0x7fa543e4e050b05b80f4d1d7d58c8681debb18cb593f58078973f785bb10305d",
+          "network": null
+        }
+      ]
+    },
+    "banking_application": {
+      "full_name": "Joseph Pollack",
+      "email": "joseph.pollack@emle.eu",
+      "address": "1350 Beverly Rd. Ste 215"
+    }
   }
 ]

@@ -1,13 +1,18 @@
 """
 CreditNexus Backend API Client
 Handles HTTP requests to CreditNexus backend services
+When STANDALONE=1, uses vendored stubs and Plaid (no HTTP to CreditNexus).
 """
 
+import asyncio
 import httpx
 import logging
 from typing import Optional
 
-from demo_mcp.server.config import CREDITNEXUS_URL, SERVICE_KEY
+try:
+    from server.config import CREDITNEXUS_URL, SERVICE_KEY, STANDALONE
+except ImportError:
+    from demo_mcp.server.config import CREDITNEXUS_URL, SERVICE_KEY, STANDALONE
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,12 @@ async def call_prediction(
     Raises:
         httpx.HTTPError: If API call fails
     """
+    if STANDALONE:
+        try:
+            from server.vendored.stock_stub import stub_daily
+        except ImportError:
+            from demo_mcp.server.vendored.stock_stub import stub_daily
+        return await asyncio.to_thread(stub_daily, symbol, horizon)
     headers = {}
     if SERVICE_KEY:
         headers["X-API-Key"] = SERVICE_KEY
@@ -68,6 +79,15 @@ async def call_backtest(
     Raises:
         httpx.HTTPError: If API call fails
     """
+    if STANDALONE:
+        try:
+            from server.vendored.stock_stub import stub_backtest
+        except ImportError:
+            from demo_mcp.server.vendored.stock_stub import stub_backtest
+        return await asyncio.to_thread(
+            stub_backtest, symbol,
+            start_date=start_date, end_date=end_date, strategy=strategy,
+        )
     headers = {}
     if SERVICE_KEY:
         headers["X-API-Key"] = SERVICE_KEY
@@ -97,6 +117,13 @@ async def get_borrower_score_for_agent(agent_address: Optional[str]) -> Optional
     Returns None if no linked account or backend does not expose score; otherwise 0–100 component.
     CreditNexus backend may expose GET /api/agent-score?wallet=0x... returning { plaid_score: int }.
     """
+    if STANDALONE:
+        try:
+            from server.vendored.plaid_local import get_plaid_connection_by_agent_wallet
+        except ImportError:
+            from demo_mcp.server.vendored.plaid_local import get_plaid_connection_by_agent_wallet
+        conn = await asyncio.to_thread(get_plaid_connection_by_agent_wallet, agent_address or "")
+        return 50 if conn else None
     if not agent_address or not CREDITNEXUS_URL:
         return None
     headers = {}
@@ -132,6 +159,12 @@ async def create_plaid_link_token(user_id: Optional[str] = None) -> dict:
     Raises:
         httpx.HTTPError: If API call fails
     """
+    if STANDALONE:
+        try:
+            from server.vendored.plaid_local import create_link_token
+        except ImportError:
+            from demo_mcp.server.vendored.plaid_local import create_link_token
+        return await asyncio.to_thread(create_link_token, user_id or "mcp-demo")
     headers = {}
     if SERVICE_KEY:
         headers["X-API-Key"] = SERVICE_KEY
@@ -164,6 +197,12 @@ async def exchange_plaid_public_token(
     Raises:
         httpx.HTTPError: If API call fails
     """
+    if STANDALONE:
+        try:
+            from server.vendored.plaid_local import exchange_public_token
+        except ImportError:
+            from demo_mcp.server.vendored.plaid_local import exchange_public_token
+        return await asyncio.to_thread(exchange_public_token, public_token, agent_wallet)
     headers = {"Content-Type": "application/json"}
     if SERVICE_KEY:
         headers["X-API-Key"] = SERVICE_KEY

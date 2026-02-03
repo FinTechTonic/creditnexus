@@ -1,0 +1,25 @@
+# Standalone demo_mcp: facilitator (x402) + onboarding (web) + MCP. Replit web = onboarding site.
+run = "python run_standalone.py"
+entrypoint = "run_standalone.py"
+
+[nix]
+channel = "stable-25_05"
+packages = ["python311", "nodejs-20"]
+
+[deployment]
+run = ["python", "run_standalone.py"]
+# Primary (web) port = onboarding (8080); facilitator 4022; MCP 4023.
+ports = ["8080", "4022", "4023"]
+
+[ports]
+# Web (default): onboarding site (landing + flow.html)
+localPort = 8080
+externalPort = 80
+# x402 facilitator (verify/settle) – used by MCP and agents
+localPort = 4022
+externalPort = 4022
+exposeLocalhost = true
+# MCP/API for clients and adapters
+localPort = 4023
+externalPort = 4023
+exposeLocalhost = true

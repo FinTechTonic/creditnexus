@@ -206,83 +206,140 @@ function setEnvKey(envPath, keyName, value) {
 
 async function main() {
   loadEnv();
-  const creditNexusUrl = process.env.CREDITNEXUS_URL || "http://localhost:8000";
-  const onboardingUrl = "http://localhost:4024";
+  const isStandalone = process.env.STANDALONE === "1";
+  const creditNexusUrl = isStandalone
+    ? "http://127.0.0.1:4023"
+    : (process.env.CREDITNEXUS_URL || "http://localhost:8000");
+  const onboardingUrl = process.env.ONBOARDING_URL || "http://localhost:4024";
 
-  console.log("CreditNexus demo MCP launcher");
+  console.log("CreditNexus demo MCP launcher" + (isStandalone ? " (STANDALONE=1)" : ""));
   console.log("Project root:", projectRoot);
   console.log("CreditNexus URL:", creditNexusUrl);
   console.log("");
   console.log("  After startup you can:");
   console.log("  • Whitelist your agent → " + onboardingUrl + " (or " + onboardingUrl + "/flow.html)");
   console.log("  • Chat with the demo agent → this terminal (Message> prompt)");
-  console.log("  • Use the full app → " + creditNexusUrl);
+  if (!isStandalone) console.log("  • Use the full app → " + creditNexusUrl);
   console.log("");
 
-  // Ensure demo_mcp log dir exists (PM2 writes backend + MCP server logs here)
-  const logsDir = path.join(demoMcpRoot, "logs");
-  if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
-
-  // Sync Python deps with uv (required for PM2 apps; includes fastmcp for MCP server)
-  const ecosystemPath = path.join(demoMcpRoot, "ecosystem.config.cjs");
-  console.log("\n[0/7] Syncing Python deps (uv sync)...");
-  try {
-    await run("uv", ["sync"], { cwd: projectRoot, shell: isWindows });
-  } catch (e) {
-    console.error("uv sync failed. Install uv: https://docs.astral.sh/uv/");
-    throw e;
-  }
-
-  // 1. Start backend (using demo_mcp ecosystem; uv run, logs → demo_mcp/logs/)
-  console.log("\n[1/7] Starting CreditNexus backend (PM2 backend-dev, logs → demo_mcp/logs/)...");
-  await run("npx", ["pm2", "start", ecosystemPath, "--only", "backend-dev"], { cwd: projectRoot, shell: isWindows });
-  console.log("Backend started. Waiting 1 minute for startup...");
-  console.log("  → When ready, CreditNexus app: " + creditNexusUrl);
-
-  // 2. Wait 1 minute
-  await sleep(60 * 1000);
-
-  // 3. Login as admin
-  console.log("\n[3/7] Logging in as administrator...");
-  const accessToken = await login(creditNexusUrl);
-  console.log("Login OK.");
-
-  // 4. Create API key and save to demo_mcp/server/.env (skip if already set)
-  const serverEnvPath = path.join(demoMcpRoot, "server", ".env");
-  let apiKey = getEnvKey(serverEnvPath, "CREDITNEXUS_SERVICE_KEY");
-  if (apiKey) {
-    console.log("\n[4/7] CREDITNEXUS_SERVICE_KEY already set in demo_mcp/server/.env, skipping API key creation.");
-  } else {
-    console.log("\n[4/7] Creating API key and saving to demo_mcp/server/.env...");
-    try {
-      apiKey = await generateApiKey(accessToken, creditNexusUrl, "mcp-service");
-    } catch (e) {
-      if (e.status === 400 && e.body && e.body.includes("already exists")) {
-        const uniqueName = `mcp-service-${Date.now()}`;
-        console.log(`Profile 'mcp-service' already exists, creating '${uniqueName}'...`);
-        apiKey = await generateApiKey(accessToken, creditNexusUrl, uniqueName);
-      } else {
-        throw e;
+  if (isStandalone) {
+    // STANDALONE=1: skip backend and API key; start MCP + onboarding from demo_mcp root with vendored APIs
+    const serverEnvPath = path.join(demoMcpRoot, "server", ".env");
+    setEnvKey(serverEnvPath, "CREDITNEXUS_API_URL", "http://127.0.0.1:4023");
+    setEnvKey(serverEnvPath, "STANDALONE", "1");
+    console.log("\n[STANDALONE] Skipping backend and API key; using vendored stubs/Plaid.");
+    console.log("[STANDALONE] Starting MCP server (port 4023) and onboarding (port 4024) from demo_mcp root...");
+    const mcpProc = spawn(
+      "python",
+      [path.join(demoMcpRoot, "server", "server.py")],
+      {
+        cwd: demoMcpRoot,
+        stdio: "pipe",
+        shell: false,
+        env: {
+          ...process.env,
+          PYTHONPATH: demoMcpRoot,
+          STANDALONE: "1",
+          CREDITNEXUS_API_URL: "http://127.0.0.1:4023",
+          PORT: "4023",
+        },
       }
+    );
+    mcpProc.stdout?.on("data", (d) => process.stdout.write(d));
+    mcpProc.stderr?.on("data", (d) => process.stderr.write(d));
+    mcpProc.on("error", (e) => {
+      console.error("MCP server failed:", e);
+      process.exit(1);
+    });
+    await sleep(3000);
+    const onboardingProc = spawn(
+      "python",
+      [path.join(demoMcpRoot, "onboarding", "server.py")],
+      {
+        cwd: demoMcpRoot,
+        stdio: "pipe",
+        shell: false,
+        env: {
+          ...process.env,
+          PORT: "4024",
+          MCP_SERVER_URL: "http://127.0.0.1:4023",
+        },
+      }
+    );
+    onboardingProc.stdout?.on("data", (d) => process.stdout.write(d));
+    onboardingProc.stderr?.on("data", (d) => process.stderr.write(d));
+    onboardingProc.on("error", (e) => {
+      console.error("Onboarding server failed:", e);
+      process.exit(1);
+    });
+    await sleep(2000);
+    console.log("  → MCP: http://127.0.0.1:4023  Onboarding: " + onboardingUrl);
+  } else {
+    // Ensure demo_mcp log dir exists (PM2 writes backend + MCP server logs here)
+    const logsDir = path.join(demoMcpRoot, "logs");
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+
+    // Sync Python deps with uv (required for PM2 apps; includes fastmcp for MCP server)
+    const ecosystemPath = path.join(demoMcpRoot, "ecosystem.config.cjs");
+    console.log("\n[0/7] Syncing Python deps (uv sync)...");
+    try {
+      await run("uv", ["sync"], { cwd: projectRoot, shell: isWindows });
+    } catch (e) {
+      console.error("uv sync failed. Install uv: https://docs.astral.sh/uv/");
+      throw e;
     }
-    setEnvKey(serverEnvPath, "CREDITNEXUS_SERVICE_KEY", apiKey);
-    console.log("CREDITNEXUS_SERVICE_KEY saved to demo_mcp/server/.env");
+
+    // 1. Start backend (using demo_mcp ecosystem; uv run, logs → demo_mcp/logs/)
+    console.log("\n[1/7] Starting CreditNexus backend (PM2 backend-dev, logs → demo_mcp/logs/)...");
+    await run("npx", ["pm2", "start", ecosystemPath, "--only", "backend-dev"], { cwd: projectRoot, shell: isWindows });
+    console.log("Backend started. Waiting 1 minute for startup...");
+    console.log("  → When ready, CreditNexus app: " + creditNexusUrl);
+
+    // 2. Wait 1 minute
+    await sleep(60 * 1000);
+
+    // 3. Login as admin
+    console.log("\n[3/7] Logging in as administrator...");
+    const accessToken = await login(creditNexusUrl);
+    console.log("Login OK.");
+
+    // 4. Create API key and save to demo_mcp/server/.env (skip if already set)
+    const serverEnvPath = path.join(demoMcpRoot, "server", ".env");
+    let apiKey = getEnvKey(serverEnvPath, "CREDITNEXUS_SERVICE_KEY");
+    if (apiKey) {
+      console.log("\n[4/7] CREDITNEXUS_SERVICE_KEY already set in demo_mcp/server/.env, skipping API key creation.");
+    } else {
+      console.log("\n[4/7] Creating API key and saving to demo_mcp/server/.env...");
+      try {
+        apiKey = await generateApiKey(accessToken, creditNexusUrl, "mcp-service");
+      } catch (e) {
+        if (e.status === 400 && e.body && e.body.includes("already exists")) {
+          const uniqueName = `mcp-service-${Date.now()}`;
+          console.log(`Profile 'mcp-service' already exists, creating '${uniqueName}'...`);
+          apiKey = await generateApiKey(accessToken, creditNexusUrl, uniqueName);
+        } else {
+          throw e;
+        }
+      }
+      setEnvKey(serverEnvPath, "CREDITNEXUS_SERVICE_KEY", apiKey);
+      console.log("CREDITNEXUS_SERVICE_KEY saved to demo_mcp/server/.env");
+    }
+
+    // 5. Start MCP server (same ecosystem → logs in demo_mcp/logs/)
+    console.log("\n[5/7] Starting MCP server (PM2 mcp-server, logs → demo_mcp/logs/)...");
+    await run("npx", ["pm2", "start", ecosystemPath, "--only", "mcp-server"], { cwd: projectRoot, shell: isWindows });
+    console.log("MCP server started. Giving it a few seconds...");
+    console.log("  → Whitelist agents at " + onboardingUrl + "/flow.html so they can call MCP tools.");
+    await sleep(5000);
+
+    // 6. Start onboarding site (whitelisting flow)
+    console.log("\n[6/7] Starting onboarding site (PM2 onboarding, logs → demo_mcp/logs/)...");
+    await run("npx", ["pm2", "start", ecosystemPath, "--only", "onboarding"], { cwd: projectRoot, shell: isWindows });
+    console.log("Onboarding site started.");
+    console.log("  → Open in browser to whitelist your agent:", onboardingUrl);
+    console.log("  → Full flow (wallet, KYC, allowlist, env snippet):", `${onboardingUrl}/flow.html`);
+    await sleep(2000);
   }
-
-  // 5. Start MCP server (same ecosystem → logs in demo_mcp/logs/)
-  console.log("\n[5/7] Starting MCP server (PM2 mcp-server, logs → demo_mcp/logs/)...");
-  await run("npx", ["pm2", "start", ecosystemPath, "--only", "mcp-server"], { cwd: projectRoot, shell: isWindows });
-  console.log("MCP server started. Giving it a few seconds...");
-  console.log("  → Whitelist agents at " + onboardingUrl + "/flow.html so they can call MCP tools.");
-  await sleep(5000);
-
-  // 6. Start onboarding site (whitelisting flow)
-  console.log("\n[6/7] Starting onboarding site (PM2 onboarding, logs → demo_mcp/logs/)...");
-  await run("npx", ["pm2", "start", ecosystemPath, "--only", "onboarding"], { cwd: projectRoot, shell: isWindows });
-  console.log("Onboarding site started.");
-  console.log("  → Open in browser to whitelist your agent:", onboardingUrl);
-  console.log("  → Full flow (wallet, KYC, allowlist, env snippet):", `${onboardingUrl}/flow.html`);
-  await sleep(2000);
 
   // 7. Ensure agent dependencies are installed, then run demo agent with human input
   const agentCwd = path.join(projectRoot, "demo_mcp", "autonomous");

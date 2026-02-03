@@ -1,6 +1,6 @@
 # CreditNexus Demo Onboarding (Standalone Site)
 
-Standalone onboarding site for the CreditNexus x402 demo. **Open-source community** with an affinity for developer tools and serving customers with innovative, agentic products. Used by people to **whitelist their agents**: connect wallet (prefilled editable agent address), provide banking application and MCP information, optionally complete KYC/Plaid via the CreditNexus app, and register for the allowlist. Copy is optimized for a futuristic innovation tone, whitepaper-style explanations of social (onboarding) implications, and an optimistic steward of a compliant, reputation-based economy. No auth (demo only).
+Standalone onboarding site for the CreditNexus x402 demo. When **demo_mcp** is deployed on Replit, this onboarding site is the **default web** (main URL) — users see the landing page and onboarding flow first; MCP runs on a secondary port. **Open-source community** with an affinity for developer tools and serving customers with innovative, agentic products. Used by people to **whitelist their agents**: connect wallet (prefilled editable agent address), provide banking application and MCP information, optionally complete KYC/Plaid via the CreditNexus app, and register for the allowlist. Copy is optimized for a futuristic innovation tone, whitepaper-style explanations of social (onboarding) implications, and an optimistic steward of a compliant, reputation-based economy. No auth (demo only).
 
 ## What it does
 

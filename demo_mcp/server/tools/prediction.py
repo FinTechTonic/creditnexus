@@ -6,8 +6,12 @@ Implements HTTP 402 Payment Required pattern
 import logging
 from typing import Optional
 
-from demo_mcp.server.config import PRICE_PREDICTION_USD, ONRAMP_URL
-from demo_mcp.server.services import verify_payment, settle_payment, build_payment_requirements, call_prediction
+try:
+    from server.config import PRICE_PREDICTION_USD, ONRAMP_URL
+    from server.services import verify_payment, settle_payment, build_payment_requirements, call_prediction
+except ImportError:
+    from demo_mcp.server.config import PRICE_PREDICTION_USD, ONRAMP_URL
+    from demo_mcp.server.services import verify_payment, settle_payment, build_payment_requirements, call_prediction
 
 logger = logging.getLogger(__name__)
 

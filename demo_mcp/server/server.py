@@ -8,9 +8,12 @@ import sys
 import os
 from pathlib import Path
 
-# Add demo_mcp to Python path for imports
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+# Path bootstrap: support both monorepo (CreditNexus root) and standalone (demo_mcp root)
+_root = Path(__file__).resolve().parent.parent  # demo_mcp directory
+if _root.parent and (_root.parent / "demo_mcp").is_dir() and (_root.parent / "demo_mcp").resolve() == _root.resolve():
+    sys.path.insert(0, str(_root.parent))  # monorepo: demo_mcp.server resolves
+else:
+    sys.path.insert(0, str(_root))  # standalone: server resolves
 
 from fastmcp import FastMCP
 from dotenv import load_dotenv
@@ -31,9 +34,21 @@ load_dotenv(env_path)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import configuration
-from demo_mcp.server.config import PORT
-from demo_mcp.server.services import create_plaid_link_token, exchange_plaid_public_token
+# Import configuration (dual-mode: standalone first, then monorepo)
+try:
+    from server.config import PORT, SERVICE_KEY
+    from server.services import (
+        create_plaid_link_token,
+        exchange_plaid_public_token,
+        get_borrower_score_for_agent,
+    )
+except ImportError:
+    from demo_mcp.server.config import PORT, SERVICE_KEY
+    from demo_mcp.server.services import (
+        create_plaid_link_token,
+        exchange_plaid_public_token,
+        get_borrower_score_for_agent,
+    )
 
 # Initialize FastMCP server
 logger.info("Initializing CreditNexus MCP Server")
@@ -42,11 +57,120 @@ mcp = FastMCP(
     instructions="Payment-protected tools for CreditNexus using x402 protocol v2. Supports stock predictions, backtesting, and banking tools."
 )
 
-# Register all tools
-from demo_mcp.server.tools import register_all_tools
+# Register all tools (dual-mode)
+try:
+    from server.tools import register_all_tools
+except ImportError:
+    from demo_mcp.server.tools import register_all_tools
 
 logger.info("Registering MCP tools")
 register_all_tools(mcp)
+
+# ----- Vendored API routes (standalone: stock stub + Plaid/agent-score in P3) -----
+# #region agent log
+try:
+    from server.vendored.stock_stub import stub_daily, stub_backtest
+except ImportError:
+    from demo_mcp.server.vendored.stock_stub import stub_daily, stub_backtest
+# #endregion
+
+
+@mcp.custom_route("/api/stock-prediction/daily", methods=["GET"])
+async def api_stock_prediction_daily(request: Request):
+    """Stub or proxied daily prediction. Query: symbol (required), horizon (default 30). Optional X-API-Key."""
+    if SERVICE_KEY:
+        api_key = request.headers.get("X-API-Key")
+        if api_key != SERVICE_KEY:
+            return JSONResponse({"detail": "Missing or invalid X-API-Key"}, status_code=401)
+    params = request.query_params
+    symbol = (params.get("symbol") or "").strip()
+    if not symbol:
+        return JSONResponse({"detail": "symbol is required"}, status_code=400)
+    try:
+        horizon = int(params.get("horizon", "30"))
+    except ValueError:
+        horizon = 30
+    result = stub_daily(symbol, horizon=horizon)
+    return JSONResponse(result)
+
+
+@mcp.custom_route("/api/stock-prediction/backtest", methods=["POST"])
+async def api_stock_prediction_backtest(request: Request):
+    """Stub or proxied backtest. Body: symbol (required), start, end, strategy (optional). Optional X-API-Key."""
+    if SERVICE_KEY:
+        api_key = request.headers.get("X-API-Key")
+        if api_key != SERVICE_KEY:
+            return JSONResponse({"detail": "Missing or invalid X-API-Key"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+    body = body or {}
+    symbol = (body.get("symbol") or "").strip()
+    if not symbol:
+        return JSONResponse({"detail": "symbol is required"}, status_code=400)
+    result = stub_backtest(
+        symbol,
+        start_date=body.get("start"),
+        end_date=body.get("end"),
+        strategy=body.get("strategy"),
+    )
+    return JSONResponse(result)
+
+
+@mcp.custom_route("/api/banking/link-token", methods=["GET"])
+async def api_banking_link_token(request: Request):
+    """Return Plaid link token (vendored when STANDALONE). Optional X-API-Key."""
+    if SERVICE_KEY:
+        api_key = request.headers.get("X-API-Key")
+        if api_key != SERVICE_KEY:
+            return JSONResponse({"detail": "Missing or invalid X-API-Key"}, status_code=401)
+    try:
+        result = await create_plaid_link_token()
+        return JSONResponse(result)
+    except Exception as e:
+        logger.exception("api/banking/link-token failed")
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@mcp.custom_route("/api/banking/connect", methods=["POST"])
+async def api_banking_connect(request: Request):
+    """Exchange Plaid public_token and store (vendored when STANDALONE). Body: public_token, optional agent_wallet. Optional X-API-Key."""
+    if SERVICE_KEY:
+        api_key = request.headers.get("X-API-Key")
+        if api_key != SERVICE_KEY:
+            return JSONResponse({"detail": "Missing or invalid X-API-Key"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    body = body or {}
+    public_token = (body.get("public_token") or "").strip()
+    if not public_token:
+        return JSONResponse({"error": "public_token required"}, status_code=400)
+    agent_wallet = body.get("agent_wallet") or body.get("wallet")
+    try:
+        result = await exchange_plaid_public_token(public_token, agent_wallet=agent_wallet)
+        return JSONResponse(result)
+    except Exception as e:
+        logger.exception("api/banking/connect failed")
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@mcp.custom_route("/api/agent-score", methods=["GET"])
+async def api_agent_score(request: Request):
+    """Return Plaid-derived score for agent wallet. Query: wallet=0x... Optional X-API-Key."""
+    if SERVICE_KEY:
+        api_key = request.headers.get("X-API-Key")
+        if api_key != SERVICE_KEY:
+            return JSONResponse({"detail": "Missing or invalid X-API-Key"}, status_code=401)
+    wallet = (request.query_params.get("wallet") or "").strip()
+    if not wallet:
+        return JSONResponse({"detail": "wallet query parameter required"}, status_code=400)
+    score = await get_borrower_score_for_agent(wallet)
+    if score is None:
+        return JSONResponse({"detail": "No Plaid connection for this agent wallet"}, status_code=404)
+    return JSONResponse({"plaid_score": score})
 
 
 # ----- Plaid KYC HTTP routes (for onboarding; no x402 payment here) -----
