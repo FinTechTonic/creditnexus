@@ -40,7 +40,7 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "alembic>=1.13.0",
     "pgvector>=0.2.5",
-    "sqlmodel>=0.0.16",
+    "sqlmodel>=0.0.38",
     # Authentication & Security
     "authlib",
     "itsdangerous",
