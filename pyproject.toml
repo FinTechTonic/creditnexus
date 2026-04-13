@@ -51,7 +51,7 @@ dependencies = [
     "email-validator",
     # Web3 & Blockchain
     "eth-account>=0.13.0",
-    "eth-utils>=2.4.0",
+    "eth-utils>=6.0.0",
     # Document Processing
     "PyPDF2>=3.0.0",
     "pymupdf",
