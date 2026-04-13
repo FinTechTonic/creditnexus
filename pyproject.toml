@@ -59,7 +59,7 @@ dependencies = [
     "openpyxl",
     # Web Search (vendored from dev/requirements.txt)
     "trafilatura>=1.6.0", # Web content extraction
-    "python-dateutil>=2.8.0", # Date parsing
+    "python-dateutil>=2.9.0.post0", # Date parsing
     "limits>=3.0.0", # Rate limiting
     "filelock>=3.13.0", # Thread-safe file operations
     # Data Processing
